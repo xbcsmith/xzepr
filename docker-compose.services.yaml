@@ -1,6 +1,4 @@
 # docker/docker-compose.services.yaml
-version: "3.8"
-
 networks:
   redpanda_network:
     driver: bridge
@@ -12,12 +10,19 @@ services:
       - POSTGRES_USER=xzepr
       - POSTGRES_PASSWORD=password
       - POSTGRES_DB=xzepr
+      - POSTGRES_MULTIPLE_DATABASES=keycloak
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./docker/init-keycloak.sql:/docker-entrypoint-initdb.d/init-keycloak.sql:z
     ports:
       - "5432:5432"
     networks:
       - redpanda_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xzepr -d keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   keycloak:
     image: quay.io/keycloak/keycloak:24.0
@@ -29,12 +34,15 @@ services:
       - KC_DB_URL=jdbc:postgresql://postgres:5432/keycloak
       - KC_DB_USERNAME=xzepr
       - KC_DB_PASSWORD=password
+      - KC_HEALTH_ENABLED=true
     ports:
       - "8080:8080"
     networks:
       - redpanda_network
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+    restart: on-failure
 
   redpanda-0:
     command:

@@ -1,0 +1,36 @@
+# XZEPR Production Configuration
+# Settings for production deployment
+# ⚠️  IMPORTANT: Override sensitive values with environment variables
+
+server:
+  host: "0.0.0.0"
+  port: 8443
+  enable_https: true
+
+database:
+  # Override with XZEPR__DATABASE__URL environment variable
+  url: "postgres://xzepr:CHANGE_ME@postgres:5432/xzepr"
+
+auth:
+  # ⚠️  CRITICAL: Set XZEPR__AUTH__JWT_SECRET to a secure random string (min 32 chars)
+  jwt_secret: "CHANGE_ME_TO_SECURE_RANDOM_STRING_AT_LEAST_32_CHARACTERS_LONG"
+  jwt_expiration_hours: 24
+  enable_local_auth: true
+  enable_oidc: true
+  keycloak:
+    # Override with environment variables:
+    # XZEPR__AUTH__KEYCLOAK__ISSUER_URL
+    # XZEPR__AUTH__KEYCLOAK__CLIENT_ID
+    # XZEPR__AUTH__KEYCLOAK__CLIENT_SECRET
+    # XZEPR__AUTH__KEYCLOAK__REDIRECT_URL
+    issuer_url: "https://keycloak.example.com/realms/xzepr"
+    client_id: "xzepr-client"
+    client_secret: "CHANGE_ME_TO_KEYCLOAK_CLIENT_SECRET"
+    redirect_url: "https://xzepr.example.com/auth/callback"
+
+tls:
+  cert_path: "/etc/xzepr/tls/cert.pem"
+  key_path: "/etc/xzepr/tls/key.pem"
+
+kafka:
+  brokers: "redpanda-0:9092"

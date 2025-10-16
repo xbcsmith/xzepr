@@ -12,7 +12,7 @@ pub use domain::entities::user::User;
 pub use domain::value_objects::{ApiKeyId, UserId};
 pub use error::{Error, Result};
 pub use infrastructure::config::Settings;
-pub use infrastructure::database::postgres::PostgresUserRepository;
+pub use infrastructure::database::postgres::{PostgresApiKeyRepository, PostgresUserRepository};
 
 // Common types
 pub use chrono::{DateTime, Utc};

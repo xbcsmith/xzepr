@@ -1,0 +1,29 @@
+# XZEPR Default Configuration
+# This file contains default settings for the XZEPR event tracking server
+# Override these values with environment-specific configs or environment variables
+
+server:
+  host: "0.0.0.0"
+  port: 8443
+  enable_https: true
+
+database:
+  url: "postgres://xzepr:password@localhost:5432/xzepr"
+
+auth:
+  jwt_secret: "development-secret-change-in-production-use-at-least-32-characters"
+  jwt_expiration_hours: 24
+  enable_local_auth: true
+  enable_oidc: false
+  keycloak:
+    issuer_url: "http://localhost:8080/realms/xzepr"
+    client_id: "xzepr-client"
+    client_secret: "change-me-in-production"
+    redirect_url: "https://localhost:8443/auth/callback"
+
+tls:
+  cert_path: "certs/cert.pem"
+  key_path: "certs/key.pem"
+
+kafka:
+  brokers: "localhost:19092"

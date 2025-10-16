@@ -82,10 +82,13 @@ impl ApiKeyService {
     pub async fn revoke_key(&self, key_id: ApiKeyId) -> Result<(), AuthError> {
         self.api_key_repo.revoke(key_id).await
     }
-    pub fn new(user_repo: Arc<dyn UserRepository>) -> Self {
+    pub fn new(
+        user_repo: Arc<dyn UserRepository>,
+        api_key_repo: Arc<dyn ApiKeyRepository>,
+    ) -> Self {
         Self {
             user_repo,
-            api_key_repo: Arc::new(StubApiKeyRepository),
+            api_key_repo,
         }
     }
     pub async fn generate_api_key(

@@ -3,10 +3,10 @@
 // Original line: 0
 
 // src/infrastructure/database/postgres.rs
-use crate::auth::api_key::UserRepository;
+use crate::auth::api_key::{ApiKey, ApiKeyRepository, UserRepository};
 use crate::auth::rbac::roles::Role;
 use crate::domain::entities::user::{AuthProvider, User};
-use crate::domain::value_objects::UserId;
+use crate::domain::value_objects::{ApiKeyId, UserId};
 use crate::error::AuthError;
 use sqlx::{PgPool, Row};
 use std::str::FromStr;
@@ -32,7 +32,10 @@ impl UserRepository for PostgresUserRepository {
         .bind(id.as_uuid())
         .fetch_optional(&self.pool)
         .await
-        .map_err(|_| AuthError::InvalidCredentials)?;
+        .map_err(|e| {
+            eprintln!("Database error in find_by_id: {}", e);
+            AuthError::InvalidCredentials
+        })?;
 
         if let Some(row) = row {
             let roles = self.get_user_roles(&id).await?;
@@ -49,7 +52,10 @@ impl UserRepository for PostgresUserRepository {
         .bind(username)
         .fetch_optional(&self.pool)
         .await
-        .map_err(|_| AuthError::InvalidCredentials)?;
+        .map_err(|e| {
+            eprintln!("Database error in find_by_username: {}", e);
+            AuthError::InvalidCredentials
+        })?;
 
         if let Some(row) = row {
             let user_id = UserId::from_uuid(row.get("id"));
@@ -97,14 +103,20 @@ impl UserRepository for PostgresUserRepository {
         .bind(user.updated_at())
         .execute(&self.pool)
         .await
-        .map_err(|_| AuthError::InvalidCredentials)?;
+        .map_err(|e| {
+            eprintln!("Database error in save (user insert): {}", e);
+            AuthError::InvalidCredentials
+        })?;
 
         // Update roles
         sqlx::query("DELETE FROM user_roles WHERE user_id = $1")
             .bind(user.id().as_uuid())
             .execute(&self.pool)
             .await
-            .map_err(|_| AuthError::InvalidCredentials)?;
+            .map_err(|e| {
+                eprintln!("Database error in save (delete roles): {}", e);
+                AuthError::InvalidCredentials
+            })?;
 
         for role in user.roles() {
             sqlx::query("INSERT INTO user_roles (user_id, role) VALUES ($1, $2)")
@@ -112,7 +124,10 @@ impl UserRepository for PostgresUserRepository {
                 .bind(role.to_string())
                 .execute(&self.pool)
                 .await
-                .map_err(|_| AuthError::InvalidCredentials)?;
+                .map_err(|e| {
+                    eprintln!("Database error in save (insert role {}): {}", role, e);
+                    AuthError::InvalidCredentials
+                })?;
         }
 
         Ok(())
@@ -124,7 +139,10 @@ impl UserRepository for PostgresUserRepository {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(|_| AuthError::InvalidCredentials)?;
+        .map_err(|e| {
+            eprintln!("Database error in find_all: {}", e);
+            AuthError::InvalidCredentials
+        })?;
 
         let mut users = Vec::new();
         for row in rows {
@@ -144,7 +162,10 @@ impl UserRepository for PostgresUserRepository {
         .bind(role.to_string())
         .execute(&self.pool)
         .await
-        .map_err(|_| AuthError::InvalidCredentials)?;
+        .map_err(|e| {
+            eprintln!("Database error in add_role: {}", e);
+            AuthError::InvalidCredentials
+        })?;
 
         Ok(())
     }
@@ -155,7 +176,10 @@ impl UserRepository for PostgresUserRepository {
             .bind(role.to_string())
             .execute(&self.pool)
             .await
-            .map_err(|_| AuthError::InvalidCredentials)?;
+            .map_err(|e| {
+                eprintln!("Database error in remove_role: {}", e);
+                AuthError::InvalidCredentials
+            })?;
 
         Ok(())
     }
@@ -167,7 +191,10 @@ impl PostgresUserRepository {
             .bind(user_id.as_uuid())
             .fetch_all(&self.pool)
             .await
-            .map_err(|_| AuthError::InvalidCredentials)?;
+            .map_err(|e| {
+                eprintln!("Database error in get_user_roles: {}", e);
+                AuthError::InvalidCredentials
+            })?;
 
         let mut roles = Vec::new();
         for row in rows {
@@ -208,3 +235,131 @@ impl PostgresUserRepository {
 }
 
 // EventRepository implementation removed to focus on UserRepository
+
+// PostgresApiKeyRepository implementation
+pub struct PostgresApiKeyRepository {
+    pool: PgPool,
+}
+
+impl PostgresApiKeyRepository {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait::async_trait]
+impl ApiKeyRepository for PostgresApiKeyRepository {
+    async fn save(&self, api_key: &ApiKey) -> Result<(), AuthError> {
+        sqlx::query(
+            r#"
+            INSERT INTO api_keys (id, user_id, key_hash, name, expires_at, enabled, created_at, last_used_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (id) DO UPDATE SET
+                key_hash = EXCLUDED.key_hash,
+                name = EXCLUDED.name,
+                expires_at = EXCLUDED.expires_at,
+                enabled = EXCLUDED.enabled,
+                last_used_at = EXCLUDED.last_used_at
+            "#
+        )
+        .bind(api_key.id().as_uuid())
+        .bind(api_key.user_id.as_uuid())
+        .bind(&api_key.key_hash)
+        .bind(&api_key.name)
+        .bind(api_key.expires_at)
+        .bind(api_key.enabled)
+        .bind(api_key.created_at)
+        .bind(api_key.last_used_at)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| {
+            eprintln!("Database error in api_key save: {}", e);
+            AuthError::InvalidCredentials
+        })?;
+
+        Ok(())
+    }
+
+    async fn find_by_hash(&self, hash: &str) -> Result<Option<ApiKey>, AuthError> {
+        let row = sqlx::query(
+            "SELECT id, user_id, key_hash, name, expires_at, enabled, created_at, last_used_at FROM api_keys WHERE key_hash = $1"
+        )
+        .bind(hash)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| {
+            eprintln!("Database error in find_by_hash: {}", e);
+            AuthError::InvalidCredentials
+        })?;
+
+        if let Some(row) = row {
+            Ok(Some(ApiKey {
+                id: ApiKeyId::from_uuid(row.get("id")),
+                user_id: UserId::from_uuid(row.get("user_id")),
+                key_hash: row.get("key_hash"),
+                name: row.get("name"),
+                expires_at: row.get("expires_at"),
+                enabled: row.get("enabled"),
+                created_at: row.get("created_at"),
+                last_used_at: row.get("last_used_at"),
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn update_last_used(&self, id: ApiKeyId) -> Result<(), AuthError> {
+        sqlx::query("UPDATE api_keys SET last_used_at = NOW() WHERE id = $1")
+            .bind(id.as_uuid())
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                eprintln!("Database error in update_last_used: {}", e);
+                AuthError::InvalidCredentials
+            })?;
+
+        Ok(())
+    }
+
+    async fn find_by_user_id(&self, user_id: UserId) -> Result<Vec<ApiKey>, AuthError> {
+        let rows = sqlx::query(
+            "SELECT id, user_id, key_hash, name, expires_at, enabled, created_at, last_used_at FROM api_keys WHERE user_id = $1 ORDER BY created_at DESC"
+        )
+        .bind(user_id.as_uuid())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| {
+            eprintln!("Database error in find_by_user_id: {}", e);
+            AuthError::InvalidCredentials
+        })?;
+
+        let mut api_keys = Vec::new();
+        for row in rows {
+            api_keys.push(ApiKey {
+                id: ApiKeyId::from_uuid(row.get("id")),
+                user_id: UserId::from_uuid(row.get("user_id")),
+                key_hash: row.get("key_hash"),
+                name: row.get("name"),
+                expires_at: row.get("expires_at"),
+                enabled: row.get("enabled"),
+                created_at: row.get("created_at"),
+                last_used_at: row.get("last_used_at"),
+            });
+        }
+
+        Ok(api_keys)
+    }
+
+    async fn revoke(&self, id: ApiKeyId) -> Result<(), AuthError> {
+        sqlx::query("UPDATE api_keys SET enabled = FALSE WHERE id = $1")
+            .bind(id.as_uuid())
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                eprintln!("Database error in revoke: {}", e);
+                AuthError::InvalidCredentials
+            })?;
+
+        Ok(())
+    }
+}

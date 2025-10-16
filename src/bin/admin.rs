@@ -9,7 +9,9 @@ use sqlx::PgPool;
 use std::str::FromStr;
 use std::sync::Arc;
 use xzepr::auth::api_key::UserRepository;
-use xzepr::{ApiKeyId, ApiKeyService, PostgresUserRepository, Role, Settings, User};
+use xzepr::{
+    ApiKeyId, ApiKeyService, PostgresApiKeyRepository, PostgresUserRepository, Role, Settings, User,
+};
 
 #[derive(Parser)]
 #[command(name = "xzepr-admin")]
@@ -81,7 +83,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize repositories and services
     let user_repo = Arc::new(PostgresUserRepository::new(pool.clone()));
-    let api_key_service = Arc::new(ApiKeyService::new(user_repo.clone()));
+    let api_key_repo = Arc::new(PostgresApiKeyRepository::new(pool.clone()));
+    let api_key_service = Arc::new(ApiKeyService::new(user_repo.clone(), api_key_repo));
 
     match cli.command {
         Commands::CreateUser {
@@ -91,15 +94,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             role,
         } => {
             let user = User::new_local(username, email, password)?;
-            user_repo.save(&user).await?;
 
-            // Assign role
+            // Parse and add the requested role
             let role = Role::from_str(&role)?;
-            user_repo.add_role(user.id(), role).await?;
+
+            // If the requested role is different from the default User role, add it
+            if role != Role::User {
+                // Get mutable reference to roles and add the new role
+                // Note: User struct doesn't expose roles mutably, so we need to use add_role after save
+                user_repo.save(&user).await?;
+                user_repo.add_role(user.id(), role).await?;
+            } else {
+                // Just save with default role
+                user_repo.save(&user).await?;
+            }
 
             println!("✓ User created successfully!");
             println!("  ID: {}", user.id());
             println!("  Username: {}", user.username());
+            println!(
+                "  Roles: user{}",
+                if role != Role::User {
+                    format!(", {}", role)
+                } else {
+                    String::new()
+                }
+            );
         }
 
         Commands::ListUsers => {
