@@ -1,6 +1,8 @@
 # XZEPR API Documentation
 
-This document provides comprehensive API examples for the XZEPR event tracking server, including authentication, event management, and administrative operations.
+This document provides comprehensive API examples for the XZEPR event tracking
+server, including authentication, event management, and administrative
+operations.
 
 ## Overview
 
@@ -218,7 +220,8 @@ curl -X GET https://localhost:8443/api/v1/events/98765432-10ab-cdef-9876-543210a
 
 ## Event Streaming API
 
-XZEPR uses Redpanda for real-time event streaming. Events are automatically published to Redpanda topics when created.
+XZEPR uses Redpanda for real-time event streaming. Events are automatically
+published to Redpanda topics when created.
 
 ### WebSocket Event Stream
 

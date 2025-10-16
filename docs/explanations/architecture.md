@@ -773,27 +773,23 @@ database:
 ## 🎯 Next Steps for Implementation
 
 1. **Start with Foundation**
-
    - Set up project structure ✓
    - Add TLS configuration ✓
    - Create user domain model ✓
 
 2. **Implement Local Auth First** (Simplest)
-
    - Password hashing with Argon2
    - JWT generation/validation
    - Login endpoint
    - Test thoroughly
 
 3. **Add RBAC**
-
    - Role and permission definitions
    - Middleware implementation
    - Apply to routes
    - Integration tests
 
 4. **Add Keycloak OIDC** (Optional, but recommended for enterprise)
-
    - Set up Keycloak instance
    - Implement OIDC flow
    - Auto-provision users
@@ -805,7 +801,8 @@ database:
    - Management endpoints
    - Expiration handling
 
-Want me to generate complete, production-ready code for any specific component? I can create working implementations for:
+Want me to generate complete, production-ready code for any specific component?
+I can create working implementations for:
 
 - Authentication service with all three providers
 - Complete RBAC middleware
@@ -2278,7 +2275,9 @@ _Building on lessons learned from the Go EPR implementation_
 
 ## 🎯 Project Vision
 
-A high-performance, type-safe event provenance system built in Rust that tracks events, event receivers, and event receiver groups across the software supply chain.
+A high-performance, type-safe event provenance system built in Rust that tracks
+events, event receivers, and event receiver groups across the software supply
+chain.
 
 **Key Principles:**
 
@@ -3129,4 +3128,5 @@ volumes:
 
 ---
 
-Want me to generate actual code for any specific component, or dive deeper into any architectural decision?
+Want me to generate actual code for any specific component, or dive deeper into
+any architectural decision?

@@ -1,6 +1,9 @@
 # XZEPR Makefile Documentation
 
-This document provides comprehensive documentation for the XZEPR event tracking server's Makefile, which automates building, testing, deployment, and development workflows. The project uses Redpanda for event streaming and PostgreSQL for data persistence.
+This document provides comprehensive documentation for the XZEPR event tracking
+server's Makefile, which automates building, testing, deployment, and
+development workflows. The project uses Redpanda for event streaming and
+PostgreSQL for data persistence.
 
 ## Table of Contents
 
@@ -466,7 +469,8 @@ make docker-push
 
 ### GitHub Actions
 
-The project includes a comprehensive GitHub Actions workflow that uses the Makefile:
+The project includes a comprehensive GitHub Actions workflow that uses the
+Makefile:
 
 ```yaml
 # Example workflow step

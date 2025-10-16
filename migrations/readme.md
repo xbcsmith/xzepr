@@ -1,17 +1,21 @@
 # Database Migrations
 
-This directory contains SQL migrations for the XZepr event tracking server database.
+This directory contains SQL migrations for the XZepr event tracking server
+database.
 
 ## Overview
 
-The database uses PostgreSQL and is managed using [sqlx-cli](https://github.com/launchbadge/sqlx/tree/main/sqlx-cli).
+The database uses PostgreSQL and is managed using
+[sqlx-cli](https://github.com/launchbadge/sqlx/tree/main/sqlx-cli).
 
 ## Migration Files
 
 Migrations are applied in order based on their timestamp prefix:
 
-- `20240101000001_create_users_table.sql` - Creates users, user_roles, and api_keys tables
-- `20240101000002_create_events_table.sql` - Creates events table with JSONB payload
+- `20240101000001_create_users_table.sql` - Creates users, user_roles, and
+  api_keys tables
+- `20240101000002_create_events_table.sql` - Creates events table with JSONB
+  payload
 
 ## Schema
 
@@ -34,12 +38,15 @@ CREATE TABLE users (
 ```
 
 **Indexes:**
+
 - `idx_users_username` - Username lookups
 - `idx_users_email` - Email lookups
 - `idx_users_auth_provider_subject` - OIDC subject lookups
 
 **Triggers:**
-- `update_users_updated_at` - Automatically updates `updated_at` on row modification
+
+- `update_users_updated_at` - Automatically updates `updated_at` on row
+  modification
 
 ### User Roles Table
 
@@ -55,6 +62,7 @@ CREATE TABLE user_roles (
 ```
 
 **Indexes:**
+
 - `idx_user_roles_role` - Role-based queries
 
 ### API Keys Table
@@ -75,6 +83,7 @@ CREATE TABLE api_keys (
 ```
 
 **Indexes:**
+
 - `idx_api_keys_user_id` - User lookups
 - `idx_api_keys_key_hash` - Authentication
 
@@ -99,6 +108,7 @@ CREATE TABLE events (
 ```
 
 **Indexes:**
+
 - `idx_events_name` - Name filtering
 - `idx_events_version` - Version filtering
 - `idx_events_platform_id` - Platform filtering
@@ -170,7 +180,8 @@ For production, use secure credentials and connection pooling settings.
 
 ## Development Workflow
 
-1. **Start PostgreSQL**: `docker compose -f docker-compose.services.yaml up -d postgres`
+1. **Start PostgreSQL**:
+   `docker compose -f docker-compose.services.yaml up -d postgres`
 2. **Run migrations**: `make db-migrate`
 3. **Develop and test**
 4. **Create new migrations** as schema evolves
@@ -214,9 +225,10 @@ docker compose -f docker-compose.services.yaml ps postgres
 ### Permission issues with mounted SQL files
 
 If running in SELinux environments, ensure volumes have correct labels:
+
 ```yaml
 volumes:
-  - ./migrations:/migrations:z  # Add :z for SELinux
+  - ./migrations:/migrations:z # Add :z for SELinux
 ```
 
 ## References

@@ -1,12 +1,18 @@
 # XZEPR - Event Tracking Server
 
-A high-performance event tracking server built in Rust, featuring real-time event streaming with Redpanda, comprehensive authentication, role-based access control, and observability. Perfect for tracking CI/CD events, deployments, builds, and other system activities.
+A high-performance event tracking server built in Rust, featuring real-time
+event streaming with Redpanda, comprehensive authentication, role-based access
+control, and observability. Perfect for tracking CI/CD events, deployments,
+builds, and other system activities.
 
 ## ✨ Features
 
-- 🚀 **High-Performance Event Processing** - Built with Rust for maximum throughput
-- 📊 **Real-time Event Streaming** - Powered by Redpanda for Kafka-compatible streaming
-- 🔐 **Multi-Provider Authentication** - Local, OIDC (Keycloak), and API key auth
+- 🚀 **High-Performance Event Processing** - Built with Rust for maximum
+  throughput
+- 📊 **Real-time Event Streaming** - Powered by Redpanda for Kafka-compatible
+  streaming
+- 🔐 **Multi-Provider Authentication** - Local, OIDC (Keycloak), and API key
+  auth
 - 🛡️ **Role-Based Access Control** - Fine-grained permissions system
 - 🐘 **PostgreSQL Integration** - Reliable data persistence with migrations
 - 🔍 **Comprehensive API** - RESTful endpoints with OpenAPI documentation
@@ -16,12 +22,15 @@ A high-performance event tracking server built in Rust, featuring real-time even
 
 ## 🏗️ Architecture
 
-This project follows a layered architecture pattern with clean separation of concerns:
+This project follows a layered architecture pattern with clean separation of
+concerns:
 
 - **Domain Layer** (`src/domain/`) - Core business logic and entities
-- **Application Layer** (`src/application/`) - Use cases and application services
+- **Application Layer** (`src/application/`) - Use cases and application
+  services
 - **API Layer** (`src/api/`) - REST endpoints with middleware
-- **Infrastructure Layer** (`src/infrastructure/`) - Database, Redpanda, and external integrations
+- **Infrastructure Layer** (`src/infrastructure/`) - Database, Redpanda, and
+  external integrations
 - **Authentication Layer** (`src/auth/`) - Multi-provider auth with RBAC
 
 ## 🚀 Quick Start
@@ -299,7 +308,8 @@ docker-compose -f docker-compose.prod.yaml up -d
 make deploy-prod
 ```
 
-For detailed Docker deployment instructions, see [docs/DOCKER.md](docs/DOCKER.md).
+For detailed Docker deployment instructions, see
+[docs/DOCKER.md](docs/DOCKER.md).
 
 ## 🧪 Testing
 
@@ -322,7 +332,8 @@ make test-watch
 
 ## ⚙️ Configuration
 
-Configuration is managed through environment variables with hierarchical structure:
+Configuration is managed through environment variables with hierarchical
+structure:
 
 ### Server Configuration
 
@@ -434,7 +445,8 @@ FROM registry.redhat.io/ubi9/ubi-minimal:9.6
 
 ### Kubernetes
 
-Example Kubernetes deployment manifests are provided in the Docker documentation.
+Example Kubernetes deployment manifests are provided in the Docker
+documentation.
 
 ### Security Considerations
 
@@ -463,15 +475,19 @@ Example Kubernetes deployment manifests are provided in the Docker documentation
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
+for details.
 
 ## 🆘 Support
 
-- Check the [troubleshooting section](docs/DOCKER.md#troubleshooting) in the Docker guide
+- Check the [troubleshooting section](docs/DOCKER.md#troubleshooting) in the
+  Docker guide
 - Review logs: `docker-compose logs -f` or `make deploy-logs`
 - Verify service health: `curl -k https://localhost:8443/health`
 - For development issues, ensure all tools are installed: `make setup-dev`
 
 ---
 
-**XZEPR** - A comprehensive event tracking system built with Rust, featuring multi-provider authentication, RBAC authorization, real-time streaming with Redpanda, and enterprise-grade observability.
+**XZEPR** - A comprehensive event tracking system built with Rust, featuring
+multi-provider authentication, RBAC authorization, real-time streaming with
+Redpanda, and enterprise-grade observability.

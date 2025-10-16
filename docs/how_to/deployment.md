@@ -1,6 +1,8 @@
 # XZEPR Docker Deployment Guide
 
-This guide covers building, deploying, and managing the XZEPR event tracking server using Docker containers with Red Hat UBI 9 base images. The system uses Redpanda for event streaming and PostgreSQL for data persistence.
+This guide covers building, deploying, and managing the XZEPR event tracking
+server using Docker containers with Red Hat UBI 9 base images. The system uses
+Redpanda for event streaming and PostgreSQL for data persistence.
 
 ## Table of Contents
 
@@ -371,7 +373,8 @@ logging:
 
 ## Redpanda Configuration
 
-XZEPR uses Redpanda as its event streaming platform. Redpanda is a Kafka-compatible streaming platform that's simpler to deploy and manage.
+XZEPR uses Redpanda as its event streaming platform. Redpanda is a
+Kafka-compatible streaming platform that's simpler to deploy and manage.
 
 ### Redpanda Topics
 
@@ -647,7 +650,8 @@ services:
       - start
       - --seeds redpanda-0:33145
       - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19093
-      - --advertise-kafka-addr internal://redpanda-1:9092,external://localhost:19093
+      - --advertise-kafka-addr
+        internal://redpanda-1:9092,external://localhost:19093
       - --rpc-addr redpanda-1:33145
       - --advertise-rpc-addr redpanda-1:33145
     volumes:

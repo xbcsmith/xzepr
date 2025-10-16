@@ -1,6 +1,10 @@
 # XZEPR Quick Start Guide
 
-Get XZEPR event tracking server up and running in minutes with Docker Compose. This guide uses Redpanda for high-performance event streaming and PostgreSQL for reliable data persistence. The project includes comprehensive tooling with a feature-rich Makefile, production-ready Docker containers, and extensive documentation.
+Get XZEPR event tracking server up and running in minutes with Docker Compose.
+This guide uses Redpanda for high-performance event streaming and PostgreSQL for
+reliable data persistence. The project includes comprehensive tooling with a
+feature-rich Makefile, production-ready Docker containers, and extensive
+documentation.
 
 ## Prerequisites
 
@@ -194,7 +198,8 @@ make dev
 
 ### Using the Comprehensive Makefile
 
-The project includes an extensive Makefile with 50+ commands for all aspects of development:
+The project includes an extensive Makefile with 50+ commands for all aspects of
+development:
 
 ```bash
 # Show all available commands with descriptions
@@ -411,7 +416,8 @@ lsof -i :5432  # PostgreSQL
 
 - Read [docker.md](docker.md) for production deployment strategies
 - Configure proper TLS certificates and secrets management
-- Set up monitoring with Prometheus/Grafana: `docker compose --profile monitoring up -d`
+- Set up monitoring with Prometheus/Grafana:
+  `docker compose --profile monitoring up -d`
 - Configure OIDC authentication with Keycloak for enterprise auth
 
 ### Advanced Features

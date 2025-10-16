@@ -7,59 +7,64 @@ This directory contains configuration files for the XZepr event tracking server.
 XZepr uses a layered configuration approach:
 
 1. **Default configuration** (`default.yaml`) - Base settings
-2. **Environment-specific configuration** (`development.yaml`, `production.yaml`) - Override defaults
+2. **Environment-specific configuration** (`development.yaml`,
+   `production.yaml`) - Override defaults
 3. **Environment variables** - Highest priority, override all file-based config
 
 ## Configuration Files
 
 ### default.yaml
 
-Contains sensible defaults for all required settings. This file is always loaded first.
+Contains sensible defaults for all required settings. This file is always loaded
+first.
 
 ### development.yaml
 
 Development-specific settings optimized for local development:
+
 - Longer JWT expiration for convenience
 - Local host binding
 - Development secrets (not for production!)
 
 ### production.yaml
 
-Production deployment settings with placeholders for sensitive values. **Never commit actual production secrets to version control!**
+Production deployment settings with placeholders for sensitive values. **Never
+commit actual production secrets to version control!**
 
 ## Configuration Structure
 
 ```yaml
 server:
-  host: "0.0.0.0"           # Bind address
-  port: 8443                 # HTTPS port
-  enable_https: true         # Enable TLS
+  host: "0.0.0.0" # Bind address
+  port: 8443 # HTTPS port
+  enable_https: true # Enable TLS
 
 database:
-  url: "postgres://..."      # PostgreSQL connection string
+  url: "postgres://..." # PostgreSQL connection string
 
 auth:
-  jwt_secret: "..."          # JWT signing secret (32+ chars)
-  jwt_expiration_hours: 24   # JWT token lifetime
-  enable_local_auth: true    # Enable username/password auth
-  enable_oidc: true          # Enable Keycloak OIDC
+  jwt_secret: "..." # JWT signing secret (32+ chars)
+  jwt_expiration_hours: 24 # JWT token lifetime
+  enable_local_auth: true # Enable username/password auth
+  enable_oidc: true # Enable Keycloak OIDC
   keycloak:
-    issuer_url: "..."        # Keycloak realm URL
-    client_id: "..."         # OAuth2 client ID
-    client_secret: "..."     # OAuth2 client secret
-    redirect_url: "..."      # OAuth2 callback URL
+    issuer_url: "..." # Keycloak realm URL
+    client_id: "..." # OAuth2 client ID
+    client_secret: "..." # OAuth2 client secret
+    redirect_url: "..." # OAuth2 callback URL
 
 tls:
-  cert_path: "..."           # TLS certificate path
-  key_path: "..."            # TLS private key path
+  cert_path: "..." # TLS certificate path
+  key_path: "..." # TLS private key path
 
 kafka:
-  brokers: "..."             # Redpanda/Kafka broker addresses
+  brokers: "..." # Redpanda/Kafka broker addresses
 ```
 
 ## Environment Variables
 
-Override any configuration value using environment variables with the prefix `XZEPR__`:
+Override any configuration value using environment variables with the prefix
+`XZEPR__`:
 
 ```bash
 # Format: XZEPR__SECTION__SUBSECTION__KEY=value
@@ -131,7 +136,8 @@ RUST_ENV=production make admin ARGS="list-users"
 - **Minimum length**: 32 characters
 - **Complexity**: Use cryptographically random strings
 - **Generation**: `openssl rand -base64 32`
-- **Storage**: Store in environment variables or secrets manager, never in config files
+- **Storage**: Store in environment variables or secrets manager, never in
+  config files
 
 ### Database Credentials
 
@@ -156,7 +162,8 @@ RUST_ENV=production make admin ARGS="list-users"
 
 ## Configuration Validation
 
-The application validates configuration on startup and will fail fast if required values are missing or invalid.
+The application validates configuration on startup and will fail fast if
+required values are missing or invalid.
 
 Common validation errors:
 
@@ -195,12 +202,14 @@ cargo run --bin xzepr
 When running in Docker, configuration can be provided via:
 
 1. **Mounted config files**:
+
    ```yaml
    volumes:
      - ./config:/app/config:ro
    ```
 
 2. **Environment variables**:
+
    ```yaml
    environment:
      - XZEPR__AUTH__JWT_SECRET=${JWT_SECRET}
@@ -235,6 +244,7 @@ Error: while parsing a flow mapping
 ### Environment variable not applied
 
 **Check**:
+
 1. Variable name format: `XZEPR__SECTION__KEY` (double underscores)
 2. No spaces around `=` sign
 3. Variable is exported: `export XZEPR__...`
@@ -242,6 +252,7 @@ Error: while parsing a flow mapping
 ### Configuration precedence
 
 Remember the loading order:
+
 1. `default.yaml` (lowest priority)
 2. `$RUST_ENV.yaml` (e.g., `development.yaml`)
 3. Environment variables (highest priority)

@@ -1,118 +1,142 @@
 # XZEPR Documentation
 
-Welcome to the XZEPR event tracking server documentation. This directory contains comprehensive guides covering all aspects of building, deploying, and using XZEPR.
+Welcome to the XZEPR event tracking server documentation.
 
-## Overview
+## About XZEPR
 
-XZEPR is a high-performance event tracking server built in Rust, featuring real-time event streaming with Redpanda, comprehensive authentication, role-based access control, and observability. These documents will help you get started quickly and provide detailed reference information for advanced usage.
+XZEPR is a high-performance event tracking server built in Rust, featuring
+real-time event streaming with Redpanda, comprehensive authentication,
+role-based access control, and observability. Perfect for tracking CI/CD events,
+deployments, builds, and other system activities.
 
 ## Documentation Structure
 
-The documentation follows the Diataxis framework, organizing information by user needs and context:
+This documentation follows the [Diataxis Framework](https://diataxis.fr/),
+organizing content into four categories based on your needs:
 
-| Document                                                 | Description                                                                                                 | Audience                      | Type         |
-| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------- | ------------ |
-| [quickstart.md](quickstart.md)                           | Get XZEPR running in minutes with Docker Compose. Includes setup, configuration, and first steps.           | New users, DevOps             | Tutorial     |
-| [api.md](api.md)                                         | Comprehensive REST API reference with authentication, event management, and administrative endpoints.       | Developers, Integrators       | Reference    |
-| [docker.md](docker.md)                                   | Complete Docker deployment guide covering development and production scenarios with Red Hat UBI containers. | DevOps, Platform Engineers    | How-to Guide |
-| [makefile.md](makefile.md)                               | Documentation for the comprehensive Makefile with 50+ commands for development, testing, and deployment.    | Developers, DevOps            | Reference    |
-| [xzepr-architecture-plan.md](xzepr-architecture-plan.md) | Detailed architecture plan and implementation roadmap for the XZEPR system design.                          | Architects, Senior Developers | Explanation  |
+### Tutorials
+
+**Learning-oriented** - Step-by-step lessons to help you learn by doing.
+
+- [Getting Started](tutorials/getting_started.md) - Your first steps with XZEPR
+- [Building Your First Event Tracker](tutorials/first_event_tracker.md) - Create
+  a simple event tracking application
+
+Start here if you're new to XZEPR and want to learn the basics through hands-on
+practice.
+
+### How-to Guides
+
+**Task-oriented** - Practical guides to solve specific problems.
+
+- [Running the Server](how_to/running_server.md) - Start, stop, and manage the
+  XZEPR server
+- [Setting Up Authentication](how_to/authentication.md) - Configure local, OIDC,
+  and API key authentication
+- [Deploying with Docker](how_to/deployment.md) - Deploy XZEPR in containers
+- [Database Management](how_to/database.md) - Manage migrations and backups
+
+Use these guides when you need to accomplish a specific task or solve a
+particular problem.
+
+### Explanations
+
+**Understanding-oriented** - Conceptual discussions to deepen your knowledge.
+
+- [Architecture Overview](explanations/architecture.md) - System design and
+  component interaction
+- [Authentication and Authorization](explanations/auth_concepts.md) - How RBAC
+  and multi-provider auth works
+- [Event Streaming Model](explanations/event_streaming.md) - Understanding
+  real-time event processing
+- [Design Decisions](explanations/design_decisions.md) - Why things are built
+  the way they are
+
+Read these to understand the concepts and reasoning behind XZEPR's design.
+
+### Reference
+
+**Information-oriented** - Technical specifications and details.
+
+- [API Reference](reference/api.md) - Complete REST API documentation
+- [Configuration Reference](reference/configuration.md) - All configuration
+  options
+- [Database Schema](reference/database_schema.md) - Table structures and
+  relationships
+- [Makefile Commands](reference/makefile.md) - All available Make targets
+- [Environment Variables](reference/environment_variables.md) - Configuration
+  via environment
+
+Consult these when you need to look up specific information or details.
 
 ## Quick Navigation
 
-### Getting Started
+### I want to...
 
-- **New to XZEPR?** Start with [quickstart.md](quickstart.md)
-- **Want to try the API?** See [api.md](api.md) for examples
-- **Need to deploy?** Check [docker.md](docker.md)
+**Learn XZEPR from scratch** → Start with
+[Getting Started Tutorial](tutorials/getting_started.md)
 
-### Development
+**Set up and run the server** → Follow
+[Running the Server](how_to/running_server.md)
 
-- **Building the project?** Use [makefile.md](makefile.md) for all commands
-- **Understanding the architecture?** Read [xzepr-architecture-plan.md](xzepr-architecture-plan.md)
+**Integrate with the API** → Check [API Reference](reference/api.md)
 
-### Operations
+**Understand how it works** → Read
+[Architecture Overview](explanations/architecture.md)
 
-- **Production deployment?** See [docker.md](docker.md) production sections
-- **API integration?** Reference [api.md](api.md) for endpoints
-- **Troubleshooting?** All guides include troubleshooting sections
+**Deploy to production** → See [Deploying with Docker](how_to/deployment.md)
 
-## Key Features Covered
+**Look up a configuration option** → Browse
+[Configuration Reference](reference/configuration.md)
 
-### Event Streaming
+## Getting Help
 
-- Redpanda integration for high-performance messaging
-- Real-time event processing and consumption
-- Topic management and consumer groups
-- Event serialization and schema handling
+Each documentation page includes:
 
-### Authentication & Authorization
+- Prerequisites clearly listed
+- Step-by-step instructions with verification
+- Troubleshooting sections for common issues
+- Links to related documentation
 
-- Local username/password authentication
-- OpenID Connect (OIDC) integration with Keycloak
-- API key authentication for service-to-service
-- Role-based access control (RBAC) with fine-grained permissions
+If you can't find what you need:
 
-### Deployment & Operations
-
-- Docker containerization with Red Hat UBI base images
-- Docker Compose for development and production
-- Kubernetes deployment manifests
-- Comprehensive monitoring and health checks
-- Automated backup and recovery procedures
-
-### Development Workflow
-
-- Comprehensive Makefile with 50+ automation commands
-- Hot reload development environment
-- Code quality assurance (formatting, linting, testing)
-- CI/CD integration with GitHub Actions
-- Database migrations and management
-
-## Documentation Standards
-
-All documentation in this directory follows these standards:
-
-- **Markdown format** with consistent structure
-- **Code examples** that are tested and working
-- **Step-by-step instructions** with verification steps
-- **Troubleshooting sections** for common issues
-- **Cross-references** between related documents
-- **Table of contents** for longer documents
+1. Check the relevant category's README for more documents
+2. Look at the troubleshooting sections in how-to guides
+3. Review the project's main [README.md](../README.md)
 
 ## Contributing to Documentation
 
-When updating documentation:
+When adding or updating documentation:
 
-1. Follow the existing structure and style
-2. Test all code examples and commands
-3. Update cross-references when adding new sections
-4. Include troubleshooting information for new procedures
-5. Follow the AGENTS.md guidelines for markdown standards
+1. **Choose the right category:**
+   - Tutorials: Teaching through hands-on examples
+   - How-to: Solving specific problems
+   - Explanations: Clarifying concepts
+   - Reference: Technical specifications
 
-## Additional Resources
+2. **Follow naming conventions:**
+   - Use lowercase with underscores: `getting_started.md`
+   - Exception: `README.md` files use uppercase
 
-### External Documentation
+3. **Include standard sections:**
+   - Clear title and introduction
+   - Prerequisites (for how-to and tutorials)
+   - Code examples with explanations
+   - Troubleshooting (for how-to guides)
+   - Related links
 
-- [Rust Documentation](https://doc.rust-lang.org/) - Rust language reference
-- [Redpanda Documentation](https://docs.redpanda.com/) - Event streaming platform
-- [Docker Documentation](https://docs.docker.com/) - Container platform
-- [PostgreSQL Documentation](https://www.postgresql.org/docs/) - Database system
+4. **Follow markdown standards:**
+   - Use `.markdownlint.json` rules
+   - No emojis
+   - Specify language for code blocks
+   - Test all commands and examples
 
-### Project Resources
+See [AGENTS.md](../AGENTS.md) for detailed documentation guidelines.
 
-- **Main README.md** - Project overview and quick setup
-- **AGENTS.md** - Guidelines for AI agents and contributors
-- **Cargo.toml** - Rust project dependencies and metadata
-- **Makefile** - Development and deployment automation
+## External Resources
 
-## Support
-
-For questions about the documentation:
-
-1. Check the relevant guide's troubleshooting section
-2. Review the [quickstart.md](quickstart.md) common issues
-3. Verify your setup matches the prerequisites
-4. Check the project's main README.md for general information
-
-Each document includes specific troubleshooting and help sections tailored to its topic area.
+- [Rust Documentation](https://doc.rust-lang.org/)
+- [Redpanda Documentation](https://docs.redpanda.com/)
+- [Axum Web Framework](https://docs.rs/axum/)
+- [SQLx Documentation](https://docs.rs/sqlx/)
+- [Diataxis Framework](https://diataxis.fr/)
