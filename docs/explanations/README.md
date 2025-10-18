@@ -20,6 +20,25 @@ reasoning rather than step-by-step instructions.
 
 ## Available Explanations
 
+### Production Readiness Roadmap
+
+**[Production Readiness Roadmap](production_readiness_roadmap.md)**
+
+Comprehensive guide to implementing the remaining features needed for production deployment.
+
+Topics covered:
+
+- PostgreSQL repository implementations
+- Proper JWT authentication with RS256
+- Security hardening (CORS, rate limiting, GraphQL auth)
+- Observability (Prometheus metrics, Jaeger tracing)
+- Load testing setup and continuous testing
+- Configuration management
+- Performance targets and SLAs
+- Production deployment checklist
+
+**Level:** Intermediate to Advanced
+
 ### Architecture Overview
 
 **[Architecture Overview](architecture.md)**
@@ -159,6 +178,7 @@ Explanations work best when combined with other documentation types:
 Start here to understand core XZEPR concepts:
 
 - Architecture Overview
+- Implementation Summary
 - Authentication and Authorization basics
 - Event model fundamentals
 
@@ -166,6 +186,7 @@ Start here to understand core XZEPR concepts:
 
 Build on foundational knowledge:
 
+- Production Readiness Roadmap
 - RBAC permission system
 - Database design patterns
 - API design decisions

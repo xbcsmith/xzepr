@@ -47,6 +47,22 @@ Learn to interact with XZEPR using curl commands. This hands-on tutorial covers:
 
 **Time:** 30 minutes | **Level:** Beginner
 
+### Docker Demo Tutorial
+
+**[Docker Demo](docker_demo.md)**
+
+Complete Docker-based demonstration of XZepr. This comprehensive tutorial covers:
+
+- Starting backend services with Docker Compose
+- Building and running XZepr in containers
+- Creating users with the admin CLI
+- Using Redpanda Console for event monitoring
+- Exploring APIs with GraphQL Playground
+- Testing with curl commands
+- Complete end-to-end workflow
+
+**Time:** 60 minutes | **Level:** Beginner to Intermediate
+
 ### Building Your First Event Tracker
 
 **[First Event Tracker](first_event_tracker.md)** _(Coming Soon)_
