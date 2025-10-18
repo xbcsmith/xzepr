@@ -175,6 +175,47 @@ make admin ARGS="list-users"
 
 ## 🌐 API Endpoints
 
+### GraphQL API
+
+The server includes a GraphQL API with an interactive playground IDE for exploring and testing queries.
+
+- `POST /graphql` - GraphQL query endpoint
+- `GET /graphql/playground` - Interactive GraphQL Playground IDE
+- `GET /graphql/health` - GraphQL service health check
+
+#### Accessing the Playground
+
+Navigate to `http://localhost:8042/graphql/playground` in your browser for an interactive interface to explore the API.
+
+#### Example GraphQL Query
+
+```graphql
+query {
+  eventReceivers(eventReceiver: {}) {
+    id
+    name
+    type
+    version
+    description
+  }
+}
+```
+
+#### Example GraphQL Mutation
+
+```graphql
+mutation CreateReceiver($input: CreateEventReceiverInput!) {
+  createEventReceiver(eventReceiver: $input)
+}
+```
+
+For detailed GraphQL documentation, see:
+
+- [GraphQL Playground Explanation](docs/explanations/graphql_playground.md)
+- [How to Use GraphQL Playground](docs/how_to/use_graphql_playground.md)
+
+### REST API
+
 ### Authentication
 
 - `POST /api/v1/auth/login` - Local login with username/password

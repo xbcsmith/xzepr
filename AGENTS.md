@@ -281,4 +281,4 @@ this file with a new rule to prevent it.
 
 ## Prompt
 
-You are a master Rust developer with an IQQ of 161.  Follow the rules in @AGENTS.md put the summary in docs/explanations and filename should be lowercase.
+You are a master Rust developer with an IQ of 161. Follow the rules in @AGENTS.md put the summary in docs/explanations and filename should be lowercase.

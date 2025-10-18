@@ -6,6 +6,7 @@ use axum::{
 };
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
+use crate::api::graphql::{create_schema, graphql_handler, graphql_health, graphql_playground};
 use crate::api::rest::events::{
     create_event, create_event_receiver, create_event_receiver_group, delete_event_receiver,
     delete_event_receiver_group, get_event, get_event_receiver, get_event_receiver_group,
@@ -15,10 +16,21 @@ use crate::api::rest::events::{
 
 /// Builds the complete router with all API routes
 pub fn build_router(state: AppState) -> Router {
+    // Create GraphQL schema
+    let schema = create_schema(
+        std::sync::Arc::new(state.event_receiver_handler.clone()),
+        std::sync::Arc::new(state.event_receiver_group_handler.clone()),
+    );
+
     Router::new()
         // Health check
         .route("/health", get(health_check))
-        // Event routes
+        // GraphQL routes
+        .route("/graphql", post(graphql_handler))
+        .route("/graphql/playground", get(graphql_playground))
+        .route("/graphql/health", get(graphql_health))
+        .with_state(schema.clone())
+        // REST API routes
         .route("/api/v1/events", post(create_event))
         .route("/api/v1/events/:id", get(get_event))
         // Event receiver routes
@@ -32,17 +44,28 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/v1/groups/:id", get(get_event_receiver_group))
         .route("/api/v1/groups/:id", put(update_event_receiver_group))
         .route("/api/v1/groups/:id", delete(delete_event_receiver_group))
+        .with_state(state)
         // Middleware layers
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
-        .with_state(state)
 }
 
 /// Builds router with authentication middleware for protected routes
 pub fn build_protected_router(state: AppState) -> Router {
+    // Create GraphQL schema
+    let schema = create_schema(
+        std::sync::Arc::new(state.event_receiver_handler.clone()),
+        std::sync::Arc::new(state.event_receiver_group_handler.clone()),
+    );
+
     Router::new()
         // Health check (public)
         .route("/health", get(health_check))
+        // GraphQL routes (public for now, can be protected later)
+        .route("/graphql", post(graphql_handler))
+        .route("/graphql/playground", get(graphql_playground))
+        .route("/graphql/health", get(graphql_health))
+        .with_state(schema.clone())
         // Protected event routes
         .route("/api/v1/events", post(create_event))
         .route("/api/v1/events/:id", get(get_event))
@@ -57,6 +80,7 @@ pub fn build_protected_router(state: AppState) -> Router {
         .route("/api/v1/groups/:id", get(get_event_receiver_group))
         .route("/api/v1/groups/:id", put(update_event_receiver_group))
         .route("/api/v1/groups/:id", delete(delete_event_receiver_group))
+        .with_state(state)
         // Add authentication middleware here when implemented
         // .route_layer(middleware::from_fn_with_state(
         //     state.clone(),
@@ -65,7 +89,6 @@ pub fn build_protected_router(state: AppState) -> Router {
         // Middleware layers
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
-        .with_state(state)
 }
 
 #[cfg(test)]

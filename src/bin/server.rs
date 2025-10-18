@@ -55,6 +55,11 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     info!("Server listening on http://{}:{}", host, port);
     info!("Health check: http://{}:{}/health", host, port);
     info!("API documentation: http://{}:{}/api/v1", host, port);
+    info!("GraphQL endpoint: http://{}:{}/graphql", host, port);
+    info!(
+        "GraphQL Playground: http://{}:{}/graphql/playground",
+        host, port
+    );
 
     // Start server with graceful shutdown
     let listener = tokio::net::TcpListener::bind(addr).await?;
