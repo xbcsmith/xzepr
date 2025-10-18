@@ -9,7 +9,14 @@ In this section of the workshop we will use curl to make requests to the XZEPR.
 First thing we need is an event receiver. The event receiver acts as a
 classification and gate for events.
 
-Create an event receiver:
+The `schema` field defines the structure expected for event payloads. You can
+use:
+
+- An empty schema `{}` for free-form payloads (no validation)
+- A basic schema `{"type": "object"}` to require object payloads
+- A full JSON Schema with properties and validation rules
+
+Create an event receiver with schema validation:
 
 ```bash
 curl --location --request POST 'http://localhost:8443/api/v1/receivers' \
@@ -42,9 +49,10 @@ We need the ULID of the event receiver in the next step.
 
 When you create an event, you must specify an `event_receiver_id` to associate
 it with. An event is the record of some action being completed. You cannot
-create an event for a non-existent receiver ID. The payload field of the event
-must conform to the schema defined on the event receiver that you have given the
-ID of.
+create an event for a non-existent receiver ID. If the event receiver has a
+schema defined (non-empty), the payload field of the event should conform to
+that schema. If the event receiver has an empty schema `{}`, any valid JSON
+object is accepted as the payload.
 
 Create an event:
 
@@ -97,6 +105,27 @@ curl --location --request POST 'http://localhost:8443/api/v1/groups' \
 
 Note: You can extract the event receiver id from the previous command by pipe
 the output to `| jq .data`
+
+---
+
+## Schema Flexibility Example
+
+Create an event receiver with an empty schema for free-form payloads:
+
+```bash
+curl --location --request POST 'http://localhost:8443/api/v1/receivers' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+  "name": "flexible-receiver",
+  "type": "any.event.type",
+  "version": "1.0.0",
+  "description": "Accepts any valid JSON payload",
+  "schema": {}
+}'
+```
+
+This receiver will accept events with any payload structure, making it ideal for
+evolving event formats or CDEvents with varying structures.
 
 ---
 

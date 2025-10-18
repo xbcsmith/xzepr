@@ -55,6 +55,10 @@ def gen_sha(seed: str) -> str:
 def generate_event_receivers() -> List[Dict[str, Any]]:
     """
     Generate a list of event receivers for each supported event type.
+
+    Note: Uses empty schema {} to allow free-form CDEvents payloads.
+    Empty schemas are valid per JSON Schema spec and mean "accept any valid JSON".
+    This provides maximum flexibility for evolving event structures.
     """
     event_receivers: List[Dict[str, Any]] = []
     types = [
@@ -74,6 +78,7 @@ def generate_event_receivers() -> List[Dict[str, Any]]:
         name = "-".join(event_type.split(".")[:-3])
         version = ".".join(event_type.split(".")[-3:])
         description = " ".join(event_type.split(".")[:-3]).title()
+        # Empty schema {} allows any valid JSON payload - intentional for CDEvents flexibility
         evr = dict(name=name, version=version, description=description, type=event_type, schema={})
         event_receivers.append(evr)
     return event_receivers

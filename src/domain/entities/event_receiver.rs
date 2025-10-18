@@ -224,6 +224,7 @@ impl EventReceiver {
     /// Validates JSON schema
     fn validate_schema(schema: &JsonValue) -> Result<(), DomainError> {
         // Ensure it's a valid JSON object
+        // An empty schema {} is valid and means "accept any valid JSON"
         if !schema.is_object() {
             return Err(DomainError::ValidationError {
                 field: "schema".to_string(),
@@ -231,15 +232,8 @@ impl EventReceiver {
             });
         }
 
-        // Check for required schema fields
-        let schema_obj = schema.as_object().unwrap();
-        if !schema_obj.contains_key("type") {
-            return Err(DomainError::ValidationError {
-                field: "schema".to_string(),
-                message: "Schema must contain a 'type' field".to_string(),
-            });
-        }
-
+        // Empty schema is valid - no further validation needed
+        // This allows for free-form event payloads
         Ok(())
     }
 
@@ -442,5 +436,41 @@ mod tests {
 
         let invalid_payload = json!("not an object");
         assert!(receiver.validate_event_payload(&invalid_payload).is_err());
+    }
+
+    #[test]
+    fn test_empty_schema_is_valid() {
+        // Empty schema {} should be valid - allows free-form event payloads
+        let empty_schema = json!({});
+        let receiver = EventReceiver::new(
+            "Test Receiver".to_string(),
+            "webhook".to_string(),
+            "1.0.0".to_string(),
+            "A test event receiver with no schema constraints".to_string(),
+            empty_schema,
+        );
+
+        assert!(receiver.is_ok());
+        let receiver = receiver.unwrap();
+        assert_eq!(receiver.schema(), &json!({}));
+    }
+
+    #[test]
+    fn test_schema_without_type_field_is_valid() {
+        // Schema without "type" field should be valid
+        let schema = json!({
+            "properties": {
+                "any_field": {"type": "string"}
+            }
+        });
+        let receiver = EventReceiver::new(
+            "Test Receiver".to_string(),
+            "webhook".to_string(),
+            "1.0.0".to_string(),
+            "A test event receiver".to_string(),
+            schema,
+        );
+
+        assert!(receiver.is_ok());
     }
 }

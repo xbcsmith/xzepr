@@ -548,6 +548,16 @@ mod tests {
         };
         assert!(valid_request.validate().is_ok());
 
+        // Empty schema is valid - allows free-form payloads
+        let empty_schema_request = CreateEventReceiverRequest {
+            name: "Test Receiver".to_string(),
+            receiver_type: "webhook".to_string(),
+            version: "1.0.0".to_string(),
+            description: "A test receiver with no schema constraints".to_string(),
+            schema: json!({}),
+        };
+        assert!(empty_schema_request.validate().is_ok());
+
         let invalid_request = CreateEventReceiverRequest {
             name: "".to_string(), // Empty name
             receiver_type: "webhook".to_string(),
