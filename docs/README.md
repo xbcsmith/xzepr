@@ -71,7 +71,7 @@ Consult these when you need to look up specific information or details.
 
 ## Quick Navigation
 
-### I want to...
+### I want to
 
 **Learn XZEPR from scratch** → Start with
 [Getting Started Tutorial](tutorials/getting_started.md)
@@ -109,16 +109,19 @@ If you can't find what you need:
 When adding or updating documentation:
 
 1. **Choose the right category:**
+
    - Tutorials: Teaching through hands-on examples
    - How-to: Solving specific problems
    - Explanations: Clarifying concepts
    - Reference: Technical specifications
 
 2. **Follow naming conventions:**
+
    - Use lowercase with underscores: `getting_started.md`
    - Exception: `README.md` files use uppercase
 
 3. **Include standard sections:**
+
    - Clear title and introduction
    - Prerequisites (for how-to and tutorials)
    - Code examples with explanations

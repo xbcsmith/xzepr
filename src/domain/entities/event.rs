@@ -145,7 +145,7 @@ mod tests {
         assert_eq!(event.package(), "test-package");
         assert_eq!(event.description(), "A test event");
         assert_eq!(event.payload(), &payload);
-        assert_eq!(event.success(), true);
+        assert!(event.success());
         assert_eq!(event.event_receiver_id(), receiver_id);
     }
 
@@ -349,7 +349,7 @@ mod tests {
         assert_eq!(event.package(), "myapp");
         assert_eq!(event.description(), "Testing getters");
         assert_eq!(event.payload(), &payload);
-        assert_eq!(event.success(), true);
+        assert!(event.success());
         assert_eq!(event.event_receiver_id(), receiver_id);
     }
 

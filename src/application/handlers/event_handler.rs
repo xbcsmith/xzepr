@@ -548,8 +548,8 @@ mod tests {
         let receiver_repo = Arc::new(MockEventReceiverRepository::new());
         let handler = EventHandler::new(event_repo, receiver_repo);
 
-        let payload = json!({"message": "Hello, world!"});
-        let receiver_id = EventReceiverId::new(); // Non-existent receiver
+        let _payload = json!({"message": "Hello, world!"});
+        let _receiver_id = EventReceiverId::new(); // Non-existent receiver
 
         let payload = json!({"message": "Non-existent receiver"});
         let result = handler

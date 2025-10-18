@@ -773,23 +773,27 @@ database:
 ## 🎯 Next Steps for Implementation
 
 1. **Start with Foundation**
+
    - Set up project structure ✓
    - Add TLS configuration ✓
    - Create user domain model ✓
 
 2. **Implement Local Auth First** (Simplest)
+
    - Password hashing with Argon2
    - JWT generation/validation
    - Login endpoint
    - Test thoroughly
 
 3. **Add RBAC**
+
    - Role and permission definitions
    - Middleware implementation
    - Apply to routes
    - Integration tests
 
 4. **Add Keycloak OIDC** (Optional, but recommended for enterprise)
+
    - Set up Keycloak instance
    - Implement OIDC flow
    - Auto-provision users
@@ -3113,7 +3117,7 @@ volumes:
 - **Domain-Driven Design**: Eric Evans' book
 - **Axum**: docs.rs/axum
 - **SQLx**: github.com/launchbadge/sqlx
-- **Error Handling**: https://nick.groenen.me/posts/rust-error-handling/
+- **Error Handling**: <https://nick.groenen.me/posts/rust-error-handling/>
 
 ---
 

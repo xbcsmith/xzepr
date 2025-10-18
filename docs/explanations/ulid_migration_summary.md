@@ -2,7 +2,10 @@
 
 ## What This Document Explains
 
-This document provides a conceptual understanding of the UUID to ULID migration in XZepr. It explains the rationale behind the change, the architectural implications, and the trade-offs involved. For step-by-step migration instructions, see the reference documentation.
+This document provides a conceptual understanding of the UUID to ULID migration
+in XZepr. It explains the rationale behind the change, the architectural
+implications, and the trade-offs involved. For step-by-step migration
+instructions, see the reference documentation.
 
 ## Why We Migrated from UUID to ULID
 
@@ -10,14 +13,19 @@ This document provides a conceptual understanding of the UUID to ULID migration 
 
 While UUID v7 provided time-ordered identifiers, several limitations emerged:
 
-1. **Readability** - UUIDs use hexadecimal encoding with dashes, making them verbose (36 characters) and harder to work with in URLs
-2. **Sortability** - While UUID v7 is time-ordered, the string representation requires careful handling to maintain that order
-3. **Timestamp Extraction** - Extracting the timestamp from a UUID v7 requires bit manipulation and knowledge of the internal structure
-4. **Database Indexing** - UUID as a native type in PostgreSQL, while efficient, locks us into that specific database feature
+1. **Readability** - UUIDs use hexadecimal encoding with dashes, making them
+   verbose (36 characters) and harder to work with in URLs
+2. **Sortability** - While UUID v7 is time-ordered, the string representation
+   requires careful handling to maintain that order
+3. **Timestamp Extraction** - Extracting the timestamp from a UUID v7 requires
+   bit manipulation and knowledge of the internal structure
+4. **Database Indexing** - UUID as a native type in PostgreSQL, while efficient,
+   locks us into that specific database feature
 
 ### Why ULID?
 
-ULID (Universally Unique Lexicographically Sortable Identifier) addresses these limitations:
+ULID (Universally Unique Lexicographically Sortable Identifier) addresses these
+limitations:
 
 1. **Compact** - 26 characters using Crockford's Base32 alphabet
 2. **Lexicographically Sortable** - String comparison yields chronological order
@@ -72,7 +80,8 @@ The database layer underwent significant changes:
 
 1. **Column Type Migration** - UUID columns converted to TEXT
 2. **String Encoding** - IDs stored as 26-character strings
-3. **Custom SQLx Types** - Implemented `Type`, `Encode`, and `Decode` for seamless ORM integration
+3. **Custom SQLx Types** - Implemented `Type`, `Encode`, and `Decode` for
+   seamless ORM integration
 4. **Index Recreation** - All indexes and constraints rebuilt for TEXT columns
 
 ### API Layer Impact
@@ -112,12 +121,14 @@ We chose TEXT storage over binary for several reasons:
 
 ### Why Custom SQLx Implementations?
 
-Instead of using ULID strings directly, we implemented custom SQLx type conversions:
+Instead of using ULID strings directly, we implemented custom SQLx type
+conversions:
 
 1. **Type Safety** - Compile-time guarantees that we're using correct ID types
 2. **Validation** - IDs validated at database boundary
 3. **Consistency** - Same value object API throughout application
-4. **Future Flexibility** - Can change storage format without touching domain code
+4. **Future Flexibility** - Can change storage format without touching domain
+   code
 
 **Trade-off**: More code to maintain, but better encapsulation
 
@@ -232,8 +243,10 @@ Migration maintains forward compatibility path:
 
 ## Related Documentation
 
-- **How-to Guide**: See `docs/how_to/migrate_to_ulid.md` for step-by-step instructions
-- **Reference**: See `docs/reference/ulid_migration.md` for technical specifications
+- **How-to Guide**: See `docs/how_to/migrate_to_ulid.md` for step-by-step
+  instructions
+- **Reference**: See `docs/reference/ulid_migration.md` for technical
+  specifications
 - **Tutorial**: See `docs/tutorials/working_with_ulids.md` for hands-on examples
 
 ## References

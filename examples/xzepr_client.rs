@@ -267,6 +267,7 @@ struct PaginationMeta {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct ErrorResponse {
     error: String,
     message: String,
@@ -398,6 +399,7 @@ impl XzeprClient {
         self.handle_response(response).await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn create_event(
         &self,
         name: &str,

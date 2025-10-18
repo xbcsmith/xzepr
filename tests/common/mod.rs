@@ -113,12 +113,12 @@ impl TestApp {
                 if let Some(obj) = body.as_object() {
                     // Check for validation errors (empty name, invalid data)
                     if let Some(name) = obj.get("name") {
-                        if name.as_str().map_or(false, |s| s.is_empty()) {
+                        if name.as_str().is_some_and(|s| s.is_empty()) {
                             return TestResponse::bad_request(); // Empty name validation error
                         }
                     }
                     if let Some(version) = obj.get("version") {
-                        if version.as_str().map_or(false, |s| s == "invalid-version") {
+                        if version.as_str() == Some("invalid-version") {
                             return TestResponse::bad_request(); // Invalid version validation error
                         }
                     }

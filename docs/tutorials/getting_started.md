@@ -72,7 +72,8 @@ docker compose logs -f
 
 ### 4. Verify Installation and Admin User
 
-The Docker setup automatically creates the database and an admin user during startup.
+The Docker setup automatically creates the database and an admin user during
+startup.
 
 ```bash
 # Check application health
@@ -235,17 +236,17 @@ make clean         # Clean build artifacts
 
 ### Service URLs
 
-- **XZEPR API**: https://localhost:8443
-  - Health endpoint: https://localhost:8443/health
-  - API documentation: https://localhost:8443/api/v1
-- **Redpanda Console**: http://localhost:8081
+- **XZEPR API**: <https://localhost:8443>
+  - Health endpoint: <https://localhost:8443/health>
+  - API documentation: <https://localhost:8443/api/v1>
+- **Redpanda Console**: <http://localhost:8081>
   - Topic management and message browsing
 - **PostgreSQL**: localhost:5432
   - Database: `xzepr`
   - Username: `xzepr`
 - **Optional Monitoring** (with `--profile monitoring`):
-  - Grafana: http://localhost:3000
-  - Prometheus: http://localhost:9090
+  - Grafana: <http://localhost:3000>
+  - Prometheus: <http://localhost:9090>
 
 ### Essential Management Commands
 

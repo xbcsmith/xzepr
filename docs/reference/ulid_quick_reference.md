@@ -2,7 +2,9 @@
 
 ## What is ULID?
 
-ULID (Universally Unique Lexicographically Sortable Identifier) is a 128-bit identifier that is:
+ULID (Universally Unique Lexicographically Sortable Identifier) is a 128-bit
+identifier that is:
+
 - Lexicographically sortable by creation time
 - Case-insensitive (Crockford's base32)
 - URL-safe (no special characters)
@@ -206,13 +208,13 @@ let events: Vec<Event> = all_events
 
 ## ID Types in XZepr
 
-| Type | Purpose | Used In |
-|------|---------|---------|
-| `EventId` | Identifies events | Events table |
-| `EventReceiverId` | Identifies event receivers | Event receivers table |
+| Type                   | Purpose                    | Used In               |
+| ---------------------- | -------------------------- | --------------------- |
+| `EventId`              | Identifies events          | Events table          |
+| `EventReceiverId`      | Identifies event receivers | Event receivers table |
 | `EventReceiverGroupId` | Identifies receiver groups | Receiver groups table |
-| `UserId` | Identifies users | Users table |
-| `ApiKeyId` | Identifies API keys | API keys table |
+| `UserId`               | Identifies users           | Users table           |
+| `ApiKeyId`             | Identifies API keys        | API keys table        |
 
 ## Migration from UUID
 

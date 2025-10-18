@@ -9,8 +9,10 @@ examples and Python script.
 XZepr is a high-performance event tracking server built in Rust that provides:
 
 - **Event Receivers**: Entities that classify and validate incoming events
-- **Events**: Records of actions being completed, associated with event receivers
-- **Event Receiver Groups**: Collections of event receivers for coordinated tracking
+- **Events**: Records of actions being completed, associated with event
+  receivers
+- **Event Receiver Groups**: Collections of event receivers for coordinated
+  tracking
 - **REST API**: Complete HTTP API for managing all entities
 - **Real-time Processing**: Built for high-throughput event ingestion
 
@@ -264,7 +266,8 @@ curl --header 'Content-Type: application/json' --location \
 
 ## CDEvents Support
 
-The implementation fully supports CDEvents specification as demonstrated in `generate_epr_events.py`:
+The implementation fully supports CDEvents specification as demonstrated in
+`generate_epr_events.py`:
 
 ### Supported Event Types
 

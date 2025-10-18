@@ -185,6 +185,7 @@ volumes:
    ```
 
 3. **Scale services if needed:**
+
    ```bash
    docker-compose -f docker-compose.prod.yaml up -d --scale xzepr=3
    ```

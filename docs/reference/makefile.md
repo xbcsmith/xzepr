@@ -615,8 +615,8 @@ You can add custom targets to the Makefile:
 # Add this to Makefile
 .PHONY: my-custom-target
 my-custom-target: ## My custom target
-	@echo "Running custom target"
-	# Your commands here
+ @echo "Running custom target"
+ # Your commands here
 ```
 
 ### Parallel Execution

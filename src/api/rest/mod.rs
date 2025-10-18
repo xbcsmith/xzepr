@@ -71,16 +71,16 @@ mod tests {
 
     #[test]
     fn test_error_helpers() {
-        let (status, response) = bad_request("Test message");
+        let (status, _response) = bad_request("Test message");
         assert_eq!(status, StatusCode::BAD_REQUEST);
 
-        let (status, response) = not_found("User");
+        let (status, _response) = not_found("User");
         assert_eq!(status, StatusCode::NOT_FOUND);
 
-        let (status, response) = internal_error("Database error");
+        let (status, _response) = internal_error("Database error");
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
 
-        let (status, response) = validation_error("name", "Name is required");
+        let (status, _response) = validation_error("name", "Name is required");
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 }

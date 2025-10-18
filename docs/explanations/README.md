@@ -41,8 +41,8 @@ Topics covered:
 
 **[Implementation Summary](implementation_summary.md)**
 
-High-level overview of the XZepr implementation, covering what was built and
-how it meets requirements.
+High-level overview of the XZepr implementation, covering what was built and how
+it meets requirements.
 
 Topics covered:
 

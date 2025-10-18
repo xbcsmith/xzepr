@@ -160,7 +160,7 @@ mod tests {
     #[test]
     fn test_default() {
         let id = ApiKeyId::default();
-        assert!(id.as_str().len() > 0);
+        assert!(!id.as_str().is_empty());
     }
 
     #[test]

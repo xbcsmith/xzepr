@@ -2,9 +2,9 @@
 
 ## Overview
 
-This document explains the migration from UUID to ULID for entity identifiers
-in the XZepr project, along with comprehensive test coverage improvements that
-were implemented to ensure system reliability and maintainability.
+This document explains the migration from UUID to ULID for entity identifiers in
+the XZepr project, along with comprehensive test coverage improvements that were
+implemented to ensure system reliability and maintainability.
 
 ## ULID Migration
 
