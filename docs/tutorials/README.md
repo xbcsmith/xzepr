@@ -33,6 +33,20 @@ Your first steps with XZEPR. This tutorial walks you through:
 
 **Time:** 20 minutes | **Level:** Beginner
 
+### Curl Examples Workshop
+
+**[Curl Examples](curl_examples.md)**
+
+Learn to interact with XZEPR using curl commands. This hands-on tutorial covers:
+
+- Creating event receivers with validation schemas
+- Generating events that conform to receiver schemas
+- Creating and managing event receiver groups
+- Querying all created resources
+- Understanding JSON response formats
+
+**Time:** 30 minutes | **Level:** Beginner
+
 ### Building Your First Event Tracker
 
 **[First Event Tracker](first_event_tracker.md)** _(Coming Soon)_

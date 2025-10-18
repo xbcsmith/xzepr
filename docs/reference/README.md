@@ -39,6 +39,26 @@ Contents:
 
 **Status:** Available
 
+### Implementation Details
+
+**[Implementation](implementation.md)**
+
+Comprehensive technical documentation of the XZepr implementation, including
+architecture, entities, and API design.
+
+Contents:
+
+- Layered architecture overview
+- Core entities (EventReceiver, Event, EventReceiverGroup)
+- REST API implementation details
+- CDEvents specification support
+- Request/response formats and examples
+- Repository patterns and data access
+- Error handling and validation
+- Performance characteristics
+
+**Status:** Available
+
 ### Configuration Reference
 
 **[Configuration Reference](configuration.md)**
@@ -169,7 +189,7 @@ Reference documentation aims to be:
 - **Up-to-date** - Maintained with code changes
 - **Precise** - Use exact terminology and syntax
 
-## If You're Looking for...
+## If You're Looking for
 
 **Learning materials** → See [Tutorials](../tutorials/README.md)
 
@@ -230,6 +250,7 @@ See [AGENTS.md](../../AGENTS.md) for documentation standards.
 **Developers:**
 
 - API Reference
+- Implementation Details
 - Database Schema
 - Makefile Commands
 

@@ -1,1 +1,4 @@
-// Generated mod file - no modules found
+// Generated mod file
+
+pub mod graphql;
+pub mod rest;

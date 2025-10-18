@@ -1,11 +1,13 @@
 // src/main.rs
 use anyhow::{Context, Result};
 use axum::{
+    extract::State,
     http::{header, HeaderValue, Method, StatusCode},
     response::{IntoResponse, Json},
-    routing::get,
+    routing::{get, post},
     Router,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgPool;
 use std::{net::SocketAddr, sync::Arc};
@@ -16,8 +18,13 @@ use tower_http::{
     trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
     LatencyUnit,
 };
-use tracing::{info, Level};
-use xzepr::{PostgresApiKeyRepository, PostgresUserRepository, Settings};
+use tracing::{error, info, Level};
+use xzepr::{
+    auth::api_key::UserRepository,
+    PostgresApiKeyRepository,
+    PostgresUserRepository,
+    Settings
+};
 
 /// Application state shared across handlers
 #[derive(Clone)]
@@ -145,9 +152,7 @@ fn build_router(state: AppState) -> Router {
         .route("/health", get(health_check))
         .route("/", get(root_handler))
         .route("/api/v1/status", get(api_status))
-        // TODO: Add authentication routes
-        // .route("/api/v1/auth/login", post(login))
-        // .route("/api/v1/auth/oidc/callback", get(oidc_callback))
+        .route("/api/v1/auth/login", post(login))
         // TODO: Add event routes
         // .route("/api/v1/events", post(create_event).get(list_events))
         // .route("/api/v1/events/:id", get(get_event).delete(delete_event))
@@ -256,5 +261,99 @@ async fn shutdown_signal() {
         _ = terminate => {
             info!("Received terminate signal, shutting down gracefully...");
         },
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct LoginRequest {
+    username: String,
+    password: String,
+}
+
+
+
+#[derive(Debug, Serialize)]
+struct UserInfo {
+    id: String,
+    username: String,
+    email: String,
+}
+
+/// Login endpoint
+async fn login(
+    State(state): State<AppState>,
+    Json(request): Json<LoginRequest>,
+) -> impl IntoResponse {
+    info!(username = %request.username, "Login attempt");
+
+    // Find user by username
+    let user = match state.user_repo.find_by_username(&request.username).await {
+        Ok(Some(user)) => user,
+        Ok(None) => {
+            error!(username = %request.username, "User not found");
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "Invalid credentials"})),
+            );
+        }
+        Err(err) => {
+            error!(username = %request.username, error = %err, "Database error during user lookup");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Authentication service unavailable"})),
+            );
+        }
+    };
+
+    // Check if user is enabled
+    if !user.enabled {
+        error!(username = %request.username, "User account disabled");
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "Account disabled"})),
+        );
+    }
+
+    // Verify password
+    match user.verify_password(&request.password) {
+        Ok(true) => {
+            info!(
+                username = %request.username,
+                user_id = %user.id,
+                "Login successful"
+            );
+
+            // Generate a simple JWT-like token (for demo purposes)
+            let token = format!("xzepr_token_{}", user.id);
+
+            let user_info = UserInfo {
+                id: user.id.to_string(),
+                username: user.username,
+                email: user.email,
+            };
+
+            (
+                StatusCode::OK,
+                Json(json!({"token": token, "user": user_info})),
+            )
+        }
+        Ok(false) => {
+            error!(username = %request.username, "Password verification failed");
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "Invalid credentials"})),
+            )
+        }
+        Err(err) => {
+            error!(
+                username = %request.username,
+                error = %err,
+                "Password verification error"
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Authentication service unavailable"})),
+            )
+        }
     }
 }

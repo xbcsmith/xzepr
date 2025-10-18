@@ -1,5 +1,5 @@
-// Generated mod file - no modules found
+// Generated mod file
 
 pub mod entities;
+pub mod repositories;
 pub mod value_objects;
-// pub mod repositories;

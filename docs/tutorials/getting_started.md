@@ -70,24 +70,9 @@ docker compose ps
 docker compose logs -f
 ```
 
-### 4. Initialize Database and Create Admin User
+### 4. Verify Installation and Admin User
 
-```bash
-# Option 1: Use Makefile (handles migrations automatically)
-make db-setup
-
-# Option 2: Manual steps
-# Run database migrations
-make db-migrate
-
-# Create initial admin user
-make admin ARGS="create-user -u admin -e admin@xzepr.local -p admin123 -r admin"
-
-# Verify database is ready
-make db-status
-```
-
-### 5. Verify Installation
+The Docker setup automatically creates the database and an admin user during startup.
 
 ```bash
 # Check application health
@@ -97,18 +82,24 @@ curl -k https://localhost:8443/health
 # {
 #   "status": "healthy",
 #   "version": "0.1.0",
-#   "services": {
-#     "database": "healthy",
-#     "redpanda": "healthy"
+#   "components": {
+#     "database": "healthy"
 #   }
 # }
 
-# Check all services using Makefile
-make deploy-health
+# Verify admin user exists (optional)
+docker compose -f docker-compose.prod.yaml exec -T postgres psql -U xzepr -d xzepr -c "SELECT username, email FROM users;"
+```
 
+### 5. Access Web Interfaces
+
+```bash
 # Access web interfaces
 open https://localhost:8443  # XZEPR API (accept certificate warning)
 open http://localhost:8081   # Redpanda Console
+
+# Check all services status
+docker compose -f docker-compose.prod.yaml ps
 ```
 
 ## 🎯 First Steps
@@ -117,15 +108,18 @@ open http://localhost:8081   # Redpanda Console
 
 ```bash
 # Login to get authentication token
-curl -X POST https://localhost:8443/api/v1/auth/login \
+RESPONSE=$(curl -X POST https://localhost:8443/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "username": "admin",
     "password": "admin123"
-  }' -k
+  }' -k -s)
 
-# Save the token from response
-TOKEN="your-jwt-token-here"
+# Extract token from response (requires jq)
+TOKEN=$(echo $RESPONSE | jq -r '.token')
+
+# Or manually copy the token from this command:
+echo $RESPONSE | jq '.token'
 
 # Create an event receiver
 curl -X POST https://localhost:8443/api/v1/event-receivers \
@@ -285,10 +279,10 @@ docker system prune -f               # Clean up Docker resources
 
 ### Development Security
 
-- Default passwords are used for quick setup - **change them for production**
+- Default admin password is `admin123` - **change this for production**
 - Self-signed certificates are generated for development only
 - Default JWT secret should be replaced in production
-- Admin user created with simple password for testing
+- Admin user is automatically created during startup with username `admin`
 
 ### Production Security
 

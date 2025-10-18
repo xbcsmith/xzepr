@@ -213,7 +213,7 @@ fi
 # Security scan (if available)
 if command -v docker scan &> /dev/null; then
     print_info "Running security scan..."
-    docker scan "$FULL_IMAGE_NAME" || print_warning "Security scan failed or not available"
+    grype --add-cpes-if-none --by-cve docker:"$FULL_IMAGE_NAME" || print_warning "Security scan failed or not available"
 fi
 
 # Show final information

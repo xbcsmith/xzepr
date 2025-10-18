@@ -165,6 +165,9 @@ pub enum DomainError {
 
     #[error("Business rule violation: {rule}")]
     BusinessRuleViolation { rule: String },
+
+    #[error("Validation error in field '{field}': {message}")]
+    ValidationError { field: String, message: String },
 }
 
 /// Infrastructure-related errors
