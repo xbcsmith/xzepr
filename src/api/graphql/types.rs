@@ -4,8 +4,10 @@ use async_graphql::*;
 use chrono::{DateTime, Utc};
 use serde_json::Value as JsonValue;
 
-use crate::domain::entities::{event_receiver::EventReceiver, event_receiver_group::EventReceiverGroup};
-use crate::domain::value_objects::{EventReceiverId, EventReceiverGroupId};
+use crate::domain::entities::{
+    event_receiver::EventReceiver, event_receiver_group::EventReceiverGroup,
+};
+use crate::domain::value_objects::{EventReceiverGroupId, EventReceiverId};
 
 /// Wrapper for JSON values to implement custom scalar
 #[derive(Debug, Clone, PartialEq)]
@@ -15,11 +17,9 @@ pub struct JSON(pub JsonValue);
 impl ScalarType for JSON {
     fn parse(value: Value) -> InputValueResult<Self> {
         match value {
-            Value::String(s) => {
-                serde_json::from_str(&s)
-                    .map(JSON)
-                    .map_err(|e| InputValueError::custom(format!("Invalid JSON: {}", e)))
-            }
+            Value::String(s) => serde_json::from_str(&s)
+                .map(JSON)
+                .map_err(|e| InputValueError::custom(format!("Invalid JSON: {}", e))),
             _ => Ok(JSON(serde_json::to_value(value).unwrap())),
         }
     }
@@ -37,11 +37,9 @@ pub struct Time(pub DateTime<Utc>);
 impl ScalarType for Time {
     fn parse(value: Value) -> InputValueResult<Self> {
         match value {
-            Value::String(s) => {
-                DateTime::parse_from_rfc3339(&s)
-                    .map(|dt| Time(dt.with_timezone(&Utc)))
-                    .map_err(|e| InputValueError::custom(format!("Invalid datetime: {}", e)))
-            }
+            Value::String(s) => DateTime::parse_from_rfc3339(&s)
+                .map(|dt| Time(dt.with_timezone(&Utc)))
+                .map_err(|e| InputValueError::custom(format!("Invalid datetime: {}", e))),
             _ => Err(InputValueError::expected_type(value)),
         }
     }
@@ -176,7 +174,19 @@ pub struct FindEventReceiverGroupInput {
     pub version: Option<String>,
 }
 
-impl From<CreateEventInput> for (String, String, String, String, String, String, JsonValue, String, bool) {
+impl From<CreateEventInput>
+    for (
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        JsonValue,
+        String,
+        bool,
+    )
+{
     fn from(input: CreateEventInput) -> Self {
         (
             input.name,
@@ -240,8 +250,7 @@ pub struct EventType {
 
 /// Helper functions for ID parsing
 pub fn parse_event_receiver_id(id: &ID) -> Result<EventReceiverId, Error> {
-    EventReceiverId::parse(&id.0)
-        .map_err(|e| Error::new(format!("Invalid EventReceiverId: {}", e)))
+    EventReceiverId::parse(&id.0).map_err(|e| Error::new(format!("Invalid EventReceiverId: {}", e)))
 }
 
 pub fn parse_event_receiver_group_id(id: &ID) -> Result<EventReceiverGroupId, Error> {
@@ -276,7 +285,8 @@ mod tests {
             "1.0.0".to_string(),
             "A test receiver".to_string(),
             schema.clone(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let graphql_type: EventReceiverType = receiver.into();
 
@@ -306,10 +316,7 @@ mod tests {
     #[test]
     fn test_multiple_id_parsing() {
         let receiver_ids = vec![EventReceiverId::new(), EventReceiverId::new()];
-        let graphql_ids: Vec<ID> = receiver_ids
-            .iter()
-            .map(|id| ID(id.to_string()))
-            .collect();
+        let graphql_ids: Vec<ID> = receiver_ids.iter().map(|id| ID(id.to_string())).collect();
 
         let parsed = parse_event_receiver_ids(&graphql_ids).unwrap();
         assert_eq!(parsed.len(), 2);

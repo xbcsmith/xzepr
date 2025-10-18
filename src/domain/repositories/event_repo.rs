@@ -46,13 +46,23 @@ pub trait EventRepository: Send + Sync {
     async fn delete(&self, id: EventId) -> Result<()>;
 
     /// Finds the latest event for a receiver
-    async fn find_latest_by_receiver_id(&self, receiver_id: EventReceiverId) -> Result<Option<Event>>;
+    async fn find_latest_by_receiver_id(
+        &self,
+        receiver_id: EventReceiverId,
+    ) -> Result<Option<Event>>;
 
     /// Finds the latest successful event for a receiver
-    async fn find_latest_successful_by_receiver_id(&self, receiver_id: EventReceiverId) -> Result<Option<Event>>;
+    async fn find_latest_successful_by_receiver_id(
+        &self,
+        receiver_id: EventReceiverId,
+    ) -> Result<Option<Event>>;
 
     /// Finds events within a time range
-    async fn find_by_time_range(&self, start: DateTime<Utc>, end: DateTime<Utc>) -> Result<Vec<Event>>;
+    async fn find_by_time_range(
+        &self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> Result<Vec<Event>>;
 
     /// Finds events that match multiple criteria
     async fn find_by_criteria(&self, criteria: FindEventCriteria) -> Result<Vec<Event>>;

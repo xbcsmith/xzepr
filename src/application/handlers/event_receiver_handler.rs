@@ -1,7 +1,9 @@
 // src/application/handlers/event_receiver_handler.rs
 
 use crate::domain::entities::event_receiver::EventReceiver;
-use crate::domain::repositories::event_receiver_repo::{EventReceiverRepository, FindEventReceiverCriteria};
+use crate::domain::repositories::event_receiver_repo::{
+    EventReceiverRepository, FindEventReceiverCriteria,
+};
 use crate::domain::value_objects::EventReceiverId;
 use crate::error::{DomainError, Result};
 
@@ -37,7 +39,11 @@ impl EventReceiverHandler {
         );
 
         // Check if a receiver with the same name and type already exists
-        if self.repository.exists_by_name_and_type(&name, &receiver_type).await? {
+        if self
+            .repository
+            .exists_by_name_and_type(&name, &receiver_type)
+            .await?
+        {
             warn!(
                 name = %name,
                 receiver_type = %receiver_type,
@@ -45,17 +51,12 @@ impl EventReceiverHandler {
             );
             return Err(DomainError::BusinessRuleViolation {
                 rule: "Event receiver with the same name and type already exists".to_string(),
-            }.into());
+            }
+            .into());
         }
 
         // Create the domain entity
-        let event_receiver = EventReceiver::new(
-            name,
-            receiver_type,
-            version,
-            description,
-            schema,
-        ).map_err(|e| e)?;
+        let event_receiver = EventReceiver::new(name, receiver_type, version, description, schema)?;
 
         let receiver_id = event_receiver.id();
 
@@ -114,11 +115,16 @@ impl EventReceiverHandler {
             version = %version,
             "Finding event receivers by type and version"
         );
-        self.repository.find_by_type_and_version(receiver_type, version).await
+        self.repository
+            .find_by_type_and_version(receiver_type, version)
+            .await
     }
 
     /// Finds event receivers using multiple criteria
-    pub async fn find_by_criteria(&self, criteria: FindEventReceiverCriteria) -> Result<Vec<EventReceiver>> {
+    pub async fn find_by_criteria(
+        &self,
+        criteria: FindEventReceiverCriteria,
+    ) -> Result<Vec<EventReceiver>> {
         info!(?criteria, "Finding event receivers by criteria");
 
         if criteria.is_empty() {
@@ -133,7 +139,11 @@ impl EventReceiverHandler {
     }
 
     /// Lists all event receivers with pagination
-    pub async fn list_event_receivers(&self, limit: usize, offset: usize) -> Result<Vec<EventReceiver>> {
+    pub async fn list_event_receivers(
+        &self,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<EventReceiver>> {
         info!(limit = %limit, offset = %offset, "Listing event receivers with pagination");
 
         // Validate pagination parameters
@@ -141,7 +151,8 @@ impl EventReceiverHandler {
             return Err(DomainError::ValidationError {
                 field: "limit".to_string(),
                 message: "Limit must be between 1 and 1000".to_string(),
-            }.into());
+            }
+            .into());
         }
 
         self.repository.list(limit, offset).await
@@ -170,26 +181,40 @@ impl EventReceiverHandler {
 
         // If name or type is being changed, check for conflicts
         if let (Some(ref new_name), Some(ref new_type)) = (&name, &receiver_type) {
-            if new_name != receiver.name() || new_type != receiver.receiver_type() {
-                if self.repository.exists_by_name_and_type(new_name, new_type).await? {
-                    return Err(DomainError::BusinessRuleViolation {
-                        rule: "Event receiver with the same name and type already exists".to_string(),
-                    }.into());
+            if (new_name != receiver.name() || new_type != receiver.receiver_type())
+                && self
+                    .repository
+                    .exists_by_name_and_type(new_name, new_type)
+                    .await?
+            {
+                return Err(DomainError::BusinessRuleViolation {
+                    rule: "Event receiver with the same name and type already exists".to_string(),
                 }
+                .into());
             }
         } else if let Some(ref new_name) = name {
             if new_name != receiver.name()
-                && self.repository.exists_by_name_and_type(new_name, receiver.receiver_type()).await? {
+                && self
+                    .repository
+                    .exists_by_name_and_type(new_name, receiver.receiver_type())
+                    .await?
+            {
                 return Err(DomainError::BusinessRuleViolation {
                     rule: "Event receiver with the same name and type already exists".to_string(),
-                }.into());
+                }
+                .into());
             }
         } else if let Some(ref new_type) = receiver_type {
             if new_type != receiver.receiver_type()
-                && self.repository.exists_by_name_and_type(receiver.name(), new_type).await? {
+                && self
+                    .repository
+                    .exists_by_name_and_type(receiver.name(), new_type)
+                    .await?
+            {
                 return Err(DomainError::BusinessRuleViolation {
                     rule: "Event receiver with the same name and type already exists".to_string(),
-                }.into());
+                }
+                .into());
             }
         }
 
@@ -285,7 +310,10 @@ mod tests {
 
             receivers.insert(event_receiver.id(), event_receiver.clone());
             index.insert(
-                (event_receiver.name().to_string(), event_receiver.receiver_type().to_string()),
+                (
+                    event_receiver.name().to_string(),
+                    event_receiver.receiver_type().to_string(),
+                ),
                 event_receiver.id(),
             );
 
@@ -311,7 +339,11 @@ mod tests {
             Ok(vec![])
         }
 
-        async fn find_by_type_and_version(&self, _receiver_type: &str, _version: &str) -> Result<Vec<EventReceiver>> {
+        async fn find_by_type_and_version(
+            &self,
+            _receiver_type: &str,
+            _version: &str,
+        ) -> Result<Vec<EventReceiver>> {
             Ok(vec![])
         }
 
@@ -338,7 +370,10 @@ mod tests {
             Ok(())
         }
 
-        async fn find_by_criteria(&self, _criteria: FindEventReceiverCriteria) -> Result<Vec<EventReceiver>> {
+        async fn find_by_criteria(
+            &self,
+            _criteria: FindEventReceiverCriteria,
+        ) -> Result<Vec<EventReceiver>> {
             Ok(vec![])
         }
     }
@@ -355,13 +390,15 @@ mod tests {
             }
         });
 
-        let result = handler.create_event_receiver(
-            "Test Receiver".to_string(),
-            "webhook".to_string(),
-            "1.0.0".to_string(),
-            "A test receiver".to_string(),
-            schema,
-        ).await;
+        let result = handler
+            .create_event_receiver(
+                "Test Receiver".to_string(),
+                "webhook".to_string(),
+                "1.0.0".to_string(),
+                "A test receiver".to_string(),
+                schema,
+            )
+            .await;
 
         assert!(result.is_ok());
         let receiver_id = result.unwrap();
@@ -385,23 +422,27 @@ mod tests {
         });
 
         // Create first receiver
-        let result1 = handler.create_event_receiver(
-            "Test Receiver".to_string(),
-            "webhook".to_string(),
-            "1.0.0".to_string(),
-            "A test receiver".to_string(),
-            schema.clone(),
-        ).await;
+        let result1 = handler
+            .create_event_receiver(
+                "Test Receiver".to_string(),
+                "webhook".to_string(),
+                "1.0.0".to_string(),
+                "A test receiver".to_string(),
+                schema.clone(),
+            )
+            .await;
         assert!(result1.is_ok());
 
         // Try to create duplicate receiver
-        let result2 = handler.create_event_receiver(
-            "Test Receiver".to_string(),
-            "webhook".to_string(),
-            "2.0.0".to_string(), // Different version, but same name and type
-            "Another test receiver".to_string(),
-            schema,
-        ).await;
+        let result2 = handler
+            .create_event_receiver(
+                "Test Receiver".to_string(),
+                "webhook".to_string(),
+                "2.0.0".to_string(), // Different version, but same name and type
+                "Another test receiver".to_string(),
+                schema,
+            )
+            .await;
         assert!(result2.is_err());
     }
 

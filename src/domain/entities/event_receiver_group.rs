@@ -1,10 +1,24 @@
 // src/domain/entities/event_receiver_group.rs
 
-use crate::domain::value_objects::{EventReceiverId, EventReceiverGroupId};
+use crate::domain::value_objects::{EventReceiverGroupId, EventReceiverId};
 use crate::error::DomainError;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+
+/// Parameters for creating an event receiver group from existing data
+#[derive(Debug, Clone)]
+pub struct EventReceiverGroupData {
+    pub id: EventReceiverGroupId,
+    pub name: String,
+    pub group_type: String,
+    pub version: String,
+    pub description: String,
+    pub enabled: bool,
+    pub event_receiver_ids: Vec<EventReceiverId>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
 
 /// Event receiver group entity representing a collection of event receivers
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -52,33 +66,23 @@ impl EventReceiverGroup {
     }
 
     /// Creates an event receiver group from existing data (e.g., from database)
-    pub fn from_existing(
-        id: EventReceiverGroupId,
-        name: String,
-        group_type: String,
-        version: String,
-        description: String,
-        enabled: bool,
-        event_receiver_ids: Vec<EventReceiverId>,
-        created_at: DateTime<Utc>,
-        updated_at: DateTime<Utc>,
-    ) -> Result<Self, DomainError> {
-        Self::validate_name(&name)?;
-        Self::validate_type(&group_type)?;
-        Self::validate_version(&version)?;
-        Self::validate_description(&description)?;
-        Self::validate_event_receiver_ids(&event_receiver_ids)?;
+    pub fn from_existing(data: EventReceiverGroupData) -> Result<Self, DomainError> {
+        Self::validate_name(&data.name)?;
+        Self::validate_type(&data.group_type)?;
+        Self::validate_version(&data.version)?;
+        Self::validate_description(&data.description)?;
+        Self::validate_event_receiver_ids(&data.event_receiver_ids)?;
 
         Ok(Self {
-            id,
-            name,
-            group_type,
-            version,
-            description,
-            enabled,
-            event_receiver_ids,
-            created_at,
-            updated_at,
+            id: data.id,
+            name: data.name,
+            group_type: data.group_type,
+            version: data.version,
+            description: data.description,
+            enabled: data.enabled,
+            event_receiver_ids: data.event_receiver_ids,
+            created_at: data.created_at,
+            updated_at: data.updated_at,
         })
     }
 
@@ -153,7 +157,10 @@ impl EventReceiverGroup {
     }
 
     /// Removes an event receiver from the group
-    pub fn remove_event_receiver(&mut self, receiver_id: EventReceiverId) -> Result<(), DomainError> {
+    pub fn remove_event_receiver(
+        &mut self,
+        receiver_id: EventReceiverId,
+    ) -> Result<(), DomainError> {
         let initial_len = self.event_receiver_ids.len();
         self.event_receiver_ids.retain(|&id| id != receiver_id);
 
@@ -312,10 +319,7 @@ mod tests {
 
     #[test]
     fn test_create_event_receiver_group() {
-        let receiver_ids = vec![
-            EventReceiverId::new(),
-            EventReceiverId::new(),
-        ];
+        let receiver_ids = vec![EventReceiverId::new(), EventReceiverId::new()];
 
         let group = EventReceiverGroup::new(
             "Test Group".to_string(),
@@ -384,7 +388,8 @@ mod tests {
             "A test event receiver group".to_string(),
             false,
             receiver_ids,
-        ).unwrap();
+        )
+        .unwrap();
 
         assert!(!group.enabled());
 
@@ -405,7 +410,8 @@ mod tests {
             "A test event receiver group".to_string(),
             true,
             receiver_ids,
-        ).unwrap();
+        )
+        .unwrap();
 
         let initial_count = group.receiver_count();
         let new_receiver_id = EventReceiverId::new();
@@ -437,7 +443,8 @@ mod tests {
             "A test event receiver group".to_string(),
             true,
             receiver_ids,
-        ).unwrap();
+        )
+        .unwrap();
 
         let original_updated_at = group.updated_at();
 
@@ -445,36 +452,38 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(1));
 
         // Update description
-        group.update(
-            None,
-            None,
-            None,
-            Some("Updated description".to_string()),
-            None,
-            None,
-        ).unwrap();
+        group
+            .update(
+                None,
+                None,
+                None,
+                Some("Updated description".to_string()),
+                None,
+                None,
+            )
+            .unwrap();
 
         assert_eq!(group.description(), "Updated description");
         assert!(group.updated_at() > original_updated_at);
 
         // Update name
-        group.update(
-            Some("Updated Group".to_string()),
-            None,
-            None,
-            None,
-            None,
-            None,
-        ).unwrap();
+        group
+            .update(
+                Some("Updated Group".to_string()),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
 
         assert_eq!(group.name(), "Updated Group");
     }
 
     #[test]
     fn test_too_many_receivers() {
-        let receiver_ids: Vec<EventReceiverId> = (0..101)
-            .map(|_| EventReceiverId::new())
-            .collect();
+        let receiver_ids: Vec<EventReceiverId> = (0..101).map(|_| EventReceiverId::new()).collect();
 
         let result = EventReceiverGroup::new(
             "Test Group".to_string(),

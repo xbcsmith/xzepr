@@ -135,3 +135,279 @@ pub fn verify_password(password: &str, hash: &str) -> Result<bool, AuthError> {
         .verify_password(password.as_bytes(), &parsed_hash)
         .is_ok())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_local_user() {
+        let user = User::new_local(
+            "testuser".to_string(),
+            "test@example.com".to_string(),
+            "SecurePassword123!".to_string(),
+        );
+
+        assert!(user.is_ok());
+        let user = user.unwrap();
+        assert_eq!(user.username(), "testuser");
+        assert_eq!(user.email(), "test@example.com");
+        assert!(user.password_hash.is_some());
+        assert!(user.enabled());
+        assert_eq!(user.roles().len(), 1);
+        assert!(user.has_role(&Role::User));
+    }
+
+    #[test]
+    fn test_create_oidc_user() {
+        let user = User::new_oidc(
+            "oidcuser".to_string(),
+            "oidc@example.com".to_string(),
+            "subject-123".to_string(),
+        );
+
+        assert_eq!(user.username(), "oidcuser");
+        assert_eq!(user.email(), "oidc@example.com");
+        assert!(user.password_hash.is_none());
+        assert!(user.enabled());
+        assert_eq!(user.roles().len(), 1);
+        assert!(user.has_role(&Role::User));
+    }
+
+    #[test]
+    fn test_verify_password_success() {
+        let password = "TestPassword123!";
+        let user = User::new_local(
+            "testuser".to_string(),
+            "test@example.com".to_string(),
+            password.to_string(),
+        )
+        .unwrap();
+
+        let result = user.verify_password(password);
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+    }
+
+    #[test]
+    fn test_verify_password_failure() {
+        let user = User::new_local(
+            "testuser".to_string(),
+            "test@example.com".to_string(),
+            "CorrectPassword123!".to_string(),
+        )
+        .unwrap();
+
+        let result = user.verify_password("WrongPassword");
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+    }
+
+    #[test]
+    fn test_verify_password_on_oidc_user_fails() {
+        let user = User::new_oidc(
+            "oidcuser".to_string(),
+            "oidc@example.com".to_string(),
+            "subject-123".to_string(),
+        );
+
+        let result = user.verify_password("anypassword");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AuthError::InvalidCredentials => {}
+            _ => panic!("Expected InvalidCredentials error"),
+        }
+    }
+
+    #[test]
+    fn test_has_role() {
+        let user = User::new_local(
+            "testuser".to_string(),
+            "test@example.com".to_string(),
+            "Password123!".to_string(),
+        )
+        .unwrap();
+
+        assert!(user.has_role(&Role::User));
+        assert!(!user.has_role(&Role::Admin));
+    }
+
+    #[test]
+    fn test_has_permission() {
+        let user = User::new_local(
+            "testuser".to_string(),
+            "test@example.com".to_string(),
+            "Password123!".to_string(),
+        )
+        .unwrap();
+
+        assert!(user.has_permission(&Permission::EventRead));
+        assert!(!user.has_permission(&Permission::UserManage));
+    }
+
+    #[test]
+    fn test_user_getters() {
+        let user = User::new_local(
+            "gettertest".to_string(),
+            "getter@example.com".to_string(),
+            "Password123!".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(user.username(), "gettertest");
+        assert_eq!(user.email(), "getter@example.com");
+        assert!(user.enabled());
+        assert_eq!(user.roles().len(), 1);
+    }
+
+    #[test]
+    fn test_hash_password() {
+        let password = "TestPassword123!";
+        let result = hash_password(password);
+
+        assert!(result.is_ok());
+        let hash = result.unwrap();
+        assert!(!hash.is_empty());
+        assert_ne!(hash, password);
+    }
+
+    #[test]
+    fn test_hash_password_different_each_time() {
+        let password = "TestPassword123!";
+        let hash1 = hash_password(password).unwrap();
+        let hash2 = hash_password(password).unwrap();
+
+        assert_ne!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_verify_password_with_valid_hash() {
+        let password = "TestPassword123!";
+        let hash = hash_password(password).unwrap();
+
+        let result = verify_password(password, &hash);
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+    }
+
+    #[test]
+    fn test_verify_password_with_wrong_password() {
+        let password = "CorrectPassword123!";
+        let hash = hash_password(password).unwrap();
+
+        let result = verify_password("WrongPassword123!", &hash);
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+    }
+
+    #[test]
+    fn test_verify_password_with_invalid_hash() {
+        let result = verify_password("anypassword", "invalid-hash");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_user_clone() {
+        let user1 = User::new_local(
+            "testuser".to_string(),
+            "test@example.com".to_string(),
+            "Password123!".to_string(),
+        )
+        .unwrap();
+
+        let user2 = user1.clone();
+
+        assert_eq!(user1.id(), user2.id());
+        assert_eq!(user1.username(), user2.username());
+        assert_eq!(user1.email(), user2.email());
+    }
+
+    #[test]
+    fn test_auth_provider_local() {
+        let user = User::new_local(
+            "testuser".to_string(),
+            "test@example.com".to_string(),
+            "Password123!".to_string(),
+        )
+        .unwrap();
+
+        match user.auth_provider {
+            AuthProvider::Local => {}
+            _ => panic!("Expected Local auth provider"),
+        }
+    }
+
+    #[test]
+    fn test_auth_provider_keycloak() {
+        let user = User::new_oidc(
+            "oidcuser".to_string(),
+            "oidc@example.com".to_string(),
+            "subject-123".to_string(),
+        );
+
+        match user.auth_provider {
+            AuthProvider::Keycloak { subject } => {
+                assert_eq!(subject, "subject-123");
+            }
+            _ => panic!("Expected Keycloak auth provider"),
+        }
+    }
+
+    #[test]
+    fn test_user_serialization() {
+        let user = User::new_local(
+            "serializeuser".to_string(),
+            "serialize@example.com".to_string(),
+            "Password123!".to_string(),
+        )
+        .unwrap();
+
+        let serialized = serde_json::to_string(&user);
+        assert!(serialized.is_ok());
+
+        let json_str = serialized.unwrap();
+        assert!(json_str.contains("serializeuser"));
+        assert!(json_str.contains("serialize@example.com"));
+        assert!(!json_str.contains("password_hash"));
+    }
+
+    #[test]
+    fn test_user_timestamps() {
+        let before = Utc::now();
+        let user = User::new_local(
+            "testuser".to_string(),
+            "test@example.com".to_string(),
+            "Password123!".to_string(),
+        )
+        .unwrap();
+        let after = Utc::now();
+
+        assert!(user.created_at() >= before);
+        assert!(user.created_at() <= after);
+        assert!(user.updated_at() >= before);
+        assert!(user.updated_at() <= after);
+    }
+
+    #[test]
+    fn test_user_default_enabled() {
+        let user = User::new_local(
+            "testuser".to_string(),
+            "test@example.com".to_string(),
+            "Password123!".to_string(),
+        )
+        .unwrap();
+
+        assert!(user.enabled());
+    }
+
+    #[test]
+    fn test_oidc_user_default_enabled() {
+        let user = User::new_oidc(
+            "oidcuser".to_string(),
+            "oidc@example.com".to_string(),
+            "subject-123".to_string(),
+        );
+
+        assert!(user.enabled());
+    }
+}

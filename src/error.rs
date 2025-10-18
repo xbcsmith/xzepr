@@ -290,4 +290,175 @@ mod tests {
 
         matches!(app_err, Error::Infrastructure(_));
     }
+
+    #[test]
+    fn test_auth_error_status_codes() {
+        assert_eq!(
+            Error::Auth(AuthError::TokenExpired).status_code(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            Error::Auth(AuthError::InvalidToken).status_code(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            Error::Auth(AuthError::MissingToken).status_code(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            Error::Auth(AuthError::UserNotFound).status_code(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            Error::Auth(AuthError::UserDisabled).status_code(),
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    #[test]
+    fn test_domain_error_status_codes() {
+        assert_eq!(
+            Error::Domain(DomainError::EventCreationFailed {
+                reason: "test".to_string()
+            })
+            .status_code(),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            Error::Domain(DomainError::InvalidEventPayload).status_code(),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            Error::Domain(DomainError::ReceiverNotFound).status_code(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            Error::Domain(DomainError::GroupNotFound).status_code(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            Error::Domain(DomainError::UserAlreadyExists).status_code(),
+            StatusCode::CONFLICT
+        );
+    }
+
+    #[test]
+    fn test_bad_request_status_code() {
+        assert_eq!(
+            Error::BadRequest {
+                message: "invalid input".to_string()
+            }
+            .status_code(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+
+    #[test]
+    fn test_error_messages() {
+        let error = Error::NotFound {
+            resource: "user".to_string(),
+        };
+        assert!(error.message().contains("user"));
+
+        let auth_error = Error::Auth(AuthError::InvalidCredentials);
+        assert!(auth_error.message().contains("credentials"));
+    }
+
+    #[test]
+    fn test_auth_error_display() {
+        let error = AuthError::InvalidCredentials;
+        assert_eq!(error.to_string(), "Invalid credentials");
+
+        let error = AuthError::TokenExpired;
+        assert_eq!(error.to_string(), "Token expired");
+
+        let error = AuthError::UserNotFound;
+        assert_eq!(error.to_string(), "User not found");
+    }
+
+    #[test]
+    fn test_authorization_error_display() {
+        let error = AuthorizationError::PermissionDenied;
+        assert_eq!(error.to_string(), "Permission denied");
+
+        let error = AuthorizationError::InsufficientPermissions {
+            action: "delete".to_string(),
+        };
+        assert!(error.to_string().contains("delete"));
+    }
+
+    #[test]
+    fn test_validation_error_display() {
+        let error = ValidationError::InvalidEmail;
+        assert_eq!(error.to_string(), "Invalid email format");
+
+        let error = ValidationError::MissingField {
+            field: "username".to_string(),
+        };
+        assert!(error.to_string().contains("username"));
+    }
+
+    #[test]
+    fn test_domain_error_display() {
+        let error = DomainError::ReceiverNotFound;
+        assert_eq!(error.to_string(), "Receiver not found");
+
+        let error = DomainError::ValidationError {
+            field: "name".to_string(),
+            message: "too short".to_string(),
+        };
+        assert!(error.to_string().contains("name"));
+        assert!(error.to_string().contains("too short"));
+    }
+
+    #[test]
+    fn test_infrastructure_error_display() {
+        let error = InfrastructureError::DatabaseConnectionFailed;
+        assert_eq!(error.to_string(), "Database connection failed");
+
+        let error = InfrastructureError::KafkaProducerError {
+            message: "connection lost".to_string(),
+        };
+        assert!(error.to_string().contains("connection lost"));
+    }
+
+    #[test]
+    fn test_repository_error_display() {
+        let error = RepositoryError::EntityNotFound {
+            entity: "Event".to_string(),
+        };
+        assert!(error.to_string().contains("Event"));
+
+        let error = RepositoryError::ConcurrencyConflict;
+        assert_eq!(error.to_string(), "Concurrency conflict");
+    }
+
+    #[test]
+    fn test_error_from_domain_error() {
+        let domain_err = DomainError::ReceiverNotFound;
+        let app_err: Error = domain_err.into();
+        matches!(app_err, Error::Domain(_));
+    }
+
+    #[test]
+    fn test_error_from_auth_error() {
+        let auth_err = AuthError::InvalidCredentials;
+        let app_err: Error = auth_err.into();
+        matches!(app_err, Error::Auth(_));
+    }
+
+    #[test]
+    fn test_error_from_validation_error() {
+        let val_err = ValidationError::InvalidEmail;
+        let app_err: Error = val_err.into();
+        matches!(app_err, Error::Validation(_));
+    }
+
+    #[test]
+    fn test_internal_error_status_code() {
+        let error = Error::Internal {
+            message: "Something went wrong".to_string(),
+        };
+        assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
 }

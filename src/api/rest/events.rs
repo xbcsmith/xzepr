@@ -8,17 +8,15 @@ use axum::{
 use tracing::{error, info, warn};
 
 use crate::api::rest::dtos::{
-    CreateEventRequest, CreateEventResponse, CreateEventReceiverRequest,
-    CreateEventReceiverResponse, CreateEventReceiverGroupRequest,
-    CreateEventReceiverGroupResponse, EventResponse, EventReceiverResponse,
-    EventReceiverGroupResponse, ErrorResponse, UpdateEventReceiverRequest,
-    UpdateEventReceiverGroupRequest, EventReceiverQueryParams, PaginatedResponse,
-    PaginationMeta,
+    CreateEventReceiverGroupRequest, CreateEventReceiverGroupResponse, CreateEventReceiverRequest,
+    CreateEventReceiverResponse, CreateEventRequest, CreateEventResponse, ErrorResponse,
+    EventReceiverGroupResponse, EventReceiverQueryParams, EventReceiverResponse, EventResponse,
+    PaginatedResponse, PaginationMeta, UpdateEventReceiverGroupRequest, UpdateEventReceiverRequest,
 };
-use crate::application::handlers::{
-    EventHandler, EventReceiverHandler, EventReceiverGroupHandler,
-};
-use crate::domain::value_objects::{EventId, EventReceiverId, EventReceiverGroupId};
+use crate::application::handlers::event_receiver_group_handler::UpdateEventReceiverGroupParams;
+use crate::application::handlers::{EventHandler, EventReceiverGroupHandler, EventReceiverHandler};
+use crate::domain::entities::event::CreateEventParams;
+use crate::domain::value_objects::{EventId, EventReceiverGroupId, EventReceiverId};
 
 /// Application state containing handlers
 #[derive(Clone)]
@@ -66,17 +64,17 @@ pub async fn create_event(
     // Create event
     match state
         .event_handler
-        .create_event(
-            request.name,
-            request.version,
-            request.release,
-            request.platform_id,
-            request.package,
-            request.description,
-            request.payload,
-            request.success,
+        .create_event(CreateEventParams {
+            name: request.name,
+            version: request.version,
+            release: request.release,
+            platform_id: request.platform_id,
+            package: request.package,
+            description: request.description,
+            payload: request.payload,
+            success: request.success,
             receiver_id,
-        )
+        })
         .await
     {
         Ok(event_id) => {
@@ -183,7 +181,10 @@ pub async fn create_event_receiver(
         .await
     {
         Ok(receiver_id) => {
-            info!("Event receiver created successfully with ID: {}", receiver_id);
+            info!(
+                "Event receiver created successfully with ID: {}",
+                receiver_id
+            );
             Ok(Json(CreateEventReceiverResponse {
                 data: receiver_id.to_string(),
             }))
@@ -225,7 +226,11 @@ pub async fn get_event_receiver(
     };
 
     // Get event receiver
-    match state.event_receiver_handler.get_event_receiver(receiver_id).await {
+    match state
+        .event_receiver_handler
+        .get_event_receiver(receiver_id)
+        .await
+    {
         Ok(Some(receiver)) => {
             info!("Event receiver found: {}", receiver_id);
             Ok(Json(EventReceiverResponse::from(receiver)))
@@ -283,10 +288,7 @@ pub async fn list_event_receivers(
             error!("Failed to count event receivers: {}", e);
             return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse::new(
-                    "count_failed".to_string(),
-                    e.message(),
-                )),
+                Json(ErrorResponse::new("count_failed".to_string(), e.message())),
             ));
         }
     };
@@ -315,10 +317,7 @@ pub async fn list_event_receivers(
             let status = e.status_code();
             Err((
                 status,
-                Json(ErrorResponse::new(
-                    "list_failed".to_string(),
-                    e.message(),
-                )),
+                Json(ErrorResponse::new("list_failed".to_string(), e.message())),
             ))
         }
     }
@@ -381,10 +380,7 @@ pub async fn update_event_receiver(
             let status = e.status_code();
             Err((
                 status,
-                Json(ErrorResponse::new(
-                    "update_failed".to_string(),
-                    e.message(),
-                )),
+                Json(ErrorResponse::new("update_failed".to_string(), e.message())),
             ))
         }
     }
@@ -413,7 +409,11 @@ pub async fn delete_event_receiver(
     };
 
     // Delete event receiver
-    match state.event_receiver_handler.delete_event_receiver(receiver_id).await {
+    match state
+        .event_receiver_handler
+        .delete_event_receiver(receiver_id)
+        .await
+    {
         Ok(()) => {
             info!("Event receiver deleted successfully: {}", receiver_id);
             Ok(StatusCode::NO_CONTENT)
@@ -423,10 +423,7 @@ pub async fn delete_event_receiver(
             let status = e.status_code();
             Err((
                 status,
-                Json(ErrorResponse::new(
-                    "delete_failed".to_string(),
-                    e.message(),
-                )),
+                Json(ErrorResponse::new("delete_failed".to_string(), e.message())),
             ))
         }
     }
@@ -481,7 +478,10 @@ pub async fn create_event_receiver_group(
         .await
     {
         Ok(group_id) => {
-            info!("Event receiver group created successfully with ID: {}", group_id);
+            info!(
+                "Event receiver group created successfully with ID: {}",
+                group_id
+            );
             Ok(Json(CreateEventReceiverGroupResponse {
                 data: group_id.to_string(),
             }))
@@ -523,7 +523,11 @@ pub async fn get_event_receiver_group(
     };
 
     // Get event receiver group
-    match state.event_receiver_group_handler.get_event_receiver_group(group_id).await {
+    match state
+        .event_receiver_group_handler
+        .get_event_receiver_group(group_id)
+        .await
+    {
         Ok(Some(group)) => {
             info!("Event receiver group found: {}", group_id);
             Ok(Json(EventReceiverGroupResponse::from(group)))
@@ -608,12 +612,14 @@ pub async fn update_event_receiver_group(
         .event_receiver_group_handler
         .update_event_receiver_group(
             group_id,
-            request.name,
-            request.group_type,
-            request.version,
-            request.description,
-            request.enabled,
-            receiver_ids,
+            UpdateEventReceiverGroupParams {
+                name: request.name,
+                group_type: request.group_type,
+                version: request.version,
+                description: request.description,
+                enabled: request.enabled,
+                event_receiver_ids: receiver_ids,
+            },
         )
         .await
     {
@@ -626,10 +632,7 @@ pub async fn update_event_receiver_group(
             let status = e.status_code();
             Err((
                 status,
-                Json(ErrorResponse::new(
-                    "update_failed".to_string(),
-                    e.message(),
-                )),
+                Json(ErrorResponse::new("update_failed".to_string(), e.message())),
             ))
         }
     }
@@ -658,7 +661,11 @@ pub async fn delete_event_receiver_group(
     };
 
     // Delete event receiver group
-    match state.event_receiver_group_handler.delete_event_receiver_group(group_id).await {
+    match state
+        .event_receiver_group_handler
+        .delete_event_receiver_group(group_id)
+        .await
+    {
         Ok(()) => {
             info!("Event receiver group deleted successfully: {}", group_id);
             Ok(StatusCode::NO_CONTENT)
@@ -668,10 +675,7 @@ pub async fn delete_event_receiver_group(
             let status = e.status_code();
             Err((
                 status,
-                Json(ErrorResponse::new(
-                    "delete_failed".to_string(),
-                    e.message(),
-                )),
+                Json(ErrorResponse::new("delete_failed".to_string(), e.message())),
             ))
         }
     }
@@ -690,7 +694,6 @@ pub async fn health_check() -> Result<Json<serde_json::Value>, (StatusCode, Json
 mod tests {
     use super::*;
     use axum::http::StatusCode;
-    use serde_json::json;
 
     #[test]
     fn test_invalid_id_parsing() {
@@ -702,10 +705,7 @@ mod tests {
 
     #[test]
     fn test_error_response_creation() {
-        let error = ErrorResponse::new(
-            "test_error".to_string(),
-            "Test error message".to_string(),
-        );
+        let error = ErrorResponse::new("test_error".to_string(), "Test error message".to_string());
         assert_eq!(error.error, "test_error");
         assert_eq!(error.message, "Test error message");
         assert!(error.field.is_none());

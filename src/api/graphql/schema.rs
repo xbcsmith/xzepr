@@ -4,9 +4,9 @@ use async_graphql::*;
 use std::sync::Arc;
 
 use crate::api::graphql::types::*;
-use crate::application::handlers::{EventReceiverHandler, EventReceiverGroupHandler};
-use crate::domain::repositories::event_receiver_repo::FindEventReceiverCriteria;
+use crate::application::handlers::{EventReceiverGroupHandler, EventReceiverHandler};
 use crate::domain::repositories::event_receiver_group_repo::FindEventReceiverGroupCriteria;
+use crate::domain::repositories::event_receiver_repo::FindEventReceiverCriteria;
 
 pub struct Query;
 
@@ -19,7 +19,11 @@ impl Query {
     }
 
     /// Get event receivers by ID
-    async fn event_receivers_by_id(&self, ctx: &Context<'_>, id: ID) -> Result<Vec<EventReceiverType>> {
+    async fn event_receivers_by_id(
+        &self,
+        ctx: &Context<'_>,
+        id: ID,
+    ) -> Result<Vec<EventReceiverType>> {
         let handler = ctx.data::<Arc<EventReceiverHandler>>()?;
         let receiver_id = parse_event_receiver_id(&id)?;
 
@@ -31,14 +35,21 @@ impl Query {
     }
 
     /// Get event receiver groups by ID
-    async fn event_receiver_groups_by_id(&self, ctx: &Context<'_>, id: ID) -> Result<Vec<EventReceiverGroupType>> {
+    async fn event_receiver_groups_by_id(
+        &self,
+        ctx: &Context<'_>,
+        id: ID,
+    ) -> Result<Vec<EventReceiverGroupType>> {
         let handler = ctx.data::<Arc<EventReceiverGroupHandler>>()?;
         let group_id = parse_event_receiver_group_id(&id)?;
 
         match handler.get_event_receiver_group(group_id).await {
             Ok(Some(group)) => Ok(vec![group.into()]),
             Ok(None) => Ok(vec![]),
-            Err(e) => Err(Error::new(format!("Failed to get event receiver group: {}", e))),
+            Err(e) => Err(Error::new(format!(
+                "Failed to get event receiver group: {}",
+                e
+            ))),
         }
     }
 
@@ -49,7 +60,11 @@ impl Query {
     }
 
     /// Find event receivers with criteria
-    async fn event_receivers(&self, ctx: &Context<'_>, event_receiver: FindEventReceiverInput) -> Result<Vec<EventReceiverType>> {
+    async fn event_receivers(
+        &self,
+        ctx: &Context<'_>,
+        event_receiver: FindEventReceiverInput,
+    ) -> Result<Vec<EventReceiverType>> {
         let handler = ctx.data::<Arc<EventReceiverHandler>>()?;
 
         let mut criteria = FindEventReceiverCriteria::new();
@@ -83,7 +98,11 @@ impl Query {
     }
 
     /// Find event receiver groups with criteria
-    async fn event_receiver_groups(&self, ctx: &Context<'_>, event_receiver_group: FindEventReceiverGroupInput) -> Result<Vec<EventReceiverGroupType>> {
+    async fn event_receiver_groups(
+        &self,
+        ctx: &Context<'_>,
+        event_receiver_group: FindEventReceiverGroupInput,
+    ) -> Result<Vec<EventReceiverGroupType>> {
         let handler = ctx.data::<Arc<EventReceiverGroupHandler>>()?;
 
         let mut criteria = FindEventReceiverGroupCriteria::new();
@@ -112,7 +131,10 @@ impl Query {
 
         match handler.find_by_criteria(criteria).await {
             Ok(groups) => Ok(groups.into_iter().map(|g| g.into()).collect()),
-            Err(e) => Err(Error::new(format!("Failed to find event receiver groups: {}", e))),
+            Err(e) => Err(Error::new(format!(
+                "Failed to find event receiver groups: {}",
+                e
+            ))),
         }
     }
 }
@@ -128,37 +150,57 @@ impl Mutation {
     }
 
     /// Create a new event receiver
-    async fn create_event_receiver(&self, ctx: &Context<'_>, event_receiver: CreateEventReceiverInput) -> Result<ID> {
+    async fn create_event_receiver(
+        &self,
+        ctx: &Context<'_>,
+        event_receiver: CreateEventReceiverInput,
+    ) -> Result<ID> {
         let handler = ctx.data::<Arc<EventReceiverHandler>>()?;
 
-        match handler.create_event_receiver(
-            event_receiver.name,
-            event_receiver.receiver_type,
-            event_receiver.version,
-            event_receiver.description,
-            event_receiver.schema.0,
-        ).await {
+        match handler
+            .create_event_receiver(
+                event_receiver.name,
+                event_receiver.receiver_type,
+                event_receiver.version,
+                event_receiver.description,
+                event_receiver.schema.0,
+            )
+            .await
+        {
             Ok(receiver_id) => Ok(ID(receiver_id.to_string())),
-            Err(e) => Err(Error::new(format!("Failed to create event receiver: {}", e))),
+            Err(e) => Err(Error::new(format!(
+                "Failed to create event receiver: {}",
+                e
+            ))),
         }
     }
 
     /// Create a new event receiver group
-    async fn create_event_receiver_group(&self, ctx: &Context<'_>, event_receiver_group: CreateEventReceiverGroupInput) -> Result<ID> {
+    async fn create_event_receiver_group(
+        &self,
+        ctx: &Context<'_>,
+        event_receiver_group: CreateEventReceiverGroupInput,
+    ) -> Result<ID> {
         let handler = ctx.data::<Arc<EventReceiverGroupHandler>>()?;
 
         let receiver_ids = parse_event_receiver_ids(&event_receiver_group.event_receiver_ids)?;
 
-        match handler.create_event_receiver_group(
-            event_receiver_group.name,
-            event_receiver_group.group_type,
-            event_receiver_group.version,
-            event_receiver_group.description,
-            event_receiver_group.enabled,
-            receiver_ids,
-        ).await {
+        match handler
+            .create_event_receiver_group(
+                event_receiver_group.name,
+                event_receiver_group.group_type,
+                event_receiver_group.version,
+                event_receiver_group.description,
+                event_receiver_group.enabled,
+                receiver_ids,
+            )
+            .await
+        {
             Ok(group_id) => Ok(ID(group_id.to_string())),
-            Err(e) => Err(Error::new(format!("Failed to create event receiver group: {}", e))),
+            Err(e) => Err(Error::new(format!(
+                "Failed to create event receiver group: {}",
+                e
+            ))),
         }
     }
 
@@ -169,7 +211,10 @@ impl Mutation {
 
         match handler.enable_event_receiver_group(group_id).await {
             Ok(enabled_group_id) => Ok(ID(enabled_group_id.to_string())),
-            Err(e) => Err(Error::new(format!("Failed to enable event receiver group: {}", e))),
+            Err(e) => Err(Error::new(format!(
+                "Failed to enable event receiver group: {}",
+                e
+            ))),
         }
     }
 
@@ -180,7 +225,10 @@ impl Mutation {
 
         match handler.disable_event_receiver_group(group_id).await {
             Ok(disabled_group_id) => Ok(ID(disabled_group_id.to_string())),
-            Err(e) => Err(Error::new(format!("Failed to disable event receiver group: {}", e))),
+            Err(e) => Err(Error::new(format!(
+                "Failed to disable event receiver group: {}",
+                e
+            ))),
         }
     }
 }

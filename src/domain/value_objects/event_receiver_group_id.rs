@@ -2,36 +2,41 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use uuid::Uuid;
+use ulid::Ulid;
 
 /// Value object representing a unique identifier for an event receiver group
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct EventReceiverGroupId(Uuid);
+pub struct EventReceiverGroupId(Ulid);
 
 impl EventReceiverGroupId {
-    /// Creates a new event receiver group ID with a random UUID v7
+    /// Creates a new event receiver group ID with a new ULID
     pub fn new() -> Self {
-        Self(Uuid::now_v7())
+        Self(Ulid::new())
     }
 
-    /// Creates an event receiver group ID from an existing UUID
-    pub fn from_uuid(uuid: Uuid) -> Self {
-        Self(uuid)
+    /// Creates an event receiver group ID from an existing ULID
+    pub fn from_ulid(ulid: Ulid) -> Self {
+        Self(ulid)
     }
 
     /// Parses an event receiver group ID from a string representation
-    pub fn parse(s: &str) -> Result<Self, uuid::Error> {
-        Ok(Self(Uuid::parse_str(s)?))
+    pub fn parse(s: &str) -> Result<Self, ulid::DecodeError> {
+        Ok(Self(Ulid::from_string(s)?))
     }
 
-    /// Returns the inner UUID
-    pub fn as_uuid(&self) -> Uuid {
+    /// Returns the inner ULID
+    pub fn as_ulid(&self) -> Ulid {
         self.0
     }
 
     /// Returns the string representation of the event receiver group ID
     pub fn as_str(&self) -> String {
         self.0.to_string()
+    }
+
+    /// Returns the timestamp component of the ULID in milliseconds since Unix epoch
+    pub fn timestamp_ms(&self) -> u64 {
+        self.0.timestamp_ms()
     }
 }
 
@@ -47,23 +52,46 @@ impl fmt::Display for EventReceiverGroupId {
     }
 }
 
-impl From<Uuid> for EventReceiverGroupId {
-    fn from(uuid: Uuid) -> Self {
-        Self(uuid)
+impl From<Ulid> for EventReceiverGroupId {
+    fn from(ulid: Ulid) -> Self {
+        Self(ulid)
     }
 }
 
-impl From<EventReceiverGroupId> for Uuid {
+impl From<EventReceiverGroupId> for Ulid {
     fn from(id: EventReceiverGroupId) -> Self {
         id.0
     }
 }
 
 impl std::str::FromStr for EventReceiverGroupId {
-    type Err = uuid::Error;
+    type Err = ulid::DecodeError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::parse(s)
+    }
+}
+
+// SQLx support for EventReceiverGroupId
+impl sqlx::Type<sqlx::Postgres> for EventReceiverGroupId {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        <String as sqlx::Type<sqlx::Postgres>>::type_info()
+    }
+}
+
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for EventReceiverGroupId {
+    fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
+        let s = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
+        Ok(EventReceiverGroupId::parse(&s)?)
+    }
+}
+
+impl<'q> sqlx::Encode<'q, sqlx::Postgres> for EventReceiverGroupId {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync>> {
+        <String as sqlx::Encode<sqlx::Postgres>>::encode_by_ref(&self.to_string(), buf)
     }
 }
 
@@ -81,28 +109,28 @@ mod tests {
     }
 
     #[test]
-    fn test_from_uuid() {
-        let uuid = Uuid::now_v7();
-        let id = EventReceiverGroupId::from_uuid(uuid);
+    fn test_from_ulid() {
+        let ulid = Ulid::new();
+        let id = EventReceiverGroupId::from_ulid(ulid);
 
-        assert_eq!(id.as_uuid(), uuid);
+        assert_eq!(id.as_ulid(), ulid);
     }
 
     #[test]
     fn test_parse() {
-        let uuid = Uuid::now_v7();
-        let uuid_str = uuid.to_string();
-        let id = EventReceiverGroupId::parse(&uuid_str).unwrap();
+        let ulid = Ulid::new();
+        let ulid_str = ulid.to_string();
+        let id = EventReceiverGroupId::parse(&ulid_str).unwrap();
 
-        assert_eq!(id.as_uuid(), uuid);
+        assert_eq!(id.as_ulid(), ulid);
     }
 
     #[test]
     fn test_display() {
-        let uuid = Uuid::now_v7();
-        let id = EventReceiverGroupId::from_uuid(uuid);
+        let ulid = Ulid::new();
+        let id = EventReceiverGroupId::from_ulid(ulid);
 
-        assert_eq!(id.to_string(), uuid.to_string());
+        assert_eq!(id.to_string(), ulid.to_string());
     }
 
     #[test]
@@ -112,5 +140,40 @@ mod tests {
         let deserialized: EventReceiverGroupId = serde_json::from_str(&json).unwrap();
 
         assert_eq!(id, deserialized);
+    }
+
+    #[test]
+    fn test_parse_invalid_ulid() {
+        let result = EventReceiverGroupId::parse("invalid-ulid");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_from_str() {
+        let ulid = Ulid::new();
+        let ulid_str = ulid.to_string();
+        let id: EventReceiverGroupId = ulid_str.parse().unwrap();
+
+        assert_eq!(id.as_ulid(), ulid);
+    }
+
+    #[test]
+    fn test_timestamp_ms() {
+        let id = EventReceiverGroupId::new();
+        let timestamp = id.timestamp_ms();
+
+        // Timestamp should be reasonable (after 2020 and before far future)
+        assert!(timestamp > 1_577_836_800_000); // Jan 1, 2020
+        assert!(timestamp < 2_000_000_000_000); // Some date far in future
+    }
+
+    #[test]
+    fn test_ordering_by_time() {
+        let id1 = EventReceiverGroupId::new();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let id2 = EventReceiverGroupId::new();
+
+        // Later IDs should have higher timestamps
+        assert!(id2.timestamp_ms() >= id1.timestamp_ms());
     }
 }

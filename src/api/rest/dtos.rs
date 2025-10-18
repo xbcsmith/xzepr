@@ -5,9 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::domain::entities::{
-    event::Event,
-    event_receiver::EventReceiver,
-    event_receiver_group::EventReceiverGroup,
+    event::Event, event_receiver::EventReceiver, event_receiver_group::EventReceiverGroup,
 };
 use crate::domain::value_objects::EventReceiverId;
 use crate::error::DomainError;
@@ -135,11 +133,9 @@ impl CreateEventRequest {
 
     /// Converts to event receiver ID
     pub fn parse_event_receiver_id(&self) -> Result<EventReceiverId, DomainError> {
-        EventReceiverId::parse(&self.event_receiver_id).map_err(|_| {
-            DomainError::ValidationError {
-                field: "event_receiver_id".to_string(),
-                message: "Invalid event receiver ID format".to_string(),
-            }
+        EventReceiverId::parse(&self.event_receiver_id).map_err(|_| DomainError::ValidationError {
+            field: "event_receiver_id".to_string(),
+            message: "Invalid event receiver ID format".to_string(),
         })
     }
 }
@@ -201,11 +197,9 @@ impl CreateEventReceiverGroupRequest {
         self.event_receiver_ids
             .iter()
             .map(|id_str| {
-                EventReceiverId::parse(id_str).map_err(|_| {
-                    DomainError::ValidationError {
-                        field: "event_receiver_ids".to_string(),
-                        message: format!("Invalid event receiver ID format: {}", id_str),
-                    }
+                EventReceiverId::parse(id_str).map_err(|_| DomainError::ValidationError {
+                    field: "event_receiver_ids".to_string(),
+                    message: format!("Invalid event receiver ID format: {}", id_str),
                 })
             })
             .collect()
@@ -466,11 +460,9 @@ impl UpdateEventReceiverGroupRequest {
             let parsed_ids: Result<Vec<_>, _> = ids
                 .iter()
                 .map(|id_str| {
-                    EventReceiverId::parse(id_str).map_err(|_| {
-                        DomainError::ValidationError {
-                            field: "event_receiver_ids".to_string(),
-                            message: format!("Invalid event receiver ID format: {}", id_str),
-                        }
+                    EventReceiverId::parse(id_str).map_err(|_| DomainError::ValidationError {
+                        field: "event_receiver_ids".to_string(),
+                        message: format!("Invalid event receiver ID format: {}", id_str),
                     })
                 })
                 .collect();

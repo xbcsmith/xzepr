@@ -3,5 +3,5 @@
 pub mod schema;
 pub mod types;
 
-pub use schema::{create_schema, Schema, Query, Mutation};
+pub use schema::{create_schema, Mutation, Query, Schema};
 pub use types::*;

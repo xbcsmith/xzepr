@@ -2,4 +2,4 @@
 
 pub mod handlers;
 
-pub use handlers::{EventReceiverHandler, EventReceiverGroupHandler};
+pub use handlers::{EventReceiverGroupHandler, EventReceiverHandler};

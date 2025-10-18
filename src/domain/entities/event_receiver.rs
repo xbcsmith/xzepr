@@ -7,6 +7,18 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sha2::{Digest, Sha256};
 
+/// Parameters for creating an event receiver from existing data
+#[derive(Debug, Clone)]
+pub struct EventReceiverData {
+    pub id: EventReceiverId,
+    pub name: String,
+    pub receiver_type: String,
+    pub version: String,
+    pub description: String,
+    pub schema: JsonValue,
+    pub fingerprint: String,
+    pub created_at: DateTime<Utc>,
+}
 
 /// Event receiver entity representing a destination for events
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -51,31 +63,22 @@ impl EventReceiver {
     }
 
     /// Creates an event receiver from existing data (e.g., from database)
-    pub fn from_existing(
-        id: EventReceiverId,
-        name: String,
-        receiver_type: String,
-        version: String,
-        description: String,
-        schema: JsonValue,
-        fingerprint: String,
-        created_at: DateTime<Utc>,
-    ) -> Result<Self, DomainError> {
-        Self::validate_name(&name)?;
-        Self::validate_type(&receiver_type)?;
-        Self::validate_version(&version)?;
-        Self::validate_description(&description)?;
-        Self::validate_schema(&schema)?;
+    pub fn from_existing(data: EventReceiverData) -> Result<Self, DomainError> {
+        Self::validate_name(&data.name)?;
+        Self::validate_type(&data.receiver_type)?;
+        Self::validate_version(&data.version)?;
+        Self::validate_description(&data.description)?;
+        Self::validate_schema(&data.schema)?;
 
         Ok(Self {
-            id,
-            name,
-            receiver_type,
-            version,
-            description,
-            schema,
-            fingerprint,
-            created_at,
+            id: data.id,
+            name: data.name,
+            receiver_type: data.receiver_type,
+            version: data.version,
+            description: data.description,
+            schema: data.schema,
+            fingerprint: data.fingerprint,
+            created_at: data.created_at,
         })
     }
 
@@ -366,7 +369,8 @@ mod tests {
             "1.0.0".to_string(),
             "A test event receiver".to_string(),
             schema.clone(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let receiver2 = EventReceiver::new(
             "Test Receiver".to_string(),
@@ -374,7 +378,8 @@ mod tests {
             "1.0.0".to_string(),
             "Different description".to_string(), // Description doesn't affect fingerprint
             schema,
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(receiver1.fingerprint(), receiver2.fingerprint());
     }
@@ -388,30 +393,29 @@ mod tests {
             "1.0.0".to_string(),
             "A test event receiver".to_string(),
             schema,
-        ).unwrap();
+        )
+        .unwrap();
 
         let original_fingerprint = receiver.fingerprint().to_string();
 
         // Update description (should not change fingerprint)
-        receiver.update(
-            None,
-            None,
-            None,
-            Some("Updated description".to_string()),
-            None,
-        ).unwrap();
+        receiver
+            .update(
+                None,
+                None,
+                None,
+                Some("Updated description".to_string()),
+                None,
+            )
+            .unwrap();
 
         assert_eq!(receiver.description(), "Updated description");
         assert_eq!(receiver.fingerprint(), original_fingerprint);
 
         // Update name (should change fingerprint)
-        receiver.update(
-            Some("Updated Receiver".to_string()),
-            None,
-            None,
-            None,
-            None,
-        ).unwrap();
+        receiver
+            .update(Some("Updated Receiver".to_string()), None, None, None, None)
+            .unwrap();
 
         assert_eq!(receiver.name(), "Updated Receiver");
         assert_ne!(receiver.fingerprint(), original_fingerprint);
@@ -426,7 +430,8 @@ mod tests {
             "1.0.0".to_string(),
             "A test event receiver".to_string(),
             schema,
-        ).unwrap();
+        )
+        .unwrap();
 
         let valid_payload = json!({
             "message": "Hello, world!",

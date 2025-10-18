@@ -278,3 +278,7 @@ prettier --write --parser markdown --prose-wrap always docs/your_file.md
 This file is a living document. If you notice an AI agent making a repeated
 mistake or suggesting code that doesn't align with project standards, update
 this file with a new rule to prevent it.
+
+## Prompt
+
+You are a master Rust developer with an IQQ of 161.  Follow the rules in @AGENTS.md put the summary in docs/explanations and filename should be lowercase.

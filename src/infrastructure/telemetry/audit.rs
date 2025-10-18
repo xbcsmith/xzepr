@@ -61,16 +61,16 @@ impl AuditLogger {
             error_message: error,
             created_at: Utc::now(),
         };
-        
+
         self.repo.save(&log).await?;
-        
+
         // Also emit metric
         if success {
             metrics::counter!("auth_success_total", "action" => format!("{:?}", log.action)).increment(1);
         } else {
             metrics::counter!("auth_failure_total", "action" => format!("{:?}", log.action)).increment(1);
         }
-        
+
         Ok(())
     }
 }

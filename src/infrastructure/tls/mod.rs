@@ -27,11 +27,11 @@ impl TlsConfig {
         let key_file = File::open(&self.key_path)?;
         let mut key_reader = BufReader::new(key_file);
         let mut keys = pkcs8_private_keys(&mut key_reader)?;
-        
+
         if keys.is_empty() {
             return Err(TlsError::NoPrivateKey);
         }
-        
+
         let key = PrivateKey(keys.remove(0));
 
         // Configure TLS 1.3 only
@@ -57,7 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "certs/server.crt".to_string(),
         "certs/server.key".to_string(),
     );
-    
+
     let rustls_config = RustlsConfig::from_config(
         Arc::new(tls_config.load_server_config()?)
     );
@@ -68,7 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Start HTTPS server
     let addr = SocketAddr::from(([0, 0, 0, 0], 8443));
     tracing::info!("Starting HTTPS server on {}", addr);
-    
+
     axum_server::bind_rustls(addr, rustls_config)
         .serve(app.into_make_service())
         .await?;

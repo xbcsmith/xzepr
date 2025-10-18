@@ -53,7 +53,7 @@ validator = { version = "0.18", features = ["derive"] }
 
 # IDs
 uuid = { version = "1.10", features = ["v7", "serde"] }
-ulid = "1.1"
+ulid = { version = "1.1", features = ["serde"] }
 
 # Observability
 tracing = "0.1"

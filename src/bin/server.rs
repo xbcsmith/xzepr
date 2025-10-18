@@ -9,7 +9,7 @@ use tokio::signal;
 use tracing::info;
 
 use xzepr::api::rest::{build_router, AppState};
-use xzepr::application::handlers::{EventHandler, EventReceiverHandler, EventReceiverGroupHandler};
+use xzepr::application::handlers::{EventHandler, EventReceiverGroupHandler, EventReceiverHandler};
 
 #[tokio::main]
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
@@ -101,23 +101,31 @@ async fn shutdown_signal() {
 // Mock implementations for demonstration purposes
 // In a real application, these would be database-backed repositories
 
-use std::collections::HashMap;
-use std::sync::Mutex;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use std::collections::HashMap;
+use std::sync::Mutex;
 
-use xzepr::domain::entities::{event::Event, event_receiver::EventReceiver, event_receiver_group::EventReceiverGroup};
-use xzepr::domain::repositories::{
-    event_repo::{EventRepository, FindEventCriteria},
-    event_receiver_repo::{EventReceiverRepository, FindEventReceiverCriteria},
-    event_receiver_group_repo::{EventReceiverGroupRepository, FindEventReceiverGroupCriteria},
+use xzepr::domain::entities::{
+    event::Event, event_receiver::EventReceiver, event_receiver_group::EventReceiverGroup,
 };
-use xzepr::domain::value_objects::{EventId, EventReceiverId, EventReceiverGroupId};
+use xzepr::domain::repositories::{
+    event_receiver_group_repo::{EventReceiverGroupRepository, FindEventReceiverGroupCriteria},
+    event_receiver_repo::{EventReceiverRepository, FindEventReceiverCriteria},
+    event_repo::{EventRepository, FindEventCriteria},
+};
+use xzepr::domain::value_objects::{EventId, EventReceiverGroupId, EventReceiverId};
 use xzepr::error::Result;
 
 /// Mock event repository that stores events in memory
 pub struct MockEventRepository {
     events: Arc<Mutex<HashMap<EventId, Event>>>,
+}
+
+impl Default for MockEventRepository {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MockEventRepository {
@@ -189,12 +197,7 @@ impl EventRepository for MockEventRepository {
 
     async fn list(&self, limit: usize, offset: usize) -> Result<Vec<Event>> {
         let events = self.events.lock().unwrap();
-        Ok(events
-            .values()
-            .skip(offset)
-            .take(limit)
-            .cloned()
-            .collect())
+        Ok(events.values().skip(offset).take(limit).cloned().collect())
     }
 
     async fn count(&self) -> Result<usize> {
@@ -225,7 +228,10 @@ impl EventRepository for MockEventRepository {
         Ok(())
     }
 
-    async fn find_latest_by_receiver_id(&self, receiver_id: EventReceiverId) -> Result<Option<Event>> {
+    async fn find_latest_by_receiver_id(
+        &self,
+        receiver_id: EventReceiverId,
+    ) -> Result<Option<Event>> {
         let events = self.events.lock().unwrap();
         Ok(events
             .values()
@@ -234,7 +240,10 @@ impl EventRepository for MockEventRepository {
             .cloned())
     }
 
-    async fn find_latest_successful_by_receiver_id(&self, receiver_id: EventReceiverId) -> Result<Option<Event>> {
+    async fn find_latest_successful_by_receiver_id(
+        &self,
+        receiver_id: EventReceiverId,
+    ) -> Result<Option<Event>> {
         let events = self.events.lock().unwrap();
         Ok(events
             .values()
@@ -243,7 +252,11 @@ impl EventRepository for MockEventRepository {
             .cloned())
     }
 
-    async fn find_by_time_range(&self, start: DateTime<Utc>, end: DateTime<Utc>) -> Result<Vec<Event>> {
+    async fn find_by_time_range(
+        &self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> Result<Vec<Event>> {
         let events = self.events.lock().unwrap();
         Ok(events
             .values()
@@ -265,6 +278,12 @@ pub struct MockEventReceiverRepository {
     name_type_index: Arc<Mutex<HashMap<(String, String), EventReceiverId>>>,
 }
 
+impl Default for MockEventReceiverRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockEventReceiverRepository {
     pub fn new() -> Self {
         Self {
@@ -282,11 +301,18 @@ impl EventReceiverRepository for MockEventReceiverRepository {
 
         receivers.insert(event_receiver.id(), event_receiver.clone());
         index.insert(
-            (event_receiver.name().to_string(), event_receiver.receiver_type().to_string()),
+            (
+                event_receiver.name().to_string(),
+                event_receiver.receiver_type().to_string(),
+            ),
             event_receiver.id(),
         );
 
-        info!("Saved event receiver: {} ({})", event_receiver.name(), event_receiver.id());
+        info!(
+            "Saved event receiver: {} ({})",
+            event_receiver.name(),
+            event_receiver.id()
+        );
         Ok(())
     }
 
@@ -313,7 +339,11 @@ impl EventReceiverRepository for MockEventReceiverRepository {
             .collect())
     }
 
-    async fn find_by_type_and_version(&self, receiver_type: &str, version: &str) -> Result<Vec<EventReceiver>> {
+    async fn find_by_type_and_version(
+        &self,
+        receiver_type: &str,
+        version: &str,
+    ) -> Result<Vec<EventReceiver>> {
         let receivers = self.receivers.lock().unwrap();
         Ok(receivers
             .values()
@@ -354,7 +384,10 @@ impl EventReceiverRepository for MockEventReceiverRepository {
         let mut index = self.name_type_index.lock().unwrap();
 
         if let Some(receiver) = receivers.remove(&id) {
-            index.remove(&(receiver.name().to_string(), receiver.receiver_type().to_string()));
+            index.remove(&(
+                receiver.name().to_string(),
+                receiver.receiver_type().to_string(),
+            ));
             info!("Deleted event receiver: {} ({})", receiver.name(), id);
         }
         Ok(())
@@ -365,7 +398,10 @@ impl EventReceiverRepository for MockEventReceiverRepository {
         Ok(index.contains_key(&(name.to_string(), receiver_type.to_string())))
     }
 
-    async fn find_by_criteria(&self, _criteria: FindEventReceiverCriteria) -> Result<Vec<EventReceiver>> {
+    async fn find_by_criteria(
+        &self,
+        _criteria: FindEventReceiverCriteria,
+    ) -> Result<Vec<EventReceiver>> {
         // Simplified implementation
         let receivers = self.receivers.lock().unwrap();
         Ok(receivers.values().cloned().collect())
@@ -376,6 +412,12 @@ impl EventReceiverRepository for MockEventReceiverRepository {
 pub struct MockEventReceiverGroupRepository {
     groups: Arc<Mutex<HashMap<EventReceiverGroupId, EventReceiverGroup>>>,
     name_type_index: Arc<Mutex<HashMap<(String, String), EventReceiverGroupId>>>,
+}
+
+impl Default for MockEventReceiverGroupRepository {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MockEventReceiverGroupRepository {
@@ -399,7 +441,11 @@ impl EventReceiverGroupRepository for MockEventReceiverGroupRepository {
             group.id(),
         );
 
-        info!("Saved event receiver group: {} ({})", group.name(), group.id());
+        info!(
+            "Saved event receiver group: {} ({})",
+            group.name(),
+            group.id()
+        );
         Ok(())
     }
 
@@ -425,7 +471,11 @@ impl EventReceiverGroupRepository for MockEventReceiverGroupRepository {
         Ok(vec![])
     }
 
-    async fn find_by_type_and_version(&self, _group_type: &str, _version: &str) -> Result<Vec<EventReceiverGroup>> {
+    async fn find_by_type_and_version(
+        &self,
+        _group_type: &str,
+        _version: &str,
+    ) -> Result<Vec<EventReceiverGroup>> {
         Ok(vec![])
     }
 
@@ -437,18 +487,16 @@ impl EventReceiverGroupRepository for MockEventReceiverGroupRepository {
         Ok(vec![])
     }
 
-    async fn find_by_event_receiver_id(&self, _receiver_id: EventReceiverId) -> Result<Vec<EventReceiverGroup>> {
+    async fn find_by_event_receiver_id(
+        &self,
+        _receiver_id: EventReceiverId,
+    ) -> Result<Vec<EventReceiverGroup>> {
         Ok(vec![])
     }
 
     async fn list(&self, limit: usize, offset: usize) -> Result<Vec<EventReceiverGroup>> {
         let groups = self.groups.lock().unwrap();
-        Ok(groups
-            .values()
-            .skip(offset)
-            .take(limit)
-            .cloned()
-            .collect())
+        Ok(groups.values().skip(offset).take(limit).cloned().collect())
     }
 
     async fn count(&self) -> Result<usize> {
@@ -483,19 +531,33 @@ impl EventReceiverGroupRepository for MockEventReceiverGroupRepository {
         Ok(())
     }
 
-    async fn find_by_criteria(&self, _criteria: FindEventReceiverGroupCriteria) -> Result<Vec<EventReceiverGroup>> {
+    async fn find_by_criteria(
+        &self,
+        _criteria: FindEventReceiverGroupCriteria,
+    ) -> Result<Vec<EventReceiverGroup>> {
         Ok(vec![])
     }
 
-    async fn add_event_receiver_to_group(&self, _group_id: EventReceiverGroupId, _receiver_id: EventReceiverId) -> Result<()> {
+    async fn add_event_receiver_to_group(
+        &self,
+        _group_id: EventReceiverGroupId,
+        _receiver_id: EventReceiverId,
+    ) -> Result<()> {
         Ok(())
     }
 
-    async fn remove_event_receiver_from_group(&self, _group_id: EventReceiverGroupId, _receiver_id: EventReceiverId) -> Result<()> {
+    async fn remove_event_receiver_from_group(
+        &self,
+        _group_id: EventReceiverGroupId,
+        _receiver_id: EventReceiverId,
+    ) -> Result<()> {
         Ok(())
     }
 
-    async fn get_group_event_receivers(&self, _group_id: EventReceiverGroupId) -> Result<Vec<EventReceiverId>> {
+    async fn get_group_event_receivers(
+        &self,
+        _group_id: EventReceiverGroupId,
+    ) -> Result<Vec<EventReceiverId>> {
         Ok(vec![])
     }
 }

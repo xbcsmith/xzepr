@@ -6,7 +6,7 @@ pub mod routes;
 
 pub use dtos::*;
 pub use events::AppState;
-pub use routes::{build_router, build_protected_router};
+pub use routes::{build_protected_router, build_router};
 
 /// Re-export common types for convenience
 pub use axum::{

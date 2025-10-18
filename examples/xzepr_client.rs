@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::error::Error;
 
-
 /// XZepr API Client
 #[derive(Parser)]
 #[command(name = "xzepr-client")]
@@ -311,8 +310,8 @@ impl XzeprClient {
         if status.is_success() {
             Ok(serde_json::from_str(&body)?)
         } else {
-            let error: ErrorResponse = serde_json::from_str(&body)
-                .unwrap_or_else(|_| ErrorResponse {
+            let error: ErrorResponse =
+                serde_json::from_str(&body).unwrap_or_else(|_| ErrorResponse {
                     error: "unknown_error".to_string(),
                     message: body,
                     field: None,
@@ -322,7 +321,10 @@ impl XzeprClient {
     }
 
     async fn health_check(&self) -> Result<Value, Box<dyn Error>> {
-        let response = self.build_request(reqwest::Method::GET, "/health").send().await?;
+        let response = self
+            .build_request(reqwest::Method::GET, "/health")
+            .send()
+            .await?;
         self.handle_response(response).await
     }
 
@@ -477,7 +479,10 @@ impl XzeprClient {
         Ok(result.data)
     }
 
-    async fn get_event_receiver_group(&self, id: &str) -> Result<EventReceiverGroupResponse, Box<dyn Error>> {
+    async fn get_event_receiver_group(
+        &self,
+        id: &str,
+    ) -> Result<EventReceiverGroupResponse, Box<dyn Error>> {
         let response = self
             .build_request(reqwest::Method::GET, &format!("/api/v1/groups/{}", id))
             .send()
@@ -566,7 +571,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     .map(|s| s.trim().to_string())
                     .collect();
                 let id = client
-                    .create_event_receiver_group(&name, &group_type, &version, &description, enabled, ids)
+                    .create_event_receiver_group(
+                        &name,
+                        &group_type,
+                        &version,
+                        &description,
+                        enabled,
+                        ids,
+                    )
                     .await?;
                 println!("Created event receiver group with ID: {}", id);
             }
@@ -579,7 +591,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
             receivers,
             events_per_receiver,
         } => {
-            println!("Generating {} receivers with {} events each...", receivers, events_per_receiver);
+            println!(
+                "Generating {} receivers with {} events each...",
+                receivers, events_per_receiver
+            );
 
             let mut receiver_ids = Vec::new();
 

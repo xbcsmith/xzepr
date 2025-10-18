@@ -20,10 +20,7 @@ use tower_http::{
 };
 use tracing::{error, info, Level};
 use xzepr::{
-    auth::api_key::UserRepository,
-    PostgresApiKeyRepository,
-    PostgresUserRepository,
-    Settings
+    auth::api_key::UserRepository, PostgresApiKeyRepository, PostgresUserRepository, Settings,
 };
 
 /// Application state shared across handlers
@@ -269,8 +266,6 @@ struct LoginRequest {
     username: String,
     password: String,
 }
-
-
 
 #[derive(Debug, Serialize)]
 struct UserInfo {

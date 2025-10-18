@@ -1,7 +1,7 @@
 // src/domain/repositories/event_receiver_group_repo.rs
 
 use crate::domain::entities::event_receiver_group::EventReceiverGroup;
-use crate::domain::value_objects::{EventReceiverId, EventReceiverGroupId};
+use crate::domain::value_objects::{EventReceiverGroupId, EventReceiverId};
 use crate::error::Result;
 use async_trait::async_trait;
 
@@ -34,7 +34,10 @@ pub trait EventReceiverGroupRepository: Send + Sync {
     async fn find_disabled(&self) -> Result<Vec<EventReceiverGroup>>;
 
     /// Finds groups that contain a specific event receiver
-    async fn find_by_event_receiver_id(&self, receiver_id: EventReceiverId) -> Result<Vec<EventReceiverGroup>>;
+    async fn find_by_event_receiver_id(
+        &self,
+        receiver_id: EventReceiverId,
+    ) -> Result<Vec<EventReceiverGroup>>;
 
     /// Lists all event receiver groups with pagination
     async fn list(&self, limit: usize, offset: usize) -> Result<Vec<EventReceiverGroup>>;
@@ -64,16 +67,30 @@ pub trait EventReceiverGroupRepository: Send + Sync {
     async fn exists_by_name_and_type(&self, name: &str, group_type: &str) -> Result<bool>;
 
     /// Finds event receiver groups that match multiple criteria
-    async fn find_by_criteria(&self, criteria: FindEventReceiverGroupCriteria) -> Result<Vec<EventReceiverGroup>>;
+    async fn find_by_criteria(
+        &self,
+        criteria: FindEventReceiverGroupCriteria,
+    ) -> Result<Vec<EventReceiverGroup>>;
 
     /// Adds an event receiver to a group
-    async fn add_event_receiver_to_group(&self, group_id: EventReceiverGroupId, receiver_id: EventReceiverId) -> Result<()>;
+    async fn add_event_receiver_to_group(
+        &self,
+        group_id: EventReceiverGroupId,
+        receiver_id: EventReceiverId,
+    ) -> Result<()>;
 
     /// Removes an event receiver from a group
-    async fn remove_event_receiver_from_group(&self, group_id: EventReceiverGroupId, receiver_id: EventReceiverId) -> Result<()>;
+    async fn remove_event_receiver_from_group(
+        &self,
+        group_id: EventReceiverGroupId,
+        receiver_id: EventReceiverId,
+    ) -> Result<()>;
 
     /// Gets all event receiver IDs for a specific group
-    async fn get_group_event_receivers(&self, group_id: EventReceiverGroupId) -> Result<Vec<EventReceiverId>>;
+    async fn get_group_event_receivers(
+        &self,
+        group_id: EventReceiverGroupId,
+    ) -> Result<Vec<EventReceiverId>>;
 }
 
 /// Criteria for finding event receiver groups

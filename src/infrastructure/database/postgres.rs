@@ -29,7 +29,7 @@ impl UserRepository for PostgresUserRepository {
         let row = sqlx::query(
             "SELECT id, username, email, password_hash, auth_provider, auth_provider_subject, enabled, created_at, updated_at FROM users WHERE id = $1"
         )
-        .bind(id.as_uuid())
+        .bind(id.as_ulid().to_string())
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| {
@@ -58,7 +58,8 @@ impl UserRepository for PostgresUserRepository {
         })?;
 
         if let Some(row) = row {
-            let user_id = UserId::from_uuid(row.get("id"));
+            let user_id = UserId::parse(&row.get::<String, _>("id"))
+                .map_err(|_| AuthError::InvalidCredentials)?;
             let roles = self.get_user_roles(&user_id).await?;
             Ok(Some(self.row_to_user(row, roles)?))
         } else {
@@ -92,7 +93,7 @@ impl UserRepository for PostgresUserRepository {
                 updated_at = EXCLUDED.updated_at
             "#
         )
-        .bind(user.id().as_uuid())
+        .bind(user.id().as_ulid().to_string())
         .bind(user.username())
         .bind(user.email())
         .bind(&user.password_hash)
@@ -110,7 +111,7 @@ impl UserRepository for PostgresUserRepository {
 
         // Update roles
         sqlx::query("DELETE FROM user_roles WHERE user_id = $1")
-            .bind(user.id().as_uuid())
+            .bind(user.id().as_ulid().to_string())
             .execute(&self.pool)
             .await
             .map_err(|e| {
@@ -120,7 +121,7 @@ impl UserRepository for PostgresUserRepository {
 
         for role in user.roles() {
             sqlx::query("INSERT INTO user_roles (user_id, role) VALUES ($1, $2)")
-                .bind(user.id().as_uuid())
+                .bind(user.id().as_ulid().to_string())
                 .bind(role.to_string())
                 .execute(&self.pool)
                 .await
@@ -146,7 +147,8 @@ impl UserRepository for PostgresUserRepository {
 
         let mut users = Vec::new();
         for row in rows {
-            let user_id = UserId::from_uuid(row.get("id"));
+            let user_id = UserId::parse(&row.get::<String, _>("id"))
+                .map_err(|_| AuthError::InvalidCredentials)?;
             let roles = self.get_user_roles(&user_id).await?;
             users.push(self.row_to_user(row, roles)?);
         }
@@ -158,7 +160,7 @@ impl UserRepository for PostgresUserRepository {
         sqlx::query(
             "INSERT INTO user_roles (user_id, role) VALUES ($1, $2) ON CONFLICT DO NOTHING",
         )
-        .bind(user_id.as_uuid())
+        .bind(user_id.as_ulid().to_string())
         .bind(role.to_string())
         .execute(&self.pool)
         .await
@@ -172,7 +174,7 @@ impl UserRepository for PostgresUserRepository {
 
     async fn remove_role(&self, user_id: &UserId, role: Role) -> Result<(), AuthError> {
         sqlx::query("DELETE FROM user_roles WHERE user_id = $1 AND role = $2")
-            .bind(user_id.as_uuid())
+            .bind(user_id.as_ulid().to_string())
             .bind(role.to_string())
             .execute(&self.pool)
             .await
@@ -188,7 +190,7 @@ impl UserRepository for PostgresUserRepository {
 impl PostgresUserRepository {
     async fn get_user_roles(&self, user_id: &UserId) -> Result<Vec<Role>, AuthError> {
         let rows = sqlx::query("SELECT role FROM user_roles WHERE user_id = $1")
-            .bind(user_id.as_uuid())
+            .bind(user_id.as_ulid().to_string())
             .fetch_all(&self.pool)
             .await
             .map_err(|e| {
@@ -221,7 +223,8 @@ impl PostgresUserRepository {
         };
 
         Ok(User {
-            id: UserId::from_uuid(row.get("id")),
+            id: UserId::parse(&row.get::<String, _>("id"))
+                .map_err(|_| AuthError::InvalidCredentials)?,
             username: row.get("username"),
             email: row.get("email"),
             password_hash: row.get("password_hash"),
@@ -262,8 +265,8 @@ impl ApiKeyRepository for PostgresApiKeyRepository {
                 last_used_at = EXCLUDED.last_used_at
             "#
         )
-        .bind(api_key.id().as_uuid())
-        .bind(api_key.user_id.as_uuid())
+        .bind(api_key.id().as_ulid().to_string())
+        .bind(api_key.user_id.as_ulid().to_string())
         .bind(&api_key.key_hash)
         .bind(&api_key.name)
         .bind(api_key.expires_at)
@@ -294,8 +297,10 @@ impl ApiKeyRepository for PostgresApiKeyRepository {
 
         if let Some(row) = row {
             Ok(Some(ApiKey {
-                id: ApiKeyId::from_uuid(row.get("id")),
-                user_id: UserId::from_uuid(row.get("user_id")),
+                id: ApiKeyId::parse(&row.get::<String, _>("id"))
+                    .map_err(|_| AuthError::InvalidCredentials)?,
+                user_id: UserId::parse(&row.get::<String, _>("user_id"))
+                    .map_err(|_| AuthError::InvalidCredentials)?,
                 key_hash: row.get("key_hash"),
                 name: row.get("name"),
                 expires_at: row.get("expires_at"),
@@ -310,7 +315,7 @@ impl ApiKeyRepository for PostgresApiKeyRepository {
 
     async fn update_last_used(&self, id: ApiKeyId) -> Result<(), AuthError> {
         sqlx::query("UPDATE api_keys SET last_used_at = NOW() WHERE id = $1")
-            .bind(id.as_uuid())
+            .bind(id.as_ulid().to_string())
             .execute(&self.pool)
             .await
             .map_err(|e| {
@@ -325,7 +330,7 @@ impl ApiKeyRepository for PostgresApiKeyRepository {
         let rows = sqlx::query(
             "SELECT id, user_id, key_hash, name, expires_at, enabled, created_at, last_used_at FROM api_keys WHERE user_id = $1 ORDER BY created_at DESC"
         )
-        .bind(user_id.as_uuid())
+        .bind(user_id.as_ulid().to_string())
         .fetch_all(&self.pool)
         .await
         .map_err(|e| {
@@ -336,8 +341,10 @@ impl ApiKeyRepository for PostgresApiKeyRepository {
         let mut api_keys = Vec::new();
         for row in rows {
             api_keys.push(ApiKey {
-                id: ApiKeyId::from_uuid(row.get("id")),
-                user_id: UserId::from_uuid(row.get("user_id")),
+                id: ApiKeyId::parse(&row.get::<String, _>("id"))
+                    .map_err(|_| AuthError::InvalidCredentials)?,
+                user_id: UserId::parse(&row.get::<String, _>("user_id"))
+                    .map_err(|_| AuthError::InvalidCredentials)?,
                 key_hash: row.get("key_hash"),
                 name: row.get("name"),
                 expires_at: row.get("expires_at"),
@@ -352,7 +359,7 @@ impl ApiKeyRepository for PostgresApiKeyRepository {
 
     async fn revoke(&self, id: ApiKeyId) -> Result<(), AuthError> {
         sqlx::query("UPDATE api_keys SET enabled = FALSE WHERE id = $1")
-            .bind(id.as_uuid())
+            .bind(id.as_ulid().to_string())
             .execute(&self.pool)
             .await
             .map_err(|e| {

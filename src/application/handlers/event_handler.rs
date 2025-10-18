@@ -1,13 +1,13 @@
 // src/application/handlers/event_handler.rs
 
-use crate::domain::entities::event::Event;
-use crate::domain::repositories::event_repo::EventRepository;
+use crate::domain::entities::event::{CreateEventParams, Event};
 use crate::domain::repositories::event_receiver_repo::EventReceiverRepository;
+use crate::domain::repositories::event_repo::EventRepository;
 use crate::domain::value_objects::{EventId, EventReceiverId};
 use crate::error::{DomainError, Result};
 
 use std::sync::Arc;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 /// Application service for handling event operations
 #[derive(Clone)]
@@ -29,47 +29,39 @@ impl EventHandler {
     }
 
     /// Creates a new event
-    pub async fn create_event(
-        &self,
-        name: String,
-        version: String,
-        release: String,
-        platform_id: String,
-        package: String,
-        description: String,
-        payload: serde_json::Value,
-        success: bool,
-        receiver_id: EventReceiverId,
-    ) -> Result<EventId> {
+    pub async fn create_event(&self, params: CreateEventParams) -> Result<EventId> {
         info!(
-            name = %name,
-            version = %version,
-            release = %release,
-            platform_id = %platform_id,
-            package = %package,
-            success = %success,
-            receiver_id = %receiver_id,
+            name = %params.name,
+            version = %params.version,
+            release = %params.release,
+            platform_id = %params.platform_id,
+            package = %params.package,
+            success = %params.success,
+            receiver_id = %params.receiver_id,
             "Creating new event"
         );
 
         // Verify that the event receiver exists
-        let receiver = self.receiver_repository.find_by_id(receiver_id).await?;
+        let receiver = self
+            .receiver_repository
+            .find_by_id(params.receiver_id)
+            .await?;
         let receiver = receiver.ok_or_else(|| {
-            warn!(receiver_id = %receiver_id, "Event receiver not found");
+            warn!(receiver_id = %params.receiver_id, "Event receiver not found");
             DomainError::ReceiverNotFound
         })?;
 
         info!(
-            receiver_id = %receiver_id,
+            receiver_id = %params.receiver_id,
             receiver_name = %receiver.name(),
             receiver_type = %receiver.receiver_type(),
             "Found event receiver for event creation"
         );
 
         // Validate the payload against the receiver's schema
-        if let Err(e) = receiver.validate_event_payload(&payload) {
+        if let Err(e) = receiver.validate_event_payload(&params.payload) {
             error!(
-                receiver_id = %receiver_id,
+                receiver_id = %params.receiver_id,
                 error = %e,
                 "Event payload validation failed"
             );
@@ -77,17 +69,7 @@ impl EventHandler {
         }
 
         // Create the domain entity
-        let event = Event::new(
-            name,
-            version,
-            release,
-            platform_id,
-            package,
-            description,
-            payload,
-            success,
-            receiver_id,
-        )?;
+        let event = Event::new(params)?;
 
         let event_id = event.id();
 
@@ -96,8 +78,8 @@ impl EventHandler {
 
         info!(
             event_id = %event_id,
-            receiver_id = %receiver_id,
-            success = %success,
+            receiver_id = %event.event_receiver_id(),
+            success = %event.success(),
             "Event created successfully"
         );
 
@@ -119,11 +101,12 @@ impl EventHandler {
 
     /// Gets an event by ID, returning an error if not found
     pub async fn get_event_or_error(&self, id: EventId) -> Result<Event> {
-        self.get_event(id)
-            .await?
-            .ok_or_else(|| DomainError::EventCreationFailed {
+        self.get_event(id).await?.ok_or_else(|| {
+            DomainError::EventCreationFailed {
                 reason: "Event not found".to_string(),
-            }.into())
+            }
+            .into()
+        })
     }
 
     /// Lists events by receiver ID
@@ -165,7 +148,8 @@ impl EventHandler {
             return Err(DomainError::ValidationError {
                 field: "limit".to_string(),
                 message: "Limit must be between 1 and 1000".to_string(),
-            }.into());
+            }
+            .into());
         }
 
         self.event_repository.list(limit, offset).await
@@ -180,13 +164,20 @@ impl EventHandler {
     /// Counts events by receiver ID
     pub async fn count_events_by_receiver(&self, receiver_id: EventReceiverId) -> Result<usize> {
         info!(receiver_id = %receiver_id, "Counting events by receiver");
-        self.event_repository.count_by_receiver_id(receiver_id).await
+        self.event_repository
+            .count_by_receiver_id(receiver_id)
+            .await
     }
 
     /// Counts successful events by receiver ID
-    pub async fn count_successful_events_by_receiver(&self, receiver_id: EventReceiverId) -> Result<usize> {
+    pub async fn count_successful_events_by_receiver(
+        &self,
+        receiver_id: EventReceiverId,
+    ) -> Result<usize> {
         info!(receiver_id = %receiver_id, "Counting successful events by receiver");
-        self.event_repository.count_successful_by_receiver_id(receiver_id).await
+        self.event_repository
+            .count_successful_by_receiver_id(receiver_id)
+            .await
     }
 
     /// Deletes an event
@@ -197,7 +188,8 @@ impl EventHandler {
         if self.event_repository.find_by_id(id).await?.is_none() {
             return Err(DomainError::EventCreationFailed {
                 reason: "Event not found".to_string(),
-            }.into());
+            }
+            .into());
         }
 
         self.event_repository.delete(id).await?;
@@ -208,15 +200,25 @@ impl EventHandler {
     }
 
     /// Gets the latest event for a receiver
-    pub async fn get_latest_event_for_receiver(&self, receiver_id: EventReceiverId) -> Result<Option<Event>> {
+    pub async fn get_latest_event_for_receiver(
+        &self,
+        receiver_id: EventReceiverId,
+    ) -> Result<Option<Event>> {
         info!(receiver_id = %receiver_id, "Getting latest event for receiver");
-        self.event_repository.find_latest_by_receiver_id(receiver_id).await
+        self.event_repository
+            .find_latest_by_receiver_id(receiver_id)
+            .await
     }
 
     /// Gets the latest successful event for a receiver
-    pub async fn get_latest_successful_event_for_receiver(&self, receiver_id: EventReceiverId) -> Result<Option<Event>> {
+    pub async fn get_latest_successful_event_for_receiver(
+        &self,
+        receiver_id: EventReceiverId,
+    ) -> Result<Option<Event>> {
         info!(receiver_id = %receiver_id, "Getting latest successful event for receiver");
-        self.event_repository.find_latest_successful_by_receiver_id(receiver_id).await
+        self.event_repository
+            .find_latest_successful_by_receiver_id(receiver_id)
+            .await
     }
 
     /// Checks if an event exists
@@ -240,26 +242,39 @@ impl EventHandler {
             return Err(DomainError::ValidationError {
                 field: "time_range".to_string(),
                 message: "Start time must be before end time".to_string(),
-            }.into());
+            }
+            .into());
         }
 
         self.event_repository.find_by_time_range(start, end).await
     }
 
     /// Gets events statistics for a receiver
-    pub async fn get_receiver_statistics(&self, receiver_id: EventReceiverId) -> Result<ReceiverStatistics> {
+    pub async fn get_receiver_statistics(
+        &self,
+        receiver_id: EventReceiverId,
+    ) -> Result<ReceiverStatistics> {
         info!(receiver_id = %receiver_id, "Getting receiver statistics");
 
         // Verify receiver exists
-        if self.receiver_repository.find_by_id(receiver_id).await?.is_none() {
+        if self
+            .receiver_repository
+            .find_by_id(receiver_id)
+            .await?
+            .is_none()
+        {
             return Err(DomainError::ReceiverNotFound.into());
         }
 
         let total_events = self.count_events_by_receiver(receiver_id).await?;
-        let successful_events = self.count_successful_events_by_receiver(receiver_id).await?;
+        let successful_events = self
+            .count_successful_events_by_receiver(receiver_id)
+            .await?;
         let failed_events = total_events - successful_events;
         let latest_event = self.get_latest_event_for_receiver(receiver_id).await?;
-        let latest_successful_event = self.get_latest_successful_event_for_receiver(receiver_id).await?;
+        let latest_successful_event = self
+            .get_latest_successful_event_for_receiver(receiver_id)
+            .await?;
 
         let success_rate = if total_events > 0 {
             (successful_events as f64 / total_events as f64) * 100.0
@@ -361,7 +376,10 @@ mod tests {
             Ok(0)
         }
 
-        async fn count_successful_by_receiver_id(&self, _receiver_id: EventReceiverId) -> Result<usize> {
+        async fn count_successful_by_receiver_id(
+            &self,
+            _receiver_id: EventReceiverId,
+        ) -> Result<usize> {
             Ok(0)
         }
 
@@ -371,19 +389,32 @@ mod tests {
             Ok(())
         }
 
-        async fn find_latest_by_receiver_id(&self, _receiver_id: EventReceiverId) -> Result<Option<Event>> {
+        async fn find_latest_by_receiver_id(
+            &self,
+            _receiver_id: EventReceiverId,
+        ) -> Result<Option<Event>> {
             Ok(None)
         }
 
-        async fn find_latest_successful_by_receiver_id(&self, _receiver_id: EventReceiverId) -> Result<Option<Event>> {
+        async fn find_latest_successful_by_receiver_id(
+            &self,
+            _receiver_id: EventReceiverId,
+        ) -> Result<Option<Event>> {
             Ok(None)
         }
 
-        async fn find_by_time_range(&self, _start: DateTime<Utc>, _end: DateTime<Utc>) -> Result<Vec<Event>> {
+        async fn find_by_time_range(
+            &self,
+            _start: DateTime<Utc>,
+            _end: DateTime<Utc>,
+        ) -> Result<Vec<Event>> {
             Ok(vec![])
         }
 
-        async fn find_by_criteria(&self, _criteria: crate::domain::repositories::event_repo::FindEventCriteria) -> Result<Vec<Event>> {
+        async fn find_by_criteria(
+            &self,
+            _criteria: crate::domain::repositories::event_repo::FindEventCriteria,
+        ) -> Result<Vec<Event>> {
             Ok(vec![])
         }
     }
@@ -424,7 +455,11 @@ mod tests {
             Ok(vec![])
         }
 
-        async fn find_by_type_and_version(&self, _receiver_type: &str, _version: &str) -> Result<Vec<EventReceiver>> {
+        async fn find_by_type_and_version(
+            &self,
+            _receiver_type: &str,
+            _version: &str,
+        ) -> Result<Vec<EventReceiver>> {
             Ok(vec![])
         }
 
@@ -452,7 +487,10 @@ mod tests {
             Ok(false)
         }
 
-        async fn find_by_criteria(&self, _criteria: crate::domain::repositories::event_receiver_repo::FindEventReceiverCriteria) -> Result<Vec<EventReceiver>> {
+        async fn find_by_criteria(
+            &self,
+            _criteria: crate::domain::repositories::event_receiver_repo::FindEventReceiverCriteria,
+        ) -> Result<Vec<EventReceiver>> {
             Ok(vec![])
         }
     }
@@ -471,7 +509,8 @@ mod tests {
             "1.0.0".to_string(),
             "A test receiver".to_string(),
             schema,
-        ).unwrap()
+        )
+        .unwrap()
     }
 
     #[tokio::test]
@@ -486,17 +525,19 @@ mod tests {
         let handler = EventHandler::new(event_repo, receiver_repo);
 
         let payload = json!({"message": "Hello, world!"});
-        let result = handler.create_event(
-            "test-event".to_string(),
-            "1.0.0".to_string(),
-            "2023.11.16".to_string(),
-            "linux".to_string(),
-            "docker".to_string(),
-            "Test event".to_string(),
-            payload,
-            true,
-            receiver_id,
-        ).await;
+        let result = handler
+            .create_event(CreateEventParams {
+                name: "test-event".to_string(),
+                version: "1.0.0".to_string(),
+                release: "2023.11.16".to_string(),
+                platform_id: "linux".to_string(),
+                package: "docker".to_string(),
+                description: "Test event".to_string(),
+                payload,
+                success: true,
+                receiver_id,
+            })
+            .await;
 
         assert!(result.is_ok());
     }
@@ -510,17 +551,20 @@ mod tests {
         let payload = json!({"message": "Hello, world!"});
         let receiver_id = EventReceiverId::new(); // Non-existent receiver
 
-        let result = handler.create_event(
-            "test-event".to_string(),
-            "1.0.0".to_string(),
-            "2023.11.16".to_string(),
-            "linux".to_string(),
-            "docker".to_string(),
-            "Test event".to_string(),
-            payload,
-            true,
-            receiver_id,
-        ).await;
+        let payload = json!({"message": "Non-existent receiver"});
+        let result = handler
+            .create_event(CreateEventParams {
+                name: "test-event".to_string(),
+                version: "1.0.0".to_string(),
+                release: "2023.11.16".to_string(),
+                platform_id: "linux".to_string(),
+                package: "docker".to_string(),
+                description: "Test event".to_string(),
+                payload,
+                success: true,
+                receiver_id: EventReceiverId::new(),
+            })
+            .await;
 
         assert!(result.is_err());
     }
@@ -552,7 +596,9 @@ mod tests {
         let end_time = Utc::now();
         let start_time = end_time + chrono::Duration::hours(1); // Start after end
 
-        let result = handler.find_events_in_time_range(start_time, end_time).await;
+        let result = handler
+            .find_events_in_time_range(start_time, end_time)
+            .await;
         assert!(result.is_err());
     }
 }

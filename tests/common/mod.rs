@@ -4,10 +4,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 // Re-export commonly used types from xzepr
-pub use xzepr::domain::value_objects::UserId;
-pub use xzepr::domain::entities::user::User;
-pub use xzepr::auth::rbac::roles::Role;
 pub use xzepr::auth::rbac::permissions::Permission;
+pub use xzepr::auth::rbac::roles::Role;
+pub use xzepr::domain::entities::user::User;
+pub use xzepr::domain::value_objects::UserId;
 
 // Test user for authenticated requests
 #[derive(Debug, Clone)]
@@ -88,7 +88,9 @@ impl TestApp {
     pub fn new() -> Self {
         Self {
             base_url: "https://localhost:8443".to_string(),
-            call_count: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            call_count: std::sync::Arc::new(
+                std::sync::Mutex::new(std::collections::HashMap::new()),
+            ),
         }
     }
 
@@ -134,8 +136,11 @@ impl TestApp {
                     }
 
                     // Simple permission test (minimal data like "test-event" should be forbidden)
-                    if (obj.len() <= 2 && obj.contains_key("name") && obj.get("name").and_then(|v| v.as_str()) == Some("test")) ||
-                       (obj.get("name").and_then(|v| v.as_str()) == Some("test-event")) {
+                    if (obj.len() <= 2
+                        && obj.contains_key("name")
+                        && obj.get("name").and_then(|v| v.as_str()) == Some("test"))
+                        || (obj.get("name").and_then(|v| v.as_str()) == Some("test-event"))
+                    {
                         TestResponse::forbidden() // Simple permission test or viewer trying to create
                     } else {
                         TestResponse::event_created() // Full valid event creation
@@ -143,7 +148,7 @@ impl TestApp {
                 } else {
                     TestResponse::event_created()
                 }
-            },
+            }
 
             // Default to OK for other endpoints
             _ => TestResponse::ok(),
@@ -154,7 +159,7 @@ impl TestApp {
     pub async fn get(&self, path: &str) -> TestRequestBuilder {
         TestRequestBuilder {
             path: path.to_string(),
-            token: None
+            token: None,
         }
     }
 }
@@ -171,7 +176,7 @@ impl TestRequestBuilder {
     fn new() -> Self {
         Self {
             path: String::new(),
-            token: None
+            token: None,
         }
     }
 
@@ -199,12 +204,12 @@ impl TestRequestBuilder {
                             } else {
                                 TestResponse::forbidden()
                             }
-                        },
+                        }
                         _ => TestResponse::ok(),
                     }
-                },
+                }
                 None => TestResponse::unauthorized(), // No token provided
-            }
+            },
         }
     }
 }
@@ -299,11 +304,7 @@ pub async fn spawn_test_app() -> TestApp {
 }
 
 #[allow(dead_code)]
-pub async fn create_test_user(
-    _app: &TestApp,
-    username: &str,
-    roles: Vec<Role>,
-) -> String {
+pub async fn create_test_user(_app: &TestApp, username: &str, roles: Vec<Role>) -> String {
     // Return a mock token for testing
     format!("test-token-{}-{:?}", username, roles)
 }

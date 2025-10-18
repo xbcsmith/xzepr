@@ -46,7 +46,10 @@ pub trait EventReceiverRepository: Send + Sync {
     async fn exists_by_name_and_type(&self, name: &str, receiver_type: &str) -> Result<bool>;
 
     /// Finds event receivers that match multiple criteria
-    async fn find_by_criteria(&self, criteria: FindEventReceiverCriteria) -> Result<Vec<EventReceiver>>;
+    async fn find_by_criteria(
+        &self,
+        criteria: FindEventReceiverCriteria,
+    ) -> Result<Vec<EventReceiver>>;
 }
 
 /// Criteria for finding event receivers

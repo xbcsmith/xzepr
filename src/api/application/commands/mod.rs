@@ -31,13 +31,13 @@ impl<R: EventRepository> CreateEventHandler<R> {
             ReceiverId::parse(&cmd.receiver_id)?,
             cmd.payload,
         )?;
-        
+
         // 3. Save to repository
         self.event_repo.save(&event).await?;
-        
+
         // 4. Publish event
         self.event_publisher.publish(&event).await?;
-        
+
         Ok(event.id())
     }
 }
