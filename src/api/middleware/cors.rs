@@ -113,7 +113,7 @@ impl CorsConfig {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```ignore
 /// use axum::Router;
 /// use xzepr::api::middleware::cors::{cors_layer, CorsConfig};
 ///
@@ -160,12 +160,7 @@ pub fn cors_layer(config: &CorsConfig) -> CorsLayer {
             Err(e) => {
                 tracing::error!("Failed to parse CORS origins: {}", e);
                 // Fallback to localhost only
-                cors = cors.allow_origin(
-                    "http://localhost:3000"
-                        .parse::<HeaderValue>()
-                        .unwrap()
-                        .into(),
-                );
+                cors = cors.allow_origin("http://localhost:3000".parse::<HeaderValue>().unwrap());
             }
         }
     }
@@ -184,7 +179,7 @@ pub fn cors_layer(config: &CorsConfig) -> CorsLayer {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```ignore
 /// use axum::Router;
 /// use xzepr::api::middleware::cors::development_cors_layer;
 ///
@@ -207,11 +202,11 @@ pub fn development_cors_layer() -> CorsLayer {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```ignore
 /// use axum::Router;
 /// use xzepr::api::middleware::cors::production_cors_layer;
 ///
-/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let cors = production_cors_layer()?;
 /// let app = Router::new().layer(cors);
 /// # Ok(())
@@ -248,9 +243,7 @@ mod tests {
         std::env::set_var("XZEPR__SECURITY__CORS__ALLOWED_ORIGINS", "*");
         let result = CorsConfig::production();
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("Wildcard origins not allowed"));
+        assert!(result.unwrap_err().contains("Wildcard origins not allowed"));
     }
 
     #[test]

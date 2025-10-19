@@ -36,11 +36,59 @@ pub struct ServerConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct AuthConfig {
-    pub jwt_secret: String,
-    pub jwt_expiration_hours: i64,
+    // Legacy fields (deprecated)
+    #[deprecated(note = "Use jwt.secret_key instead")]
+    pub jwt_secret: Option<String>,
+    #[deprecated(note = "Use jwt.access_token_expiration_seconds instead")]
+    pub jwt_expiration_hours: Option<i64>,
+
+    // JWT configuration
+    pub jwt: JwtAuthConfig,
+
+    // Authentication providers
     pub enable_local_auth: bool,
     pub enable_oidc: bool,
     pub keycloak: Option<KeycloakConfig>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct JwtAuthConfig {
+    /// Access token expiration in seconds (default: 900 = 15 minutes)
+    #[serde(default = "default_access_token_expiration")]
+    pub access_token_expiration_seconds: i64,
+
+    /// Refresh token expiration in seconds (default: 604800 = 7 days)
+    #[serde(default = "default_refresh_token_expiration")]
+    pub refresh_token_expiration_seconds: i64,
+
+    /// Token issuer
+    #[serde(default = "default_issuer")]
+    pub issuer: String,
+
+    /// Token audience
+    #[serde(default = "default_audience")]
+    pub audience: String,
+
+    /// Algorithm: "RS256" or "HS256"
+    #[serde(default = "default_algorithm")]
+    pub algorithm: String,
+
+    /// Private key path for RS256 (PEM format)
+    pub private_key_path: Option<String>,
+
+    /// Public key path for RS256 (PEM format)
+    pub public_key_path: Option<String>,
+
+    /// Secret key for HS256 (not recommended for production)
+    pub secret_key: Option<String>,
+
+    /// Enable token rotation on refresh
+    #[serde(default = "default_enable_rotation")]
+    pub enable_token_rotation: bool,
+
+    /// Clock skew tolerance in seconds
+    #[serde(default = "default_leeway")]
+    pub leeway_seconds: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,7 +114,13 @@ impl Settings {
             .set_default("server.enable_https", true)?
             .set_default("auth.enable_local_auth", true)?
             .set_default("auth.enable_oidc", false)?
-            .set_default("auth.jwt_expiration_hours", 24)?
+            .set_default("auth.jwt.access_token_expiration_seconds", 900)?
+            .set_default("auth.jwt.refresh_token_expiration_seconds", 604800)?
+            .set_default("auth.jwt.issuer", "xzepr")?
+            .set_default("auth.jwt.audience", "xzepr-api")?
+            .set_default("auth.jwt.algorithm", "RS256")?
+            .set_default("auth.jwt.enable_token_rotation", true)?
+            .set_default("auth.jwt.leeway_seconds", 60)?
             .set_default(
                 "database.url",
                 "postgres://xzepr:password@localhost:5432/xzepr",
@@ -85,4 +139,33 @@ impl Settings {
 
         builder.build()?.try_deserialize()
     }
+}
+
+// Default value functions for JWT config
+fn default_access_token_expiration() -> i64 {
+    900 // 15 minutes
+}
+
+fn default_refresh_token_expiration() -> i64 {
+    604800 // 7 days
+}
+
+fn default_issuer() -> String {
+    "xzepr".to_string()
+}
+
+fn default_audience() -> String {
+    "xzepr-api".to_string()
+}
+
+fn default_algorithm() -> String {
+    "RS256".to_string()
+}
+
+fn default_enable_rotation() -> bool {
+    true
+}
+
+fn default_leeway() -> u64 {
+    60 // 1 minute
 }

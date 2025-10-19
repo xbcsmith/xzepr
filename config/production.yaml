@@ -6,10 +6,14 @@ server:
   host: "0.0.0.0"
   port: 8443
   enable_https: true
+  request_timeout_seconds: 30
 
 database:
   # Override with XZEPR__DATABASE__URL environment variable
   url: "postgres://xzepr:CHANGE_ME@postgres:5432/xzepr"
+  max_connections: 20
+  min_connections: 5
+  connection_timeout_seconds: 30
 
 auth:
   # ⚠️  CRITICAL: Set XZEPR__AUTH__JWT_SECRET to a secure random string (min 32 chars)
@@ -17,6 +21,17 @@ auth:
   jwt_expiration_hours: 24
   enable_local_auth: true
   enable_oidc: true
+  jwt:
+    access_token_expiration_seconds: 900
+    refresh_token_expiration_seconds: 604800
+    issuer: "xzepr-production"
+    audience: "xzepr-api"
+    algorithm: "RS256"
+    # ⚠️  CRITICAL: Set these paths to your RSA key files
+    private_key_path: "/etc/xzepr/keys/jwt_rsa"
+    public_key_path: "/etc/xzepr/keys/jwt_rsa.pub"
+    enable_token_rotation: true
+    leeway_seconds: 60
   keycloak:
     # Override with environment variables:
     # XZEPR__AUTH__KEYCLOAK__ISSUER_URL
@@ -34,3 +49,60 @@ tls:
 
 kafka:
   brokers: "redpanda-0:9092"
+  topic: "xzepr-events"
+  producer_timeout_ms: 5000
+
+# Security Configuration
+security:
+  cors:
+    # ⚠️  CRITICAL: Set to your actual frontend origins
+    # Override with XZEPR__SECURITY__CORS__ALLOWED_ORIGINS
+    allowed_origins:
+      - "https://app.example.com"
+      - "https://admin.example.com"
+    allow_credentials: true
+    max_age_seconds: 3600
+
+  rate_limit:
+    anonymous_rpm: 10
+    authenticated_rpm: 100
+    admin_rpm: 1000
+    # Per-endpoint limits for critical paths
+    per_endpoint:
+      /auth/login: 5
+      /auth/register: 3
+      /auth/refresh: 10
+    # Enable Redis for distributed rate limiting
+    use_redis: true
+    # Override with XZEPR__SECURITY__RATE_LIMIT__REDIS_URL
+    redis_url: "redis://redis:6379"
+
+  validation:
+    max_body_size: 1048576 # 1MB
+    max_string_length: 5000
+    max_array_length: 500
+    strict_mode: true
+
+  headers:
+    enable_csp: true
+    csp_directives: "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    enable_hsts: true
+    hsts_max_age: 63072000 # 2 years
+    hsts_include_subdomains: true
+    hsts_preload: true
+
+  monitoring:
+    metrics_enabled: true
+    tracing_enabled: true
+    structured_logging: true
+    log_level: "info"
+    json_logs: true
+    # Override with XZEPR__SECURITY__MONITORING__JAEGER_ENDPOINT
+    jaeger_endpoint: "http://jaeger:14268/api/traces"
+    metrics_port: 9090
+
+# GraphQL Security
+graphql:
+  max_complexity: 50
+  max_depth: 8
+  enforce_complexity: true

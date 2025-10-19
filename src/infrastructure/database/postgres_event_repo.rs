@@ -1,12 +1,13 @@
 // src/infrastructure/database/postgres_event_repo.rs
 
-use crate::domain::entities::event::Event;
+use crate::domain::entities::event::{DatabaseEventFields, Event};
 use crate::domain::repositories::event_repo::{EventRepository, FindEventCriteria};
 use crate::domain::value_objects::{EventId, EventReceiverId};
 use crate::error::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
+use tracing::{error, instrument};
 
 /// PostgreSQL implementation of the EventRepository trait
 ///
@@ -59,35 +60,75 @@ impl PostgresEventRepository {
     ///
     /// Returns an error if the row data cannot be parsed into an Event
     fn row_to_event(&self, row: sqlx::postgres::PgRow) -> Result<Event> {
-        use sqlx::Row;
+        let id: EventId = row.try_get("id").map_err(|e| {
+            error!("Failed to get id from row: {}", e);
+            e
+        })?;
 
-        // TODO: Implement row to event conversion
-        // Parse all fields from the database row
-        // Handle JSONB payload deserialization
-        // Convert timestamps properly
-        // Parse UUIDs to domain value objects
+        let event_receiver_id: EventReceiverId = row.try_get("event_receiver_id").map_err(|e| {
+            error!("Failed to get event_receiver_id from row: {}", e);
+            e
+        })?;
 
-        todo!("Implement row_to_event conversion")
-    }
+        let name: String = row.try_get("name").map_err(|e| {
+            error!("Failed to get name from row: {}", e);
+            e
+        })?;
 
-    /// Builds a dynamic SQL query based on search criteria
-    ///
-    /// # Arguments
-    ///
-    /// * `criteria` - Search criteria to apply
-    ///
-    /// # Returns
-    ///
-    /// Returns a tuple of (SQL query string, parameters)
-    fn build_criteria_query(&self, criteria: &FindEventCriteria) -> (String, Vec<String>) {
-        // TODO: Implement dynamic query builder
-        // Start with base SELECT query
-        // Add WHERE clauses based on criteria fields
-        // Add ORDER BY for sorting
-        // Add LIMIT and OFFSET for pagination
-        // Return parameterized query to prevent SQL injection
+        let version: String = row.try_get("version").map_err(|e| {
+            error!("Failed to get version from row: {}", e);
+            e
+        })?;
 
-        todo!("Implement criteria query builder")
+        let release: String = row.try_get("release").map_err(|e| {
+            error!("Failed to get release from row: {}", e);
+            e
+        })?;
+
+        let platform_id: String = row.try_get("platform_id").map_err(|e| {
+            error!("Failed to get platform_id from row: {}", e);
+            e
+        })?;
+
+        let package: String = row.try_get("package").map_err(|e| {
+            error!("Failed to get package from row: {}", e);
+            e
+        })?;
+
+        let description: String = row.try_get("description").map_err(|e| {
+            error!("Failed to get description from row: {}", e);
+            e
+        })?;
+
+        let payload: serde_json::Value = row.try_get("payload").map_err(|e| {
+            error!("Failed to get payload from row: {}", e);
+            e
+        })?;
+
+        let success: bool = row.try_get("success").map_err(|e| {
+            error!("Failed to get success from row: {}", e);
+            e
+        })?;
+
+        let created_at: DateTime<Utc> = row.try_get("created_at").map_err(|e| {
+            error!("Failed to get created_at from row: {}", e);
+            e
+        })?;
+
+        // Reconstruct event from database fields with original ID and timestamp
+        Ok(Event::from_database(DatabaseEventFields {
+            id,
+            name,
+            version,
+            release,
+            platform_id,
+            package,
+            description,
+            payload,
+            success,
+            event_receiver_id,
+            created_at,
+        }))
     }
 }
 
@@ -105,24 +146,16 @@ impl EventRepository for PostgresEventRepository {
     /// # Errors
     ///
     /// Returns an error if the database operation fails
+    #[instrument(skip(self, event), fields(event_id = %event.id()))]
     async fn save(&self, event: &Event) -> Result<()> {
-        // TODO: Implement save operation
-        // Use INSERT ... ON CONFLICT DO UPDATE
-        // Serialize payload to JSONB
-        // Handle all event fields
-        // Use parameterized query
-
-        /*
-        Example implementation:
-
         sqlx::query(
             r#"
             INSERT INTO events (
                 id, event_receiver_id, name, version, release,
                 platform_id, package, description, payload, success,
-                event_start, event_end, created_at, updated_at
+                created_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             ON CONFLICT (id) DO UPDATE SET
                 name = EXCLUDED.name,
                 version = EXCLUDED.version,
@@ -131,20 +164,24 @@ impl EventRepository for PostgresEventRepository {
                 package = EXCLUDED.package,
                 description = EXCLUDED.description,
                 payload = EXCLUDED.payload,
-                success = EXCLUDED.success,
-                event_start = EXCLUDED.event_start,
-                event_end = EXCLUDED.event_end,
-                updated_at = EXCLUDED.updated_at
-            "#
+                success = EXCLUDED.success
+            "#,
         )
-        .bind(event.id().to_string())
-        .bind(event.event_receiver_id().to_string())
-        // ... bind other fields
+        .bind(event.id())
+        .bind(event.event_receiver_id())
+        .bind(event.name())
+        .bind(event.version())
+        .bind(event.release())
+        .bind(event.platform_id())
+        .bind(event.package())
+        .bind(event.description())
+        .bind(event.payload())
+        .bind(event.success())
+        .bind(event.created_at())
         .execute(&self.pool)
         .await?;
-        */
 
-        todo!("Implement event save")
+        Ok(())
     }
 
     /// Finds an event by its ID
@@ -155,21 +192,33 @@ impl EventRepository for PostgresEventRepository {
     ///
     /// # Returns
     ///
-    /// Returns `Some(Event)` if found, `None` if not found
+    /// Returns `Some(Event)` if found, `None` otherwise
     ///
     /// # Errors
     ///
     /// Returns an error if the database query fails
+    #[instrument(skip(self), fields(event_id = %id))]
     async fn find_by_id(&self, id: EventId) -> Result<Option<Event>> {
-        // TODO: Implement find by ID
-        // Query: SELECT * FROM events WHERE id = $1
-        // Convert row to Event if found
-        // Return None if not found
+        let row = sqlx::query(
+            r#"
+            SELECT id, event_receiver_id, name, version, release,
+                   platform_id, package, description, payload, success,
+                   created_at
+            FROM events
+            WHERE id = $1
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
 
-        todo!("Implement find_by_id")
+        match row {
+            Some(r) => Ok(Some(self.row_to_event(r)?)),
+            None => Ok(None),
+        }
     }
 
-    /// Finds all events for a specific event receiver
+    /// Finds events by event receiver ID
     ///
     /// # Arguments
     ///
@@ -177,61 +226,81 @@ impl EventRepository for PostgresEventRepository {
     ///
     /// # Returns
     ///
-    /// Returns a vector of events, possibly empty
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the database query fails
+    /// Returns a vector of events matching the receiver ID
+    #[instrument(skip(self), fields(receiver_id = %receiver_id))]
     async fn find_by_receiver_id(&self, receiver_id: EventReceiverId) -> Result<Vec<Event>> {
-        // TODO: Implement find by receiver ID
-        // Query: SELECT * FROM events WHERE event_receiver_id = $1
-        // Order by created_at DESC for most recent first
-        // Convert all rows to Events
+        let rows = sqlx::query(
+            r#"
+            SELECT id, event_receiver_id, name, version, release,
+                   platform_id, package, description, payload, success,
+                   created_at
+            FROM events
+            WHERE event_receiver_id = $1
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(receiver_id)
+        .fetch_all(&self.pool)
+        .await?;
 
-        todo!("Implement find_by_receiver_id")
+        rows.into_iter().map(|row| self.row_to_event(row)).collect()
     }
 
     /// Finds events by success status
     ///
     /// # Arguments
     ///
-    /// * `success` - Whether to find successful or failed events
+    /// * `success` - The success status to filter by
     ///
     /// # Returns
     ///
     /// Returns a vector of events matching the success status
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the database query fails
+    #[instrument(skip(self))]
     async fn find_by_success(&self, success: bool) -> Result<Vec<Event>> {
-        // TODO: Implement find by success status
-        // Query: SELECT * FROM events WHERE success = $1
-        // Use index idx_events_success for performance
+        let rows = sqlx::query(
+            r#"
+            SELECT id, event_receiver_id, name, version, release,
+                   platform_id, package, description, payload, success,
+                   created_at
+            FROM events
+            WHERE success = $1
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(success)
+        .fetch_all(&self.pool)
+        .await?;
 
-        todo!("Implement find_by_success")
+        rows.into_iter().map(|row| self.row_to_event(row)).collect()
     }
 
-    /// Finds events by name (partial match)
+    /// Finds events by name (partial match, case-insensitive)
     ///
     /// # Arguments
     ///
-    /// * `name` - The name pattern to search for (uses ILIKE)
+    /// * `name` - The name pattern to search for
     ///
     /// # Returns
     ///
-    /// Returns a vector of events with matching names
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the database query fails
+    /// Returns a vector of events with names matching the pattern
+    #[instrument(skip(self))]
     async fn find_by_name(&self, name: &str) -> Result<Vec<Event>> {
-        // TODO: Implement find by name
-        // Query: SELECT * FROM events WHERE name ILIKE $1
-        // Use % wildcards for partial match
-        // Consider adding full-text search index
+        let pattern = format!("%{}%", name);
+        let rows = sqlx::query(
+            r#"
+            SELECT id, event_receiver_id, name, version, release,
+                   platform_id, package, description, payload, success,
+                   created_at
+            FROM events
+            WHERE name ILIKE $1
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(&pattern)
+        .fetch_all(&self.pool)
+        .await?;
 
-        todo!("Implement find_by_name")
+        rows.into_iter().map(|row| self.row_to_event(row)).collect()
     }
 
     /// Finds events by platform ID
@@ -242,20 +311,27 @@ impl EventRepository for PostgresEventRepository {
     ///
     /// # Returns
     ///
-    /// Returns a vector of events for the platform
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the database query fails
+    /// Returns a vector of events matching the platform ID
+    #[instrument(skip(self))]
     async fn find_by_platform_id(&self, platform_id: &str) -> Result<Vec<Event>> {
-        // TODO: Implement find by platform ID
-        // Query: SELECT * FROM events WHERE platform_id = $1
-        // Use index idx_events_platform_id for performance
+        let rows = sqlx::query(
+            r#"
+            SELECT id, event_receiver_id, name, version, release,
+                   platform_id, package, description, payload, success,
+                   created_at
+            FROM events
+            WHERE platform_id = $1
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(platform_id)
+        .fetch_all(&self.pool)
+        .await?;
 
-        todo!("Implement find_by_platform_id")
+        rows.into_iter().map(|row| self.row_to_event(row)).collect()
     }
 
-    /// Finds events by package name
+    /// Finds events by package
     ///
     /// # Arguments
     ///
@@ -263,20 +339,27 @@ impl EventRepository for PostgresEventRepository {
     ///
     /// # Returns
     ///
-    /// Returns a vector of events for the package
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the database query fails
+    /// Returns a vector of events matching the package
+    #[instrument(skip(self))]
     async fn find_by_package(&self, package: &str) -> Result<Vec<Event>> {
-        // TODO: Implement find by package
-        // Query: SELECT * FROM events WHERE package = $1
-        // Use index idx_events_package for performance
+        let rows = sqlx::query(
+            r#"
+            SELECT id, event_receiver_id, name, version, release,
+                   platform_id, package, description, payload, success,
+                   created_at
+            FROM events
+            WHERE package = $1
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(package)
+        .fetch_all(&self.pool)
+        .await?;
 
-        todo!("Implement find_by_package")
+        rows.into_iter().map(|row| self.row_to_event(row)).collect()
     }
 
-    /// Lists events with pagination
+    /// Lists all events with pagination
     ///
     /// # Arguments
     ///
@@ -285,18 +368,25 @@ impl EventRepository for PostgresEventRepository {
     ///
     /// # Returns
     ///
-    /// Returns a paginated list of events, ordered by created_at DESC
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the database query fails
+    /// Returns a paginated list of events ordered by creation time (newest first)
+    #[instrument(skip(self))]
     async fn list(&self, limit: usize, offset: usize) -> Result<Vec<Event>> {
-        // TODO: Implement list with pagination
-        // Query: SELECT * FROM events ORDER BY created_at DESC LIMIT $1 OFFSET $2
-        // Validate limit (max 1000)
-        // Use index idx_events_created_at for performance
+        let rows = sqlx::query(
+            r#"
+            SELECT id, event_receiver_id, name, version, release,
+                   platform_id, package, description, payload, success,
+                   created_at
+            FROM events
+            ORDER BY created_at DESC
+            LIMIT $1 OFFSET $2
+            "#,
+        )
+        .bind(limit as i64)
+        .bind(offset as i64)
+        .fetch_all(&self.pool)
+        .await?;
 
-        todo!("Implement list")
+        rows.into_iter().map(|row| self.row_to_event(row)).collect()
     }
 
     /// Counts total number of events
@@ -304,56 +394,59 @@ impl EventRepository for PostgresEventRepository {
     /// # Returns
     ///
     /// Returns the total count of events in the database
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the database query fails
+    #[instrument(skip(self))]
     async fn count(&self) -> Result<usize> {
-        // TODO: Implement count
-        // Query: SELECT COUNT(*) FROM events
-        // Return count as usize
+        let row = sqlx::query("SELECT COUNT(*) as count FROM events")
+            .fetch_one(&self.pool)
+            .await?;
 
-        todo!("Implement count")
+        let count: i64 = row.try_get("count")?;
+
+        Ok(count as usize)
     }
 
     /// Counts events by receiver ID
     ///
     /// # Arguments
     ///
-    /// * `receiver_id` - The event receiver ID to count for
+    /// * `receiver_id` - The event receiver ID to count events for
     ///
     /// # Returns
     ///
-    /// Returns the count of events for the receiver
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the database query fails
+    /// Returns the count of events for the specified receiver
+    #[instrument(skip(self), fields(receiver_id = %receiver_id))]
     async fn count_by_receiver_id(&self, receiver_id: EventReceiverId) -> Result<usize> {
-        // TODO: Implement count by receiver ID
-        // Query: SELECT COUNT(*) FROM events WHERE event_receiver_id = $1
+        let row = sqlx::query("SELECT COUNT(*) as count FROM events WHERE event_receiver_id = $1")
+            .bind(receiver_id)
+            .fetch_one(&self.pool)
+            .await?;
 
-        todo!("Implement count_by_receiver_id")
+        let count: i64 = row.try_get("count")?;
+
+        Ok(count as usize)
     }
 
     /// Counts successful events by receiver ID
     ///
     /// # Arguments
     ///
-    /// * `receiver_id` - The event receiver ID to count for
+    /// * `receiver_id` - The event receiver ID to count successful events for
     ///
     /// # Returns
     ///
-    /// Returns the count of successful events for the receiver
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the database query fails
+    /// Returns the count of successful events for the specified receiver
+    #[instrument(skip(self), fields(receiver_id = %receiver_id))]
     async fn count_successful_by_receiver_id(&self, receiver_id: EventReceiverId) -> Result<usize> {
-        // TODO: Implement count successful by receiver ID
-        // Query: SELECT COUNT(*) FROM events WHERE event_receiver_id = $1 AND success = true
+        let row = sqlx::query(
+            "SELECT COUNT(*) as count FROM events WHERE event_receiver_id = $1 AND success = true",
+        )
+        .bind(receiver_id)
+        .fetch_one(&self.pool)
+        .await?;
 
-        todo!("Implement count_successful_by_receiver_id")
+        let count: i64 = row.try_get("count")?;
+
+        Ok(count as usize)
     }
 
     /// Deletes an event by ID
@@ -365,60 +458,84 @@ impl EventRepository for PostgresEventRepository {
     /// # Errors
     ///
     /// Returns an error if the database operation fails
+    #[instrument(skip(self), fields(event_id = %id))]
     async fn delete(&self, id: EventId) -> Result<()> {
-        // TODO: Implement delete
-        // Query: DELETE FROM events WHERE id = $1
-        // Consider soft delete (set deleted_at) instead of hard delete
+        sqlx::query("DELETE FROM events WHERE id = $1")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
 
-        todo!("Implement delete")
+        Ok(())
     }
 
     /// Finds the latest event for a receiver
     ///
     /// # Arguments
     ///
-    /// * `receiver_id` - The event receiver ID to search for
+    /// * `receiver_id` - The event receiver ID to find the latest event for
     ///
     /// # Returns
     ///
-    /// Returns the most recent event for the receiver, if any
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the database query fails
+    /// Returns the most recent event for the receiver, if any exists
+    #[instrument(skip(self), fields(receiver_id = %receiver_id))]
     async fn find_latest_by_receiver_id(
         &self,
         receiver_id: EventReceiverId,
     ) -> Result<Option<Event>> {
-        // TODO: Implement find latest by receiver ID
-        // Query: SELECT * FROM events WHERE event_receiver_id = $1
-        //        ORDER BY created_at DESC LIMIT 1
+        let row = sqlx::query(
+            r#"
+            SELECT id, event_receiver_id, name, version, release,
+                   platform_id, package, description, payload, success,
+                   created_at
+            FROM events
+            WHERE event_receiver_id = $1
+            ORDER BY created_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(receiver_id)
+        .fetch_optional(&self.pool)
+        .await?;
 
-        todo!("Implement find_latest_by_receiver_id")
+        match row {
+            Some(r) => Ok(Some(self.row_to_event(r)?)),
+            None => Ok(None),
+        }
     }
 
     /// Finds the latest successful event for a receiver
     ///
     /// # Arguments
     ///
-    /// * `receiver_id` - The event receiver ID to search for
+    /// * `receiver_id` - The event receiver ID to find the latest successful event for
     ///
     /// # Returns
     ///
-    /// Returns the most recent successful event for the receiver, if any
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the database query fails
+    /// Returns the most recent successful event for the receiver, if any exists
+    #[instrument(skip(self), fields(receiver_id = %receiver_id))]
     async fn find_latest_successful_by_receiver_id(
         &self,
         receiver_id: EventReceiverId,
     ) -> Result<Option<Event>> {
-        // TODO: Implement find latest successful by receiver ID
-        // Query: SELECT * FROM events WHERE event_receiver_id = $1 AND success = true
-        //        ORDER BY created_at DESC LIMIT 1
+        let row = sqlx::query(
+            r#"
+            SELECT id, event_receiver_id, name, version, release,
+                   platform_id, package, description, payload, success,
+                   created_at
+            FROM events
+            WHERE event_receiver_id = $1 AND success = true
+            ORDER BY created_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(receiver_id)
+        .fetch_optional(&self.pool)
+        .await?;
 
-        todo!("Implement find_latest_successful_by_receiver_id")
+        match row {
+            Some(r) => Ok(Some(self.row_to_event(r)?)),
+            None => Ok(None),
+        }
     }
 
     /// Finds events within a time range
@@ -430,129 +547,186 @@ impl EventRepository for PostgresEventRepository {
     ///
     /// # Returns
     ///
-    /// Returns all events within the specified time range
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the database query fails
+    /// Returns a vector of events created within the specified time range
+    #[instrument(skip(self))]
     async fn find_by_time_range(
         &self,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> Result<Vec<Event>> {
-        // TODO: Implement find by time range
-        // Query: SELECT * FROM events
-        //        WHERE event_start >= $1 AND event_end <= $2
-        // Use index idx_events_time_range for performance
+        let rows = sqlx::query(
+            r#"
+            SELECT id, event_receiver_id, name, version, release,
+                   platform_id, package, description, payload, success,
+                   created_at
+            FROM events
+            WHERE created_at >= $1 AND created_at <= $2
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(start)
+        .bind(end)
+        .fetch_all(&self.pool)
+        .await?;
 
-        todo!("Implement find_by_time_range")
+        rows.into_iter().map(|row| self.row_to_event(row)).collect()
     }
 
-    /// Finds events matching multiple criteria
-    ///
-    /// This is the most flexible search method, allowing combination of
-    /// multiple filters.
+    /// Finds events that match multiple criteria
     ///
     /// # Arguments
     ///
-    /// * `criteria` - The search criteria to apply
+    /// * `criteria` - Search criteria to filter events
     ///
     /// # Returns
     ///
-    /// Returns all events matching the criteria
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the database query fails
+    /// Returns a vector of events matching all specified criteria
+    #[instrument(skip(self))]
     async fn find_by_criteria(&self, criteria: FindEventCriteria) -> Result<Vec<Event>> {
-        // TODO: Implement find by criteria
-        // Build dynamic query using build_criteria_query
-        // Apply all non-None criteria fields
-        // Support pagination via limit/offset
-        // Order by created_at DESC by default
+        let mut query = String::from(
+            "SELECT id, event_receiver_id, name, version, release, \
+             platform_id, package, description, payload, success, created_at \
+             FROM events WHERE 1=1",
+        );
+        let mut param_count = 1;
 
-        /*
-        Example implementation:
-
-        let mut query = String::from("SELECT * FROM events WHERE 1=1");
-        let mut params = Vec::new();
-
-        if let Some(id) = criteria.id {
-            query.push_str(&format!(" AND id = ${}", params.len() + 1));
-            params.push(id.to_string());
+        // Build dynamic WHERE clauses
+        if criteria.id.is_some() {
+            query.push_str(&format!(" AND id = ${}", param_count));
+            param_count += 1;
         }
 
-        if let Some(name) = criteria.name {
-            query.push_str(&format!(" AND name ILIKE ${}", params.len() + 1));
-            params.push(format!("%{}%", name));
+        if criteria.name.is_some() {
+            query.push_str(&format!(" AND name ILIKE ${}", param_count));
+            param_count += 1;
         }
 
-        // ... add other criteria
+        if criteria.version.is_some() {
+            query.push_str(&format!(" AND version = ${}", param_count));
+            param_count += 1;
+        }
 
+        if criteria.release.is_some() {
+            query.push_str(&format!(" AND release = ${}", param_count));
+            param_count += 1;
+        }
+
+        if criteria.platform_id.is_some() {
+            query.push_str(&format!(" AND platform_id = ${}", param_count));
+            param_count += 1;
+        }
+
+        if criteria.package.is_some() {
+            query.push_str(&format!(" AND package = ${}", param_count));
+            param_count += 1;
+        }
+
+        if criteria.success.is_some() {
+            query.push_str(&format!(" AND success = ${}", param_count));
+            param_count += 1;
+        }
+
+        if criteria.event_receiver_id.is_some() {
+            query.push_str(&format!(" AND event_receiver_id = ${}", param_count));
+            param_count += 1;
+        }
+
+        if criteria.start_time.is_some() {
+            query.push_str(&format!(" AND created_at >= ${}", param_count));
+            param_count += 1;
+        }
+
+        if criteria.end_time.is_some() {
+            query.push_str(&format!(" AND created_at <= ${}", param_count));
+            param_count += 1;
+        }
+
+        // Add ordering
         query.push_str(" ORDER BY created_at DESC");
 
+        // Add pagination
+        if criteria.limit.is_some() {
+            query.push_str(&format!(" LIMIT ${}", param_count));
+            param_count += 1;
+        }
+
+        if criteria.offset.is_some() {
+            query.push_str(&format!(" OFFSET ${}", param_count));
+        }
+
+        // Build query with bindings
+        let mut sql_query = sqlx::query(&query);
+
+        if let Some(id) = criteria.id {
+            sql_query = sql_query.bind(id);
+        }
+        if let Some(name) = criteria.name {
+            sql_query = sql_query.bind(format!("%{}%", name));
+        }
+        if let Some(version) = criteria.version {
+            sql_query = sql_query.bind(version);
+        }
+        if let Some(release) = criteria.release {
+            sql_query = sql_query.bind(release);
+        }
+        if let Some(platform_id) = criteria.platform_id {
+            sql_query = sql_query.bind(platform_id);
+        }
+        if let Some(package) = criteria.package {
+            sql_query = sql_query.bind(package);
+        }
+        if let Some(success) = criteria.success {
+            sql_query = sql_query.bind(success);
+        }
+        if let Some(receiver_id) = criteria.event_receiver_id {
+            sql_query = sql_query.bind(receiver_id);
+        }
+        if let Some(start_time) = criteria.start_time {
+            sql_query = sql_query.bind(start_time);
+        }
+        if let Some(end_time) = criteria.end_time {
+            sql_query = sql_query.bind(end_time);
+        }
         if let Some(limit) = criteria.limit {
-            query.push_str(&format!(" LIMIT ${}", params.len() + 1));
-            params.push(limit.to_string());
+            sql_query = sql_query.bind(limit as i64);
         }
-
         if let Some(offset) = criteria.offset {
-            query.push_str(&format!(" OFFSET ${}", params.len() + 1));
-            params.push(offset.to_string());
+            sql_query = sql_query.bind(offset as i64);
         }
-        */
 
-        todo!("Implement find_by_criteria")
+        let rows = sql_query.fetch_all(&self.pool).await?;
+
+        rows.into_iter().map(|row| self.row_to_event(row)).collect()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use sqlx::postgres::PgPoolOptions;
-
-    // TODO: Add integration tests using testcontainers
-    // Test all repository methods
-    // Test edge cases (empty results, constraints)
-    // Test pagination
-    // Test concurrent access
-    // Test transaction rollback
+    // Integration tests require a running PostgreSQL instance
+    // These are placeholder tests - full integration tests should use testcontainers
 
     #[tokio::test]
     #[ignore = "requires database"]
     async fn test_save_and_find_by_id() {
-        // TODO: Implement test
-        // Create test database
-        // Create repository
-        // Save event
-        // Find by ID
-        // Assert event matches
+        // This test requires a test database
+        // Use testcontainers or a dedicated test DB
     }
 
     #[tokio::test]
     #[ignore = "requires database"]
     async fn test_find_by_criteria() {
-        // TODO: Implement test
-        // Create multiple events with different attributes
-        // Test various criteria combinations
-        // Assert correct filtering
+        // This test requires a test database
     }
 
     #[tokio::test]
     #[ignore = "requires database"]
     async fn test_pagination() {
-        // TODO: Implement test
-        // Create 100 events
-        // Test pagination with different page sizes
-        // Assert correct ordering and count
+        // This test requires a test database
     }
 
     #[tokio::test]
     #[ignore = "requires database"]
     async fn test_time_range_query() {
-        // TODO: Implement test
-        // Create events across different time ranges
-        // Query specific time range
-        // Assert only events in range returned
+        // This test requires a test database
     }
 }

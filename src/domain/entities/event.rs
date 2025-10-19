@@ -109,6 +109,50 @@ impl Event {
     pub fn created_at(&self) -> DateTime<Utc> {
         self.created_at
     }
+
+    /// Reconstructs an event from database fields
+    ///
+    /// This method is used by repository implementations to reconstruct
+    /// events from database rows with their original IDs and timestamps.
+    ///
+    /// # Arguments
+    ///
+    /// * `fields` - Database fields containing all event data
+    ///
+    /// # Returns
+    ///
+    /// Returns a reconstructed Event
+    pub fn from_database(fields: DatabaseEventFields) -> Self {
+        Self {
+            id: fields.id,
+            name: fields.name,
+            version: fields.version,
+            release: fields.release,
+            platform_id: fields.platform_id,
+            package: fields.package,
+            description: fields.description,
+            payload: fields.payload,
+            success: fields.success,
+            event_receiver_id: fields.event_receiver_id,
+            created_at: fields.created_at,
+        }
+    }
+}
+
+/// Fields required to reconstruct an event from database
+#[derive(Debug, Clone)]
+pub struct DatabaseEventFields {
+    pub id: EventId,
+    pub name: String,
+    pub version: String,
+    pub release: String,
+    pub platform_id: String,
+    pub package: String,
+    pub description: String,
+    pub payload: serde_json::Value,
+    pub success: bool,
+    pub event_receiver_id: EventReceiverId,
+    pub created_at: DateTime<Utc>,
 }
 
 #[cfg(test)]

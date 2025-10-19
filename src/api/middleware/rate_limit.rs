@@ -5,13 +5,16 @@ use axum::{
     extract::{Request, State},
     http::{HeaderMap, StatusCode},
     middleware::Next,
-    response::{IntoResponse, Response},
+    response::Response,
 };
+use redis::{aio::ConnectionManager, Client};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
+
+use crate::infrastructure::SecurityMonitor;
 
 /// Rate limit configuration for different user tiers
 #[derive(Debug, Clone)]
@@ -155,14 +158,15 @@ impl TokenBucket {
 }
 
 /// Storage trait for rate limit state
+#[async_trait::async_trait]
 pub trait RateLimitStore: Send + Sync {
     /// Checks if the key is rate limited
-    fn check_rate_limit(
+    async fn check_rate_limit(
         &self,
         key: &str,
         limit: u32,
         window: Duration,
-    ) -> impl std::future::Future<Output = Result<RateLimitStatus, String>> + Send;
+    ) -> Result<RateLimitStatus, String>;
 }
 
 /// Rate limit status
@@ -199,6 +203,7 @@ impl Default for InMemoryRateLimitStore {
     }
 }
 
+#[async_trait::async_trait]
 impl RateLimitStore for InMemoryRateLimitStore {
     async fn check_rate_limit(
         &self,
@@ -227,11 +232,101 @@ impl RateLimitStore for InMemoryRateLimitStore {
     }
 }
 
+/// Redis-backed rate limit store using Lua scripts
+#[derive(Clone)]
+pub struct RedisRateLimitStore {
+    client: ConnectionManager,
+}
+
+impl RedisRateLimitStore {
+    /// Creates a new Redis rate limit store
+    pub async fn new(redis_url: &str) -> Result<Self, redis::RedisError> {
+        let client = Client::open(redis_url)?;
+        let manager = ConnectionManager::new(client).await?;
+        Ok(Self { client: manager })
+    }
+
+    /// Creates a new Redis rate limit store from a connection manager
+    pub fn from_manager(client: ConnectionManager) -> Self {
+        Self { client }
+    }
+}
+
+#[async_trait::async_trait]
+impl RateLimitStore for RedisRateLimitStore {
+    async fn check_rate_limit(
+        &self,
+        key: &str,
+        limit: u32,
+        window: Duration,
+    ) -> Result<RateLimitStatus, String> {
+        let mut conn = self.client.clone();
+        let redis_key = format!("ratelimit:{}", key);
+        let window_secs = window.as_secs();
+
+        // Lua script for atomic rate limiting using sliding window
+        // Returns: [allowed (0/1), remaining, ttl]
+        let script = redis::Script::new(
+            r#"
+            local key = KEYS[1]
+            local limit = tonumber(ARGV[1])
+            local window = tonumber(ARGV[2])
+            local now = tonumber(ARGV[3])
+
+            -- Remove old entries outside the window
+            redis.call('ZREMRANGEBYSCORE', key, 0, now - window)
+
+            -- Count current requests
+            local current = redis.call('ZCARD', key)
+
+            if current < limit then
+                -- Add this request
+                redis.call('ZADD', key, now, now)
+                redis.call('EXPIRE', key, window)
+                return {1, limit - current - 1, window}
+            else
+                -- Get the oldest entry to calculate reset time
+                local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
+                local reset_at = tonumber(oldest[2]) + window
+                local reset_after = math.max(0, reset_at - now)
+                return {0, 0, reset_after}
+            end
+            "#,
+        );
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let result: Vec<i64> = script
+            .key(&redis_key)
+            .arg(limit)
+            .arg(window_secs)
+            .arg(now)
+            .invoke_async(&mut conn)
+            .await
+            .map_err(|e| format!("Redis error: {}", e))?;
+
+        let allowed = result[0] == 1;
+        let remaining = result[1] as u32;
+        let reset_after = Duration::from_secs(result[2] as u64);
+
+        Ok(RateLimitStatus {
+            allowed,
+            limit,
+            remaining,
+            reset_after,
+        })
+    }
+}
+
 /// Rate limiter state
 #[derive(Clone)]
 pub struct RateLimiterState {
     config: Arc<RateLimitConfig>,
     store: Arc<dyn RateLimitStore>,
+    monitor: Option<Arc<SecurityMonitor>>,
 }
 
 impl RateLimiterState {
@@ -240,12 +335,32 @@ impl RateLimiterState {
         Self {
             config: Arc::new(config),
             store,
+            monitor: None,
+        }
+    }
+
+    /// Creates a new rate limiter state with monitoring
+    pub fn new_with_monitor(
+        config: RateLimitConfig,
+        store: Arc<dyn RateLimitStore>,
+        monitor: Arc<SecurityMonitor>,
+    ) -> Self {
+        Self {
+            config: Arc::new(config),
+            store,
+            monitor: Some(monitor),
         }
     }
 
     /// Creates a default rate limiter with in-memory store
     pub fn default_with_config(config: RateLimitConfig) -> Self {
         Self::new(config, Arc::new(InMemoryRateLimitStore::new()))
+    }
+
+    /// Sets the security monitor
+    pub fn with_monitor(mut self, monitor: Arc<SecurityMonitor>) -> Self {
+        self.monitor = Some(monitor);
+        self
     }
 }
 
@@ -276,11 +391,7 @@ fn extract_rate_limit_key(headers: &HeaderMap, ip: Option<IpAddr>) -> String {
 }
 
 /// Determines the rate limit for the request based on user tier
-fn determine_rate_limit(
-    config: &RateLimitConfig,
-    path: &str,
-    _headers: &HeaderMap,
-) -> u32 {
+fn determine_rate_limit(config: &RateLimitConfig, path: &str, _headers: &HeaderMap) -> u32 {
     // Check for per-endpoint limit first
     if let Some(&limit) = config.per_endpoint.get(path) {
         return limit;
@@ -333,6 +444,11 @@ pub async fn rate_limit_middleware(
             limit = %limit,
             "Rate limit exceeded"
         );
+
+        // Record rate limit rejection in security monitor
+        if let Some(monitor) = &limiter.monitor {
+            monitor.record_rate_limit_rejection(&rate_limit_key, path, limit);
+        }
 
         let mut response = Response::builder()
             .status(StatusCode::TOO_MANY_REQUESTS)
