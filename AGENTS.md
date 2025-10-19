@@ -1,284 +1,1247 @@
-# AGENTS.md
+# AGENTS.md - AI Agent Development Guidelines
 
-This file provides guidance for AI agents working on this project. It outlines
-the project's structure, required toolchain, coding conventions, and development
-workflow. Adhering to these instructions ensures consistency and high-quality
-code.
+**CRITICAL**: This file contains mandatory rules for AI agents working on XZepr.
+Non-compliance will result in rejected code.
 
-## Project overview
+---
 
-**Project name:** XZepr
+## Quick Reference for AI Agents
 
-**Description:**
-`A high-performance event tracking server built in Rust, featuring real-time event streaming with Redpanda, comprehensive authentication, role-based access control, and observability. Perfect for tracking CI/CD events, deployments, builds, and other system activities.`
+### BEFORE YOU START ANY TASK
 
-**Architecture:** This project follows a layered architecture pattern with clean
-separation of concerns:
+**YOU MUST verify these are installed:**
 
-- **Domain Layer** (`src/domain/`) - Core business logic and entities
-- **Application Layer** (`src/application/`) - Use cases and application
-  services
-- **API Layer** (`src/api/`) - REST endpoints with middleware
-- **Infrastructure Layer** (`src/infrastructure/`) - Database, Redpanda, and
-  external integrations
-- **Authentication Layer** (`src/auth/`) - Multi-provider auth with RBAC
-
-## Development instructions
-
-### Build and setup
-
-- **Rust toolchain:** The project uses the latest stable Rust toolchain.
-- **Cargo commands:**
-  - To build the project: `cargo build`
-  - To build in release mode: `cargo build --release`
-- **Dependencies:** New dependencies should be added using
-  `cargo add <crate_name>`.
-
-### Testing
-
-- **Running tests:** Execute the test suite with `cargo test`.
-- **Test coverage:** For new features, include corresponding unit tests in the
-  `src/` directory.
-
-### Formatting and linting
-
-- **Rustfmt:** All code must be formatted using `rustfmt`. Use `cargo fmt` to
-  apply formatting.
-- **Clippy:** All code must pass `clippy` checks. Use
-  `cargo clippy -- -D warnings` to enforce all lints as warnings.
-- **GitHub Actions (Optional):** Reference the project's CI configuration if it
-  automatically runs these checks. (e.g., "The `.github/workflows/ci.yaml` file
-  defines our CI process.")
-
-### Configuration
-
-- **YAML Files:** All yaml files end in .yaml. DO NOT USE .yml
-
-## Coding guidelines
-
-### Standard practices
-
-- **Idiomatic Rust:** Adhere to the Rust API Guidelines and idiomatic patterns.
-- **Error handling:** Prefer `Result<T, E>` for recoverable errors and `panic!`
-  for unrecoverable bugs.
-- **Ownership:** Leverage Rust's ownership system to ensure memory safety.
-
-### Documentation
-
-- **Documentation Framework:** Use the Diataxis Framework for Documentation
-- **Doc comments:** Every public function, struct, enum, and module should have
-  `///` doc comments explaining its purpose, arguments, and return values.
-- **Example code:** Include code examples within your doc comments, which are
-  tested by `cargo test`.
-- **Internal documentation:** Use `//` comments for internal implementation
-  details.
-- **Markdown:** ALL MARKDOWN file names should be lower case except for the
-  README.md. DO NOT USE EMOJIs. Use the rules .markdownlint.json.
-
-### Specific patterns
-
-- **Concurrency:**
-  `<Describe how concurrency is handled, e.g., using `tokio`, `async-std`, or standard library threads.>`
-- **FFI (if applicable):**
-  `<If your project uses a Foreign Function Interface, detail how unsafe code blocks are managed and what safety invariants must be upheld.>`
-
-## CI/CD process
-
-- **Continuous Integration:**
-  `<Summarize the project's CI process, for example, running tests and lints on every push to `main` or pull request.>`
-- **Pull Requests:**
-  `<Specify any PR guidelines, such as requiring a clean `cargo
-  test` run before merging.>`
-
-## Concrete examples
-
-- **Reference:** For a good example of how code is written, see the file:
-  `src/lib.rs`
-- **Avoid:** For examples of legacy code or patterns to avoid, see the file:
-  `src/old_module.rs`
-
-## Git Conventions
-
-### Branch Naming
-
-- **PR branches**: Use lowercase format `pr-<jira_issue>`
-  - Example: `pr-cpipe-1234`
-  - Example: `pr-cpipe-5678`
-- **Keep branch names lowercase** - No uppercase letters or camelCase
-- **Include JIRA issue** - Always reference the ticket being worked on
-
-### Commit Messages
-
-All commits **MUST** follow the
-[Conventional Commits](https://www.conventionalcommits.org/) specification with
-the JIRA issue included at the end.
-
-#### Format
-
-```text
-<type>(<scope>): <description> (<JIRA_ISSUE>)
-
-[optional body]
-
-[optional footer(s)]
+```bash
+rustup component add clippy rustfmt
+cargo install cargo-audit  # Optional but recommended
 ```
 
-#### Types
+**YOU MUST run these commands and ALL MUST PASS:**
 
-- **feat**: A new feature
-- **fix**: A bug fix
-- **docs**: Documentation only changes
-- **style**: Changes that do not affect the meaning of the code (white-space,
-  formatting)
-- **refactor**: A code change that neither fixes a bug nor adds a feature
-- **perf**: A code change that improves performance
-- **test**: Adding missing tests or correcting existing tests
-- **chore**: Changes to the build process or auxiliary tools
+```bash
+# 1. Format code
+cargo fmt --all
 
-#### Commit Examples
+# 2. Check compilation
+cargo check --all-targets --all-features
 
-```text
-feat(auth): add user authentication module (CPIPE-1234)
+# 3. Lint with zero warnings
+cargo clippy --all-targets --all-features -- -D warnings
 
-fix(main): updated foo to handle edge cases (CPIPE-1234)
-
-docs(readme): update installation instructions (CPIPE-5678)
-
-refactor(api): simplify error handling logic (CPIPE-9012)
-
-test(utils): add unit tests for string parser (CPIPE-3456)
+# 4. Run all tests (must achieve >80% coverage)
+cargo test --all-features
 ```
 
-#### Rules
+**Expected Output**: All commands complete successfully with zero errors and
+zero warnings.
 
-- **Type is required** - Must be one of the standard types
-- **Scope is optional** - Use parentheses if included
-- **Description is required** - Short summary in lowercase
-- **JIRA issue is required** - Must be in uppercase in parentheses at the end
-- **Keep the first line under 72 characters** - Including the JIRA issue
-- **Use imperative mood** - "add" not "added", "fix" not "fixed"
+### AFTER YOU COMPLETE ANY TASK
 
-## Documentation Style Guide
+**YOU MUST verify:**
 
-This guide defines the style conventions for documentation in the project. All
-documentation follows the **Diataxis Framework** for organization and structure.
+- [ ] `cargo fmt --all` applied successfully
+- [ ] `cargo check --all-targets --all-features` passes with zero errors
+- [ ] `cargo clippy --all-targets --all-features -- -D warnings` shows zero
+      warnings
+- [ ] `cargo test --all-features` passes with >80% coverage
+- [ ] Documentation file created in `docs/explanations/` with
+      lowercase_filename.md
 
-### Documentation Organization (Diataxis Framework)
+**IF ANY CHECK FAILS, YOU MUST FIX IT BEFORE PROCEEDING.**
 
-All documentation is organized into four categories:
+---
 
-1. **Tutorials** (`docs/tutorials/`) - Learning-oriented, hands-on lessons
-2. **How-to Guides** (`docs/how_to/`) - Task-oriented, problem-solving guides
-3. **Explanations** (`docs/explanations/`) - Understanding-oriented, conceptual
-   discussion
-4. **Reference** (`docs/reference/`) - Information-oriented, technical
-   specifications
+## CRITICAL RULES - NEVER VIOLATE
 
-#### Structure Example
+### Rule 1: File Extensions (MOST VIOLATED)
+
+**YOU MUST:**
+
+- Use `.yaml` extension for ALL YAML files
+- Use `.md` extension for ALL Markdown files
+- Use `.rs` extension for ALL Rust files
+
+**NEVER:**
+
+- ❌ Use `.yml` extension (even though common in industry)
+- ❌ Use `.MD` or `.markdown` extensions
+
+**Examples:**
 
 ```text
-docs/
-├── README.md                    # Documentation overview
-├── tutorials/
-│   ├── README.md               # Tutorials index
-│   └── getting_started.md      # Learning guide
-├── how_to/
-│   ├── README.md               # How-to index
-│   ├── setup.md                # Installation steps
-│   └── use_feature.md          # Task guide
-├── explanations/
-│   ├── README.md               # Explanations index
-│   └── architecture.md         # Conceptual discussion
-└── reference/
-    ├── README.md               # Reference index
-    ├── api.md                  # API specifications
-    └── style_guide.md          # Standards and conventions
+✅ CORRECT:
+   config/production.yaml
+   config/development.yaml
+   docker-compose.yaml
+
+❌ WRONG:
+   config/production.yml
+   config/development.yml
+   docker-compose.yml
 ```
 
-### File Naming Conventions
+**Why This Matters**: CI/CD pipelines expect `.yaml`. Using `.yml` will cause
+build failures.
 
-#### Markdown Files
+### Rule 2: Markdown File Naming (SECOND MOST VIOLATED)
 
-- **README files**: `README.md` (uppercase)
-- **All other documentation**: lowercase with underscores
-  - ✅ `docs/tutorials/getting_started.md`
-  - ✅ `docs/how_to/setup.md`
-  - ✅ `docs/reference/api.md`
-  - ❌ `docs/GETTING_STARTED.md`
-  - ❌ `docs/How-To-Setup.md`
+**YOU MUST:**
 
-### Markdown Formatting
+- Use lowercase letters ONLY
+- Use underscores to separate words
+- Exception: `README.md` is the ONLY uppercase filename allowed
 
-- **Documentation Framework:** Follow the Diataxis framework for structuring
-  documentation:
-  - **Tutorials** - Learning-oriented, teach through hands-on examples
-  - **How-to Guides** - Task-oriented, solve specific problems
-  - **Explanations** - Understanding-oriented, clarify concepts
-  - **Reference** - Information-oriented, technical specifications
-- **Category Placement:** Place each document in the appropriate category
-  directory
-- **Index Files:** Each category has a README.md index explaining its purpose
-- **Doc comments:** Every public function should have doc comments explaining
-  its purpose, arguments, and return values
-- **Example code:** Include code examples within your doc comments
-- **Internal documentation:** Use `#` comments for internal implementation
-  details
-- **MARKDOWN**
-  - **Filenames:** ALL MARKDOWN file names should be lower case except for the
-    README.md.
-  - **DO NOT USE EMOJIs**
-  - **Markdownlint:** Use the rules .markdownlint.json
-- **Centralized documentation:** All documentation lives in `docs/` directory
-  with Diataxis structure
-- **Documentation updates:** Update documentation as part of the development
-  process. When adding new features, create or modify documentation in the
-  appropriate category
-- **DO NOT USE EMOJIS in documentation or code comments**
-- **Always specify language for fenced code blocks:**
-  ```python
-  # Python code here
-  ```
+**NEVER:**
 
-### Markdownlint Configuration
+- ❌ Use CamelCase (DistributedTracing.md)
+- ❌ Use kebab-case (distributed-tracing.md)
+- ❌ Use spaces (Distributed Tracing.md)
+- ❌ Use uppercase (DISTRIBUTED_TRACING.md)
 
-The project uses `.markdownlint.json`:
+**Examples:**
 
-```json
-{
-  "default": true,
-  "line-length": {
-    "code_blocks": false,
-    "tables": false,
-    "headings": false
-  },
-  "MD026": {
-    "punctuation": ".,;:!。，；：！？"
-  },
-  "MD025": false,
-  "MD024": false,
-  "MD033": false,
-  "MD036": false,
-  "MD059": false
+```text
+✅ CORRECT:
+   docs/explanations/distributed_tracing_architecture.md
+   docs/how_to/setup_monitoring.md
+   docs/reference/api_specification.md
+   README.md (ONLY exception)
+
+❌ WRONG:
+   docs/explanations/Distributed-Tracing-Architecture.md
+   docs/explanations/DistributedTracingArchitecture.md
+   docs/explanations/ARCHITECTURE.md
+   docs/how_to/setup-monitoring.md
+   docs/how_to/Setup Monitoring.md
+```
+
+**Why This Matters**: Inconsistent naming breaks documentation linking and makes
+files hard to find.
+
+### Rule 3: No Emojis Anywhere (THIRD MOST VIOLATED)
+
+**YOU MUST:**
+
+- Write ALL documentation without emojis
+- Write ALL code comments without emojis
+- Write ALL commit messages without emojis
+
+**NEVER:**
+
+- ❌ Use emojis in code: `// ✅ This function works`
+- ❌ Use emojis in docs: `## Setup Guide 🚀`
+- ❌ Use emojis in commits: `feat: add auth ✨`
+
+**ONLY EXCEPTION**: This AGENTS.md file uses emojis for visual markers to help
+you follow rules.
+
+**Why This Matters**: Emojis cause encoding issues and make documentation
+unprofessional.
+
+### Rule 4: Code Quality Gates (MUST ALL PASS)
+
+**YOU MUST ensure ALL of these pass before claiming task complete:**
+
+```bash
+# Run in this exact order:
+
+# 1. Format (auto-fixes issues)
+cargo fmt --all
+
+# 2. Compile check (fast, no binary)
+cargo check --all-targets --all-features
+
+# 3. Lint (treats warnings as errors)
+cargo clippy --all-targets --all-features -- -D warnings
+
+# 4. Tests (must have >80% coverage)
+cargo test --all-features
+```
+
+**Expected Results:**
+
+<!-- markdownlint-disable MD040 -->
+
+```
+✅ cargo fmt         → No output (all files formatted)
+✅ cargo check       → "Finished" with 0 errors
+✅ cargo clippy      → "Finished" with 0 warnings
+✅ cargo test        → "test result: ok. X passed; 0 failed"
+```
+
+<!-- markdownlint-enable MD040 -->
+
+**IF ANY FAIL**: Stop immediately and fix before proceeding.
+
+### Rule 5: Documentation is Mandatory
+
+**YOU MUST:**
+
+- Create documentation file in `docs/explanations/` for EVERY feature/task
+- Use filename pattern: `{feature_name}_implementation.md` or
+  `{phase}_summary.md`
+- Include: Overview, Components, Implementation Details, Testing, Examples
+- Add `///` doc comments to EVERY public function, struct, enum, module
+- Include runnable examples in doc comments (tested by `cargo test`)
+
+**NEVER:**
+
+- ❌ Skip documentation because "code is self-documenting"
+- ❌ Put documentation in wrong directory
+- ❌ Forget to specify language in code blocks
+
+**Examples:**
+
+````rust
+/// Calculates the factorial of a number
+///
+/// # Arguments
+///
+/// * `n` - The number to calculate factorial for (must be ≤ 20)
+///
+/// # Returns
+///
+/// Returns the factorial as u64
+///
+/// # Errors
+///
+/// Returns `MathError::Overflow` if n > 20
+///
+/// # Examples
+///
+/// ```
+/// use xzepr::math::factorial;
+///
+/// let result = factorial(5);
+/// assert_eq!(result, 120);
+/// ```
+///
+/// # Panics
+///
+/// Panics if n is negative (though type system prevents this)
+pub fn factorial(n: u64) -> Result<u64, MathError> {
+    // Implementation
+}
+````
+
+**Documentation File Structure:**
+
+````markdown
+# Feature Name Implementation
+
+## Overview
+
+Brief description of what was implemented
+
+## Components Delivered
+
+- File 1: Description (X lines)
+- File 2: Description (Y lines)
+
+## Implementation Details
+
+Technical explanation with code examples
+
+## Testing
+
+Test coverage and validation results
+
+## Usage Examples
+
+```rust
+// Complete, runnable examples
+```
+````
+
+## References
+
+- Link to architecture docs
+- Link to related features
+
+<!-- markdownlint-disable MD040 -->
+
+````
+<!-- markdownlint-enable MD040 -->
+
+---
+
+## Project Overview
+
+### Identity
+
+- **Name**: XZepr
+- **Type**: High-performance event tracking server
+- **Language**: Rust (latest stable)
+- **Key Features**: Real-time streaming (Redpanda), Authentication, RBAC, Observability
+
+### Architecture (Layered Design)
+
+**CRITICAL**: YOU MUST respect these layer boundaries:
+
+```text
+┌──────────────────────────────────────────────┐
+│  API Layer (src/api/)                        │
+│  - REST endpoints, GraphQL, middleware       │
+├──────────────────────────────────────────────┤
+│  Application Layer (src/application/)        │
+│  - Use cases, application services           │
+├──────────────────────────────────────────────┤
+│  Domain Layer (src/domain/)                  │
+│  - Core business logic (NO infrastructure)   │
+├──────────────────────────────────────────────┤
+│  Auth Layer (src/auth/)                      │
+│  - Multi-provider authentication + RBAC      │
+├──────────────────────────────────────────────┤
+│  Infrastructure Layer (src/infrastructure/)  │
+│  - Database, Redpanda, external services     │
+└──────────────────────────────────────────────┘
+````
+
+**Layer Dependencies (MUST FOLLOW):**
+
+- ✅ API → Application → Domain
+- ✅ Application → Domain
+- ✅ Infrastructure → Domain (for implementation)
+- ❌ Domain → Infrastructure (NEVER)
+- ❌ Domain → API (NEVER)
+
+---
+
+## Development Workflow
+
+### Step-by-Step Process (FOLLOW EXACTLY)
+
+#### Phase 1: Preparation
+
+1. **Understand the Task**
+
+   - Read requirements completely
+   - Identify which architecture layers are affected
+   - Check for existing similar code
+
+2. **Search Existing Code**
+
+   ```bash
+   # Find relevant files
+   grep -r "function_name" src/
+   find src/ -name "*feature*.rs"
+   ```
+
+3. **Plan Changes**
+   - List files to create/modify
+   - Identify tests needed
+   - Determine documentation category
+
+#### Phase 2: Implementation
+
+1. **Write Code**
+
+   ````rust
+   // Follow this pattern for ALL public items:
+
+   /// One-line description
+   ///
+   /// Longer explanation of behavior and purpose.
+   ///
+   /// # Arguments
+   ///
+   /// * `param` - Description
+   ///
+   /// # Returns
+   ///
+   /// Description of return value
+   ///
+   /// # Errors
+   ///
+   /// Returns `ErrorType` if condition
+   ///
+   /// # Examples
+   ///
+   /// ```
+   /// use xzepr::module::function;
+   ///
+   /// let result = function(arg);
+   /// assert_eq!(result, expected);
+   /// ```
+   pub fn function(param: Type) -> Result<ReturnType, Error> {
+       // Implementation
+   }
+   ````
+
+2. **Write Tests (MANDATORY)**
+
+   ```rust
+   #[cfg(test)]
+   mod tests {
+       use super::*;
+
+       #[test]
+       fn test_function_with_valid_input() {
+           // Arrange
+           let input = "test";
+
+           // Act
+           let result = function(input);
+
+           // Assert
+           assert!(result.is_ok());
+           assert_eq!(result.unwrap(), expected);
+       }
+
+       #[test]
+       fn test_function_with_invalid_input() {
+           let result = function("");
+           assert!(result.is_err());
+       }
+
+       #[test]
+       fn test_function_edge_case() {
+           // Test boundary conditions
+       }
+   }
+   ```
+
+3. **Run Quality Checks Incrementally**
+
+   ```bash
+   # After writing code
+   cargo fmt --all
+   cargo clippy --all-targets --all-features -- -D warnings
+
+   # After writing tests
+   cargo test --all-features
+
+   # Before committing - verify all checks pass
+   cargo fmt --all
+   cargo check --all-targets --all-features
+   cargo clippy --all-targets --all-features -- -D warnings
+   cargo test --all-features
+   ```
+
+#### Phase 3: Documentation
+
+**YOU MUST create** `docs/explanations/{feature}_implementation.md`:
+
+````markdown
+# Feature Name Implementation
+
+## Overview
+
+Brief description of what was implemented and why.
+
+## Components Delivered
+
+- `src/path/file.rs` (XXX lines) - Description
+- `src/path/tests.rs` (YYY lines) - Test coverage
+- `docs/explanations/feature.md` (ZZZ lines) - This document
+
+Total: ~N,NNN lines
+
+## Implementation Details
+
+### Component 1: Name
+
+Description with code examples:
+
+```rust
+pub fn example() {
+    // Code
+}
+```
+````
+
+### Component 2: Name
+
+More details...
+
+## Testing
+
+Test coverage: XX% (must be >80%)
+
+```text
+test result: ok. X passed; 0 failed; Y ignored
+```
+
+## Usage Examples
+
+Complete, runnable examples:
+
+```rust
+use xzepr::module::Feature;
+
+fn main() {
+    let feature = Feature::new();
+    feature.do_something();
 }
 ```
 
-### Validation
+## Validation Results
 
-#### Before Committing
+- ✅ `cargo fmt --all` passed
+- ✅ `cargo check --all-targets --all-features` passed
+- ✅ `cargo clippy --all-targets --all-features -- -D warnings` shows zero warnings
+- ✅ `cargo test --all-features` passed with >80% coverage
+- ✅ Documentation complete
 
-Lint and format your markdown files:
+## References
+
+- Architecture: `docs/explanations/architecture.md`
+- API Reference: `docs/reference/api.md`
+
+<!-- markdownlint-disable MD040 -->
+
+````
+<!-- markdownlint-enable MD040 -->
+
+#### Phase 4: Validation (CRITICAL)
+
+**Run these commands and verify output:**
 
 ```bash
-markdownlint --fix --config .markdownlint.json docs/your_file.md
-prettier --write --parser markdown --prose-wrap always docs/your_file.md
+# 1. Format check
+cargo fmt --all
+# Expected: No output (all files formatted)
+
+# 2. Compilation check
+cargo check --all-targets --all-features
+# Expected: "Finished" with 0 errors
+
+# 3. Lint check (treats warnings as errors)
+cargo clippy --all-targets --all-features -- -D warnings
+# Expected: "Finished" with 0 warnings
+
+# 4. Test check
+cargo test --all-features
+# Expected: "test result: ok. X passed; 0 failed" where X > previous count
+
+# 5. Verify documentation created
+ls -la docs/explanations/*{feature}*.md
+# Expected: File exists with lowercase filename
+
+# 6. Verify no emoji in docs
+grep -r "[\x{1F600}-\x{1F64F}]" docs/
+# Expected: No matches (except AGENTS.md)
 ```
 
-## Updates
+**IF ANY VALIDATION FAILS: Stop and fix immediately.**
 
-This file is a living document. If you notice an AI agent making a repeated
-mistake or suggesting code that doesn't align with project standards, update
-this file with a new rule to prevent it.
+---
 
-## Prompt
+## Rust Coding Standards
 
-You are a master Rust developer with an IQ of 161. Follow the rules in @AGENTS.md put the summary in docs/explanations and filename should be lowercase.
+### Error Handling (MANDATORY PATTERNS)
+
+**YOU MUST:**
+
+- Use `Result<T, E>` for ALL recoverable errors
+- Use `?` operator for error propagation
+- Use `thiserror` for custom error types
+- Use descriptive error messages
+
+**NEVER:**
+
+- ❌ Use `unwrap()` without justification
+- ❌ Use `expect()` without descriptive message
+- ❌ Ignore errors with `let _ =`
+- ❌ Return `panic!` for recoverable errors
+
+**Correct Patterns:**
+
+```rust
+// ✅ GOOD - Proper error handling
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum ConfigError {
+    #[error("Failed to read config file: {0}")]
+    ReadError(String),
+
+    #[error("Invalid YAML syntax: {0}")]
+    ParseError(String),
+}
+
+pub fn load_config(path: &str) -> Result<Config, ConfigError> {
+    let contents = std::fs::read_to_string(path)
+        .map_err(|e| ConfigError::ReadError(e.to_string()))?;
+
+    let config: Config = serde_yaml::from_str(&contents)
+        .map_err(|e| ConfigError::ParseError(e.to_string()))?;
+
+    config.validate()?;
+    Ok(config)
+}
+
+// ❌ BAD - Using unwrap
+pub fn load_config(path: &str) -> Config {
+    let contents = std::fs::read_to_string(path).unwrap(); // NEVER
+    serde_yaml::from_str(&contents).unwrap() // NEVER
+}
+
+// ⚠️ ACCEPTABLE - unwrap with justification
+pub fn get_app_version() -> String {
+    // SAFETY: This is set at compile time and cannot fail
+    env!("CARGO_PKG_VERSION").to_string()
+}
+```
+
+### Testing Standards (MANDATORY)
+
+**YOU MUST:**
+
+- Write tests for ALL public functions
+- Test both success and failure cases
+- Test edge cases and boundaries
+- Achieve >80% code coverage
+- Use descriptive test names: `test_{function}_{condition}_{expected}`
+
+**Test Structure Template:**
+
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Success case
+    #[test]
+    fn test_parse_config_with_valid_yaml() {
+        let yaml = "key: value";
+        let result = parse_config(yaml);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().key, "value");
+    }
+
+    // Failure case
+    #[test]
+    fn test_parse_config_with_invalid_yaml() {
+        let yaml = "invalid: : yaml";
+        let result = parse_config(yaml);
+        assert!(result.is_err());
+    }
+
+    // Edge case
+    #[test]
+    fn test_parse_config_with_empty_string() {
+        let result = parse_config("");
+        assert!(result.is_err());
+    }
+
+    // Boundary condition
+    #[test]
+    fn test_parse_config_with_max_size() {
+        let yaml = "x".repeat(MAX_CONFIG_SIZE);
+        let result = parse_config(&yaml);
+        assert!(result.is_ok());
+    }
+
+    // Error propagation
+    #[test]
+    fn test_parse_config_propagates_validation_error() {
+        let yaml = "invalid_field: value";
+        let result = parse_config(yaml);
+        assert!(matches!(result, Err(ConfigError::ValidationError(_))));
+    }
+}
+```
+
+---
+
+## Git Conventions
+
+### Branch Naming (MANDATORY FORMAT)
+
+**YOU MUST use this format:**
+
+```text
+pr-{jira-issue}
+```
+
+**Examples:**
+
+<!-- markdownlint-disable MD040 -->
+```
+✅ CORRECT:
+   pr-cpipe-1234
+   pr-xzepr-5678
+   pr-proj-9012
+
+❌ WRONG:
+   PR-CPIPE-1234        (uppercase)
+   feature/cpipe-1234   (wrong format)
+   cpipe-1234           (missing pr- prefix)
+   pr_cpipe_1234        (underscore instead of dash)
+```
+<!-- markdownlint-enable MD040 -->
+
+### Commit Messages (MANDATORY FORMAT)
+
+**Format:**
+
+```text
+<type>(<scope>): <description> (<JIRA-ISSUE>)
+
+[optional body explaining why change was made]
+
+[optional footer with breaking changes]
+```
+
+**Rules (MUST FOLLOW ALL):**
+
+1. Type MUST be one of: `feat|fix|docs|style|refactor|perf|test|chore`
+2. Scope is optional but recommended
+3. Description MUST be lowercase
+4. Description MUST use imperative mood ("add" not "added")
+5. JIRA issue MUST be uppercase in parentheses
+6. First line MUST be ≤72 characters (including JIRA issue)
+
+**Types Explained:**
+
+- `feat` - New feature (triggers minor version bump)
+- `fix` - Bug fix (triggers patch version bump)
+- `docs` - Documentation only (no code changes)
+- `style` - Code formatting (no logic changes)
+- `refactor` - Code restructuring (no behavior changes)
+- `perf` - Performance improvements
+- `test` - Adding/fixing tests
+- `chore` - Build process, dependencies, tools
+
+**Examples:**
+
+<!-- markdownlint-disable MD040 -->
+```
+✅ CORRECT:
+feat(auth): add JWT token refresh endpoint (CPIPE-1234)
+fix(api): handle edge case in event validation (CPIPE-5678)
+docs(readme): update installation instructions (XZEPR-9012)
+refactor(metrics): simplify prometheus integration (CPIPE-3456)
+
+With body:
+feat(tracing): add distributed tracing support (XZEPR-4567)
+
+Implements OpenTelemetry integration with Jaeger exporter.
+Adds automatic span creation for all HTTP requests.
+
+❌ WRONG:
+Added JWT token refresh (CPIPE-1234)              # Wrong mood, no type
+feat(auth): Add JWT Token (cpipe-1234)            # Wrong case
+feat: add JWT (CPIPE-1234)                        # Missing scope
+add jwt refresh (CPIPE-1234)                      # No type
+feat(auth): add JWT token refresh feature that allows users to... (CPIPE-1234)  # Too long
+```
+<!-- markdownlint-enable MD040 -->
+
+---
+
+## Documentation Organization (Diataxis Framework)
+
+**YOU MUST categorize documentation correctly:**
+
+### Category 1: Tutorials (`docs/tutorials/`)
+
+**Purpose**: Learning-oriented, step-by-step lessons
+
+**Use for**:
+
+- Getting started guides
+- Learning path tutorials
+- Hands-on examples
+
+**Example**: `docs/tutorials/getting_started.md`
+
+### Category 2: How-To Guides (`docs/how_to/`)
+
+**Purpose**: Task-oriented, problem-solving recipes
+
+**Use for**:
+
+- Installation steps
+- Configuration guides
+- Troubleshooting procedures
+
+**Example**: `docs/how_to/setup_monitoring.md`
+
+### Category 3: Explanations (`docs/explanations/`) ← DEFAULT FOR YOUR SUMMARIES
+
+**Purpose**: Understanding-oriented, conceptual discussion
+
+**Use for**:
+
+- Architecture explanations
+- Design decisions
+- Implementation summaries ← **YOU TYPICALLY CREATE THESE**
+- Concept clarifications
+
+**Example**: `docs/explanations/phase4_observability_implementation.md`
+
+### Category 4: Reference (`docs/reference/`)
+
+**Purpose**: Information-oriented, technical specifications
+
+**Use for**:
+
+- API documentation
+- Configuration reference
+- Command reference
+
+**Example**: `docs/reference/api_specification.md`
+
+### Decision Tree: Where to Put Documentation?
+
+<!-- markdownlint-disable MD040 -->
+```
+Is it a step-by-step tutorial?
+├─ YES → docs/tutorials/
+└─ NO
+   ├─ Is it solving a specific task?
+   │  ├─ YES → docs/how_to/
+   │  └─ NO
+   │     ├─ Is it explaining concepts/architecture?
+   │     │  ├─ YES → docs/explanations/  ← MOST COMMON FOR AI AGENTS
+   │     │  └─ NO
+   │     │     └─ Is it reference material?
+   │     │        └─ YES → docs/reference/
+```
+<!-- markdownlint-enable MD040 -->
+
+---
+
+## Common Pitfalls and How to Avoid Them
+
+### Pitfall 1: Using `.yml` Instead of `.yaml`
+
+**ISSUE**: `.yml` is common in industry, so agents default to it
+
+**WHY IT FAILS**: Our CI/CD expects `.yaml` extension only
+
+**PREVENTION**:
+
+```bash
+# ✅ Before creating any YAML file, use full extension
+touch config/production.yaml
+
+# ❌ Never use short extension
+touch config/production.yml  # Will cause CI failure
+```
+
+**FIX IF YOU MADE THIS MISTAKE**:
+
+```bash
+# Rename all .yml to .yaml
+find . -name "*.yml" -exec sh -c 'mv "$0" "${0%.yml}.yaml"' {} \;
+```
+
+### Pitfall 2: Uppercase or CamelCase in Documentation Filenames
+
+**ISSUE**: Agents use CamelCase or capitalization for readability
+
+**WHY IT FAILS**: Breaks documentation links, inconsistent naming
+
+**PREVENTION**:
+
+```bash
+# ✅ Always use lowercase_with_underscores
+touch docs/explanations/distributed_tracing_implementation.md
+
+# ❌ Never use these patterns
+touch docs/explanations/DistributedTracingImplementation.md  # CamelCase
+touch docs/explanations/Distributed-Tracing-Implementation.md # Capitalized
+touch docs/explanations/DISTRIBUTED_TRACING.md # Uppercase
+```
+
+**FIX IF YOU MADE THIS MISTAKE**:
+
+```bash
+# Rename to lowercase with underscores
+mv docs/explanations/DistributedTracing.md \
+   docs/explanations/distributed_tracing.md
+```
+
+### Pitfall 3: Forgetting to Run `cargo fmt`
+
+**ISSUE**: Code works but fails CI due to formatting
+
+**WHY IT FAILS**: CI runs `cargo fmt --check` which fails if code isn't
+formatted
+
+**PREVENTION**:
+
+```bash
+# ALWAYS run before committing
+cargo fmt --all
+
+# Verify it worked
+cargo fmt --all -- --check
+# Expected: no output = success
+```
+
+**FIX IF CI FAILS**:
+
+```bash
+cargo fmt --all
+git add -u
+git commit --amend --no-edit
+```
+
+### Pitfall 4: Using `unwrap()` Without Justification
+
+**ISSUE**: Code works in testing but panics in production
+
+**WHY IT FAILS**: Unexpected errors cause service crashes
+
+**PREVENTION**:
+
+```rust
+// ❌ BAD - Will panic if file doesn't exist
+let config = std::fs::read_to_string("config.yaml").unwrap();
+
+// ✅ GOOD - Handles error gracefully
+let config = std::fs::read_to_string("config.yaml")
+    .map_err(|e| ConfigError::ReadFailed(e.to_string()))?;
+```
+
+**FIX IF YOU MADE THIS MISTAKE**:
+
+```bash
+# Find all unwrap calls
+grep -rn "unwrap()" src/
+
+# Replace with proper error handling
+```
+
+### Pitfall 5: Missing Documentation File
+
+**ISSUE**: Task complete but no documentation created
+
+**WHY IT FAILS**: Knowledge is lost, future developers confused
+
+**PREVENTION**:
+
+```bash
+# Immediately after starting a task, create doc file
+touch docs/explanations/feature_name_implementation.md
+
+# Fill it in as you work
+# Add final validation section when done
+```
+
+### Pitfall 6: Emojis in Documentation
+
+**ISSUE**: Emojis used for "visual appeal"
+
+**WHY IT FAILS**: Encoding issues, unprofessional, breaks tooling
+
+**PREVENTION**:
+
+```markdown
+<!-- ❌ BAD -->
+
+# Setup Guide 🚀
+
+## Prerequisites ✅
+
+<!-- ✅ GOOD -->
+
+# Setup Guide
+
+## Prerequisites
+```
+
+**FIX IF YOU MADE THIS MISTAKE**:
+
+```bash
+# Find all emoji usage
+grep -r "[\x{1F600}-\x{1F64F}]" docs/
+
+# Remove manually
+```
+
+### Pitfall 7: Ignoring Clippy Warnings
+
+**ISSUE**: "It's just a warning, not an error"
+
+**WHY IT FAILS**: CI treats warnings as errors (`-D warnings`)
+
+**PREVENTION**:
+
+```bash
+# Fix ALL warnings before committing
+cargo clippy --all-targets --all-features -- -D warnings
+
+# If you see warnings, fix them one by one
+# Re-run after each fix to ensure no new warnings introduced
+```
+
+---
+
+## Emergency Procedures
+
+### When Quality Checks Fail
+
+**SYSTEMATIC DEBUG PROCESS:**
+
+```bash
+# Step 1: Fix formatting (always do this first)
+cargo fmt --all
+
+# Step 2: Fix compilation errors
+cargo check --all-targets --all-features
+# Read each error message
+# Fix root cause, not symptoms
+# Re-run after each fix
+
+# Step 3: Fix clippy warnings (one at a time)
+cargo clippy --all-targets --all-features -- -D warnings
+# Fix first warning
+# Re-run clippy
+# Repeat until zero warnings
+
+# Step 4: Fix failing tests
+cargo test --all-features -- --nocapture
+# Read test failure output
+# Fix failing tests or update expectations
+# Re-run tests
+
+# Step 5: Verify all checks pass
+cargo fmt --all
+cargo check --all-targets --all-features
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all-features
+```
+
+### When Tests Fail
+
+**DIAGNOSTIC COMMANDS:**
+
+```bash
+# Run with detailed output
+cargo test -- --nocapture --test-threads=1
+
+# Run specific test
+cargo test test_name -- --nocapture
+
+# Run tests in specific module
+cargo test module::tests:: -- --nocapture
+
+# Show backtrace on panic
+RUST_BACKTRACE=1 cargo test
+
+# Run with debug logging
+RUST_LOG=debug cargo test
+```
+
+**DEBUGGING STRATEGY:**
+
+1. Read the test failure message carefully
+2. Understand what the test expects
+3. Add `println!` or `dbg!` to see actual values
+4. Fix the code or update the test
+5. Re-run until passing
+
+### When Clippy Reports Warnings
+
+**FIXING PROCESS:**
+
+```bash
+# List all warnings
+cargo clippy --all-targets --all-features 2>&1 | grep "warning:"
+
+# Fix warnings by category:
+
+# 1. Unused code
+#    - Remove if truly unused
+#    - Add #[allow(dead_code)] with justification if needed
+
+# 2. Complexity warnings
+#    - Refactor complex functions
+#    - Extract helper functions
+
+# 3. Style warnings
+#    - Follow clippy suggestions
+#    - Run cargo fix if available
+
+# 4. Correctness warnings
+#    - Fix immediately (these are bugs)
+
+# Re-run after each fix
+cargo clippy --all-targets --all-features -- -D warnings
+```
+
+---
+
+## Validation Checklist
+
+**BEFORE CLAIMING TASK IS COMPLETE, VERIFY ALL:**
+
+### Code Quality
+
+- [ ] `cargo fmt --all` applied successfully
+- [ ] `cargo check --all-targets --all-features` passes with zero errors
+- [ ] `cargo clippy --all-targets --all-features -- -D warnings` shows zero warnings
+- [ ] `cargo test --all-features` passes with >80% coverage
+- [ ] No `unwrap()` or `expect()` without justification
+- [ ] All public items have doc comments with examples
+- [ ] All functions have at least 3 tests (success, failure, edge case)
+
+### Testing
+
+- [ ] Unit tests added for ALL new functions
+- [ ] Integration tests added if needed
+- [ ] Test count increased from before (verify with `cargo test --lib`)
+- [ ] Both success and failure cases tested
+- [ ] Edge cases and boundaries covered
+- [ ] All tests use descriptive names: `test_{function}_{condition}_{expected}`
+
+### Documentation
+
+- [ ] Documentation file created in `docs/explanations/`
+- [ ] Filename uses lowercase_with_underscores.md
+- [ ] README.md exception is ONLY uppercase filename
+- [ ] No emojis anywhere in documentation
+- [ ] All code blocks specify language (`rust, not`)
+- [ ] Documentation includes: Overview, Components, Details, Testing, Examples
+- [ ] Markdownlint passes (if configured)
+
+### Files and Structure
+
+- [ ] All YAML files use `.yaml` extension (NOT `.yml`)
+- [ ] All Markdown files use `.md` extension
+- [ ] No uppercase in filenames except `README.md`
+- [ ] Files placed in correct architecture layer
+- [ ] Documentation in correct Diataxis category
+
+### Git
+
+- [ ] Branch name follows `pr-{jira-issue}` format (lowercase)
+- [ ] Commit message follows conventional commits
+- [ ] Commit message includes JIRA issue in uppercase
+- [ ] Commit message first line ≤72 characters
+- [ ] Commit uses imperative mood ("add" not "added")
+
+### Architecture
+
+- [ ] Changes respect layer boundaries
+- [ ] Domain layer has no infrastructure dependencies
+- [ ] Proper separation of concerns maintained
+- [ ] No circular dependencies introduced
+
+---
+
+## Quick Command Reference
+
+### Essential Cargo Commands
+
+```bash
+# Build and check
+cargo build                                      # Debug build
+cargo build --release                            # Optimized build
+cargo check --all-targets --all-features         # Fast compile check
+
+# Quality
+cargo fmt --all                                  # Format all code
+cargo fmt --all -- --check                       # Check formatting
+cargo clippy --all-targets --all-features -- -D warnings  # Lint
+
+# Testing
+cargo test                                       # Run all tests
+cargo test --lib                                 # Library tests only
+cargo test --all-features                        # With all features
+cargo test -- --nocapture                        # Show output
+cargo test test_name                             # Specific test
+
+# Documentation
+cargo doc --open                                 # Generate and open docs
+cargo doc --no-deps --open                       # Without dependencies
+
+# Maintenance
+cargo clean                                      # Remove build artifacts
+cargo update                                     # Update dependencies
+cargo tree                                       # Show dependency tree
+cargo audit                                      # Security check
+```
+
+### Project-Specific Commands
+
+```bash
+# Quality validation workflow
+cargo fmt --all                                  # Format code
+cargo check --all-targets --all-features         # Check compilation
+cargo clippy --all-targets --all-features -- -D warnings  # Lint
+cargo test --all-features                        # Run tests
+
+# Additional make commands (if available)
+make test                                        # Run tests
+make build                                       # Build project
+make clean                                       # Clean artifacts
+
+# Adding dependencies
+cargo add <crate_name>                           # Add to Cargo.toml
+cargo add <crate_name> --dev                     # Dev dependency
+cargo add <crate_name> --features=<feature>      # With feature
+```
+
+---
+
+## Summary: The Three Golden Rules
+
+**If you remember nothing else, remember these:**
+
+### Rule 1: File Extensions
+
+```text
+.yaml (NOT .yml)
+.md (NOT .MD or .markdown)
+```
+
+### Rule 2: Documentation Filenames
+
+```text
+lowercase_with_underscores.md
+Exception: README.md ONLY
+```
+
+### Rule 3: Quality Checks
+
+<!-- markdownlint-disable MD040 -->
+```
+All four cargo commands MUST pass before claiming done:
+- cargo fmt --all
+- cargo check --all-targets --all-features
+- cargo clippy --all-targets --all-features -- -D warnings
+- cargo test --all-features
+```
+<!-- markdownlint-enable MD040 -->
+
+---
+
+## The Golden Workflow
+
+**FOLLOW THIS SEQUENCE FOR EVERY TASK:**
+
+<!-- markdownlint-disable MD040 -->
+```
+1. Create branch: pr-{jira-issue}
+2. Implement code with /// doc comments
+3. Add tests (>80% coverage)
+4. Run: cargo fmt --all
+5. Run: cargo check --all-targets --all-features
+6. Run: cargo clippy --all-targets --all-features -- -D warnings
+7. Run: cargo test --all-features
+8. Create: docs/explanations/{feature}_implementation.md
+9. Commit with proper format: <type>(<scope>): <description> (JIRA-ISSUE)
+10. Verify: All checklist items above are checked
+```
+<!-- markdownlint-enable MD040 -->
+
+**IF YOU FOLLOW THIS WORKFLOW, YOUR CODE WILL BE ACCEPTED.**
+
+**IF YOU SKIP STEPS OR VIOLATE RULES, YOUR CODE WILL BE REJECTED.**
+
+---
+
+## Living Document
+
+This file is continuously updated as new patterns emerge. Last updated: 2024
+
+**For AI Agents**: You are a master Rust developer. Follow these rules
+precisely. Put all implementation summaries in `docs/explanations/` with
+lowercase filenames.
+````

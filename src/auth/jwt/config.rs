@@ -272,26 +272,32 @@ mod tests {
 
     #[test]
     fn test_validate_rs256_missing_keys() {
-        let mut config = JwtConfig::default();
-        config.algorithm = Algorithm::RS256;
-        config.private_key_path = None;
-        config.public_key_path = None;
+        let config = JwtConfig {
+            algorithm: Algorithm::RS256,
+            private_key_path: None,
+            public_key_path: None,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_validate_hs256_missing_secret() {
-        let mut config = JwtConfig::default();
-        config.algorithm = Algorithm::HS256;
-        config.secret_key = None;
+        let config = JwtConfig {
+            algorithm: Algorithm::HS256,
+            secret_key: None,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_validate_hs256_short_secret() {
-        let mut config = JwtConfig::default();
-        config.algorithm = Algorithm::HS256;
-        config.secret_key = Some("short".to_string());
+        let config = JwtConfig {
+            algorithm: Algorithm::HS256,
+            secret_key: Some("short".to_string()),
+            ..Default::default()
+        };
         let result = config.validate();
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("at least 32 characters"));

@@ -11,8 +11,10 @@
 
 pub mod cors;
 pub mod jwt;
+pub mod metrics;
 pub mod rate_limit;
 pub mod security_headers;
+pub mod tracing_middleware;
 pub mod validation;
 
 // TODO: Implement these modules
@@ -24,6 +26,10 @@ pub use jwt::{
     jwt_auth_middleware, optional_jwt_auth_middleware, require_permissions, require_roles,
     AuthError, AuthenticatedUser, JwtMiddlewareState,
 };
+pub use metrics::{
+    extract_path_for_metrics, metrics_middleware, metrics_middleware_simple, record_error_metric,
+    MetricsError, MetricsMiddlewareState,
+};
 pub use rate_limit::{
     rate_limit_middleware, InMemoryRateLimitStore, RateLimitConfig, RateLimitStore,
     RateLimiterState,
@@ -31,6 +37,9 @@ pub use rate_limit::{
 pub use security_headers::{
     security_headers_middleware, security_headers_middleware_with_config, FrameOptions,
     ReferrerPolicy, SecurityHeadersConfig,
+};
+pub use tracing_middleware::{
+    enhanced_tracing_middleware, request_id_middleware, tracing_middleware, RequestId, TracedError,
 };
 pub use validation::{
     body_size_limit_middleware, sanitize, validate_request, FieldError, ValidationConfig,

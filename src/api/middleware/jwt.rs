@@ -229,6 +229,9 @@ impl std::fmt::Display for AuthError {
 
 impl std::error::Error for AuthError {}
 
+/// Type alias for authorization middleware function
+type AuthMiddlewareFn = Box<dyn std::future::Future<Output = Result<Response, AuthError>> + Send>;
+
 /// Role-based authorization middleware
 ///
 /// Requires that the authenticated user has at least one of the specified roles.
@@ -247,13 +250,7 @@ impl std::error::Error for AuthError {}
 /// ```
 pub fn require_roles(
     roles: Vec<String>,
-) -> impl Fn(
-    AuthenticatedUser,
-    Request,
-    Next,
-) -> std::pin::Pin<
-    Box<dyn std::future::Future<Output = Result<Response, AuthError>> + Send>,
-> + Clone {
+) -> impl Fn(AuthenticatedUser, Request, Next) -> std::pin::Pin<AuthMiddlewareFn> + Clone {
     move |user: AuthenticatedUser, request: Request, next: Next| {
         let roles = roles.clone();
         Box::pin(async move {
@@ -273,13 +270,7 @@ pub fn require_roles(
 /// Requires that the authenticated user has at least one of the specified permissions.
 pub fn require_permissions(
     permissions: Vec<String>,
-) -> impl Fn(
-    AuthenticatedUser,
-    Request,
-    Next,
-) -> std::pin::Pin<
-    Box<dyn std::future::Future<Output = Result<Response, AuthError>> + Send>,
-> + Clone {
+) -> impl Fn(AuthenticatedUser, Request, Next) -> std::pin::Pin<AuthMiddlewareFn> + Clone {
     move |user: AuthenticatedUser, request: Request, next: Next| {
         let permissions = permissions.clone();
         Box::pin(async move {

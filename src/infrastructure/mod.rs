@@ -5,6 +5,7 @@ pub mod database;
 pub mod metrics;
 pub mod monitoring;
 pub mod security_config;
+pub mod tracing;
 
 pub use metrics::PrometheusMetrics;
 pub use monitoring::{
@@ -13,4 +14,7 @@ pub use monitoring::{
 pub use security_config::{
     CorsSecurityConfig, MonitoringConfig, RateLimitSecurityConfig, SecurityConfig,
     SecurityHeadersConfig, ValidationSecurityConfig,
+};
+pub use tracing::{
+    extract_trace_context, init_tracing, inject_trace_context, shutdown_tracing, TracingConfig,
 };

@@ -12,6 +12,7 @@ use crate::api::graphql::{graphql_handler, graphql_health, graphql_playground};
 use crate::api::middleware::rate_limit::RedisRateLimitStore;
 use crate::api::middleware::{
     cors::CorsConfig,
+    metrics::MetricsMiddlewareState,
     rate_limit::{RateLimitConfig, RateLimiterState},
     security_headers::{security_headers_middleware_with_config, SecurityHeadersConfig},
     validation::body_size_limit_middleware,
@@ -73,14 +74,15 @@ impl RouterConfig {
 
 /// Builds the application router with all security middleware
 ///
-/// # Security Layers (applied in order from outermost to innermost)
+/// # Middleware Layers (applied in order from outermost to innermost)
 ///
 /// 1. Security Headers - CSP, HSTS, X-Frame-Options, etc.
 /// 2. CORS - Origin validation
-/// 3. Rate Limiting - Abuse prevention
-/// 4. Body Size Limits - Request size validation
-/// 5. Tracing - Request logging
-/// 6. Authentication - JWT validation (per-route)
+/// 3. Metrics - Request instrumentation (Prometheus)
+/// 4. Rate Limiting - Abuse prevention
+/// 5. Body Size Limits - Request size validation
+/// 6. Tracing - Request logging
+/// 7. Authentication - JWT validation (per-route)
 ///
 /// # Arguments
 ///
@@ -194,6 +196,9 @@ pub async fn build_router(state: AppState, config: RouterConfig) -> Router {
         Arc::new(PrometheusMetrics::default())
     });
 
+    // Create metrics middleware state
+    let metrics_middleware_state = MetricsMiddlewareState::new(metrics_state.clone());
+
     // Build the router with all routes
     Router::new()
         // Health check endpoint (public, no auth required)
@@ -222,14 +227,19 @@ pub async fn build_router(state: AppState, config: RouterConfig) -> Router {
         .route("/api/v1/groups/:id", get(delete_event_receiver_group))
         .with_state(state)
         // Apply middleware layers (innermost to outermost)
-        // Layer 6: Tracing (request logging)
+        // Layer 7: Tracing (request logging)
         .layer(TraceLayer::new_for_http())
-        // Layer 5: Body size limits
+        // Layer 6: Body size limits
         .layer(middleware::from_fn(body_size_limit_middleware))
-        // Layer 4: Rate limiting
+        // Layer 5: Rate limiting
         .layer(middleware::from_fn_with_state(
             rate_limiter,
             crate::api::middleware::rate_limit::rate_limit_middleware,
+        ))
+        // Layer 4: Metrics (Prometheus instrumentation)
+        .layer(middleware::from_fn_with_state(
+            metrics_middleware_state,
+            crate::api::middleware::metrics::metrics_middleware,
         ))
         // Layer 3: CORS
         .layer(cors_layer)

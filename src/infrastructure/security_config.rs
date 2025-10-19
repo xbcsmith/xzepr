@@ -4,7 +4,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 /// Security configuration for production deployments
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct SecurityConfig {
     /// CORS configuration
     pub cors: CorsSecurityConfig,
@@ -115,18 +115,6 @@ pub struct MonitoringConfig {
     /// Prometheus metrics port
     #[serde(default = "default_metrics_port")]
     pub metrics_port: u16,
-}
-
-impl Default for SecurityConfig {
-    fn default() -> Self {
-        Self {
-            cors: CorsSecurityConfig::default(),
-            rate_limit: RateLimitSecurityConfig::default(),
-            validation: ValidationSecurityConfig::default(),
-            headers: SecurityHeadersConfig::default(),
-            monitoring: MonitoringConfig::default(),
-        }
-    }
 }
 
 impl Default for CorsSecurityConfig {
