@@ -160,16 +160,12 @@ cargo test --all-features
 
 **Expected Results:**
 
-<!-- markdownlint-disable MD040 -->
-
-```
+```text
 ✅ cargo fmt         → No output (all files formatted)
 ✅ cargo check       → "Finished" with 0 errors
 ✅ cargo clippy      → "Finished" with 0 warnings
 ✅ cargo test        → "test result: ok. X passed; 0 failed"
 ```
-
-<!-- markdownlint-enable MD040 -->
 
 **IF ANY FAIL**: Stop immediately and fix before proceeding.
 
@@ -251,17 +247,11 @@ Test coverage and validation results
 ```rust
 // Complete, runnable examples
 ```
-````
 
 ## References
 
 - Link to architecture docs
 - Link to related features
-
-<!-- markdownlint-disable MD040 -->
-
-````
-<!-- markdownlint-enable MD040 -->
 
 ---
 
@@ -272,7 +262,8 @@ Test coverage and validation results
 - **Name**: XZepr
 - **Type**: High-performance event tracking server
 - **Language**: Rust (latest stable)
-- **Key Features**: Real-time streaming (Redpanda), Authentication, RBAC, Observability
+- **Key Features**: Real-time streaming (Redpanda), Authentication, RBAC,
+  Observability
 
 ### Architecture (Layered Design)
 
@@ -295,6 +286,7 @@ Test coverage and validation results
 │  Infrastructure Layer (src/infrastructure/)  │
 │  - Database, Redpanda, external services     │
 └──────────────────────────────────────────────┘
+```
 ````
 
 **Layer Dependencies (MUST FOLLOW):**
@@ -479,7 +471,8 @@ fn main() {
 
 - ✅ `cargo fmt --all` passed
 - ✅ `cargo check --all-targets --all-features` passed
-- ✅ `cargo clippy --all-targets --all-features -- -D warnings` shows zero warnings
+- ✅ `cargo clippy --all-targets --all-features -- -D warnings` shows zero
+  warnings
 - ✅ `cargo test --all-features` passed with >80% coverage
 - ✅ Documentation complete
 
@@ -488,12 +481,7 @@ fn main() {
 - Architecture: `docs/explanations/architecture.md`
 - API Reference: `docs/reference/api.md`
 
-<!-- markdownlint-disable MD040 -->
-
-````
-<!-- markdownlint-enable MD040 -->
-
-#### Phase 4: Validation (CRITICAL)
+### Phase 4: Validation (CRITICAL)
 
 **Run these commands and verify output:**
 
@@ -657,8 +645,7 @@ pr-{jira-issue}
 
 **Examples:**
 
-<!-- markdownlint-disable MD040 -->
-```
+```text
 ✅ CORRECT:
    pr-cpipe-1234
    pr-xzepr-5678
@@ -670,7 +657,6 @@ pr-{jira-issue}
    cpipe-1234           (missing pr- prefix)
    pr_cpipe_1234        (underscore instead of dash)
 ```
-<!-- markdownlint-enable MD040 -->
 
 ### Commit Messages (MANDATORY FORMAT)
 
@@ -706,8 +692,7 @@ pr-{jira-issue}
 
 **Examples:**
 
-<!-- markdownlint-disable MD040 -->
-```
+```text
 ✅ CORRECT:
 feat(auth): add JWT token refresh endpoint (CPIPE-1234)
 fix(api): handle edge case in event validation (CPIPE-5678)
@@ -727,7 +712,6 @@ feat: add JWT (CPIPE-1234)                        # Missing scope
 add jwt refresh (CPIPE-1234)                      # No type
 feat(auth): add JWT token refresh feature that allows users to... (CPIPE-1234)  # Too long
 ```
-<!-- markdownlint-enable MD040 -->
 
 ---
 
@@ -786,8 +770,7 @@ feat(auth): add JWT token refresh feature that allows users to... (CPIPE-1234)  
 
 ### Decision Tree: Where to Put Documentation?
 
-<!-- markdownlint-disable MD040 -->
-```
+```text
 Is it a step-by-step tutorial?
 ├─ YES → docs/tutorials/
 └─ NO
@@ -800,7 +783,6 @@ Is it a step-by-step tutorial?
    │     │     └─ Is it reference material?
    │     │        └─ YES → docs/reference/
 ```
-<!-- markdownlint-enable MD040 -->
 
 ---
 
@@ -1075,7 +1057,8 @@ cargo clippy --all-targets --all-features -- -D warnings
 
 - [ ] `cargo fmt --all` applied successfully
 - [ ] `cargo check --all-targets --all-features` passes with zero errors
-- [ ] `cargo clippy --all-targets --all-features -- -D warnings` shows zero warnings
+- [ ] `cargo clippy --all-targets --all-features -- -D warnings` shows zero
+      warnings
 - [ ] `cargo test --all-features` passes with >80% coverage
 - [ ] No `unwrap()` or `expect()` without justification
 - [ ] All public items have doc comments with examples
@@ -1200,15 +1183,13 @@ Exception: README.md ONLY
 
 ### Rule 3: Quality Checks
 
-<!-- markdownlint-disable MD040 -->
-```
+```text
 All four cargo commands MUST pass before claiming done:
 - cargo fmt --all
 - cargo check --all-targets --all-features
 - cargo clippy --all-targets --all-features -- -D warnings
 - cargo test --all-features
 ```
-<!-- markdownlint-enable MD040 -->
 
 ---
 
@@ -1216,8 +1197,7 @@ All four cargo commands MUST pass before claiming done:
 
 **FOLLOW THIS SEQUENCE FOR EVERY TASK:**
 
-<!-- markdownlint-disable MD040 -->
-```
+```text
 1. Create branch: pr-{jira-issue}
 2. Implement code with /// doc comments
 3. Add tests (>80% coverage)
@@ -1229,7 +1209,6 @@ All four cargo commands MUST pass before claiming done:
 9. Commit with proper format: <type>(<scope>): <description> (JIRA-ISSUE)
 10. Verify: All checklist items above are checked
 ```
-<!-- markdownlint-enable MD040 -->
 
 **IF YOU FOLLOW THIS WORKFLOW, YOUR CODE WILL BE ACCEPTED.**
 
@@ -1244,4 +1223,3 @@ This file is continuously updated as new patterns emerge. Last updated: 2024
 **For AI Agents**: You are a master Rust developer. Follow these rules
 precisely. Put all implementation summaries in `docs/explanations/` with
 lowercase filenames.
-````

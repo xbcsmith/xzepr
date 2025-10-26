@@ -3,24 +3,35 @@
 //! Distributed tracing infrastructure for XZepr
 //!
 //! This module provides comprehensive tracing capabilities using the `tracing` crate
-//! with support for structured logging, span creation, and Jaeger integration readiness.
+//! with full OpenTelemetry OTLP exporter integration for Jaeger.
 //!
 //! # Architecture
 //!
 //! The tracing infrastructure is built on the `tracing` ecosystem:
 //! - `tracing` - Core tracing primitives (spans, events)
 //! - `tracing-subscriber` - Subscriber implementation and utilities
-//! - OpenTelemetry integration ready (add `tracing-opentelemetry` for Jaeger)
+//! - `tracing-opentelemetry` - OpenTelemetry bridge for tracing
+//! - `opentelemetry` - OpenTelemetry API and SDK
+//! - `opentelemetry-otlp` - OTLP exporter for Jaeger/Collector
 //!
 //! # Features
 //!
 //! - Structured logging with JSON support for production
+//! - OpenTelemetry OTLP exporter integration
+//! - Jaeger trace collection
 //! - Environment-based configuration
 //! - Request ID tracking and correlation
 //! - Span creation and propagation
 //! - Performance measurement
 //! - Multi-layer subscriber architecture
+//! - Configurable sampling rates
 
+use opentelemetry::{global, trace::TracerProvider as _, KeyValue};
+use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::{
+    trace::{self as sdktrace, Config, RandomIdGenerator, Sampler},
+    Resource,
+};
 use tracing_subscriber::{
     fmt::{self, format::FmtSpan},
     layer::SubscriberExt,
@@ -35,14 +46,16 @@ pub struct TracingConfig {
     pub service_name: String,
     /// Service version
     pub service_version: String,
-    /// Jaeger endpoint (for future OpenTelemetry integration)
-    pub jaeger_endpoint: Option<String>,
-    /// Sample rate (0.0 to 1.0) - reserved for future use
+    /// OTLP endpoint for trace export (e.g., http://jaeger:4317)
+    pub otlp_endpoint: Option<String>,
+    /// Sample rate (0.0 to 1.0) - controls what percentage of traces are collected
     pub sample_rate: f64,
     /// Environment (production, staging, development)
     pub environment: String,
     /// Enable tracing
     pub enabled: bool,
+    /// Enable OTLP export (requires otlp_endpoint)
+    pub enable_otlp: bool,
     /// Log level filter
     pub log_level: String,
     /// Use JSON formatting for logs
@@ -62,10 +75,11 @@ impl Default for TracingConfig {
         Self {
             service_name: "xzepr".to_string(),
             service_version: env!("CARGO_PKG_VERSION").to_string(),
-            jaeger_endpoint: None,
+            otlp_endpoint: None,
             sample_rate: 1.0,
             environment: "development".to_string(),
             enabled: true,
+            enable_otlp: false,
             log_level: "info".to_string(),
             json_logs: false,
             show_target: true,
@@ -82,12 +96,13 @@ impl TracingConfig {
         Self {
             service_name: "xzepr".to_string(),
             service_version: env!("CARGO_PKG_VERSION").to_string(),
-            jaeger_endpoint: std::env::var("XZEPR__JAEGER_ENDPOINT")
+            otlp_endpoint: std::env::var("XZEPR__OTLP_ENDPOINT")
                 .ok()
                 .or_else(|| Some("http://jaeger:4317".to_string())),
             sample_rate: 0.1, // Sample 10% in production
             environment: "production".to_string(),
             enabled: true,
+            enable_otlp: true,
             log_level: "info".to_string(),
             json_logs: true,
             show_target: true,
@@ -102,10 +117,13 @@ impl TracingConfig {
         Self {
             service_name: "xzepr".to_string(),
             service_version: env!("CARGO_PKG_VERSION").to_string(),
-            jaeger_endpoint: Some("http://localhost:4317".to_string()),
+            otlp_endpoint: std::env::var("XZEPR__OTLP_ENDPOINT")
+                .ok()
+                .or_else(|| Some("http://localhost:4317".to_string())),
             sample_rate: 1.0, // Sample 100% in development
             environment: "development".to_string(),
             enabled: true,
+            enable_otlp: false, // Disabled by default in dev, enable via env var
             log_level: "debug".to_string(),
             json_logs: false,
             show_target: true,
@@ -120,12 +138,13 @@ impl TracingConfig {
         Self {
             service_name: "xzepr".to_string(),
             service_version: env!("CARGO_PKG_VERSION").to_string(),
-            jaeger_endpoint: std::env::var("XZEPR__JAEGER_ENDPOINT")
+            otlp_endpoint: std::env::var("XZEPR__OTLP_ENDPOINT")
                 .ok()
                 .or_else(|| Some("http://jaeger:4317".to_string())),
             sample_rate: 0.5, // Sample 50% in staging
             environment: "staging".to_string(),
             enabled: true,
+            enable_otlp: true,
             log_level: "info".to_string(),
             json_logs: true,
             show_target: true,
@@ -155,14 +174,84 @@ impl TracingConfig {
             config.json_logs = json_logs.parse().unwrap_or(config.json_logs);
         }
 
+        if let Ok(enable_otlp) = std::env::var("XZEPR__ENABLE_OTLP") {
+            config.enable_otlp = enable_otlp.parse().unwrap_or(config.enable_otlp);
+        }
+
+        if let Ok(otlp_endpoint) = std::env::var("XZEPR__OTLP_ENDPOINT") {
+            config.otlp_endpoint = Some(otlp_endpoint);
+        }
+
         config
     }
 }
 
+/// Initialize OpenTelemetry tracer with OTLP exporter
+///
+/// Creates and configures an OpenTelemetry tracer that exports spans to an OTLP endpoint.
+/// This is typically Jaeger or another OpenTelemetry collector.
+///
+/// # Arguments
+///
+/// * `config` - Tracing configuration with OTLP endpoint and sampling
+///
+/// # Returns
+///
+/// Returns a tracer provider on success, or an error if initialization fails.
+fn init_otlp_tracer(
+    config: &TracingConfig,
+) -> Result<opentelemetry_sdk::trace::TracerProvider, Box<dyn std::error::Error>> {
+    let otlp_endpoint = config
+        .otlp_endpoint
+        .as_ref()
+        .ok_or("OTLP endpoint not configured")?;
+
+    tracing::info!(
+        otlp_endpoint = %otlp_endpoint,
+        sample_rate = config.sample_rate,
+        "Initializing OTLP exporter"
+    );
+
+    // Create OTLP exporter using new_pipeline API
+    let exporter = opentelemetry_otlp::new_exporter()
+        .tonic()
+        .with_endpoint(otlp_endpoint)
+        .build_span_exporter()?;
+
+    // Configure sampler based on sample rate
+    let sampler = if config.sample_rate >= 1.0 {
+        Sampler::AlwaysOn
+    } else if config.sample_rate <= 0.0 {
+        Sampler::AlwaysOff
+    } else {
+        Sampler::TraceIdRatioBased(config.sample_rate)
+    };
+
+    // Create resource with service information
+    let resource = Resource::new(vec![
+        KeyValue::new("service.name", config.service_name.clone()),
+        KeyValue::new("service.version", config.service_version.clone()),
+        KeyValue::new("deployment.environment", config.environment.clone()),
+    ]);
+
+    // Build tracer provider
+    let tracer_provider = sdktrace::TracerProvider::builder()
+        .with_batch_exporter(exporter, opentelemetry_sdk::runtime::Tokio)
+        .with_config(
+            Config::default()
+                .with_sampler(sampler)
+                .with_id_generator(RandomIdGenerator::default())
+                .with_resource(resource),
+        )
+        .build();
+
+    Ok(tracer_provider)
+}
+
 /// Initialize distributed tracing
 ///
-/// Sets up tracing-subscriber with appropriate formatting and filtering.
-/// This provides structured logging and prepares for OpenTelemetry integration.
+/// Sets up tracing-subscriber with structured logging and optional OpenTelemetry OTLP export.
+/// When OTLP is enabled, traces are exported to the configured endpoint (typically Jaeger).
 ///
 /// # Arguments
 ///
@@ -182,6 +271,13 @@ impl TracingConfig {
 ///     Ok(())
 /// }
 /// ```
+///
+/// # OTLP Configuration
+///
+/// Enable OTLP export with environment variables:
+/// - `XZEPR__ENABLE_OTLP=true` - Enable OTLP exporter
+/// - `XZEPR__OTLP_ENDPOINT=http://jaeger:4317` - OTLP collector endpoint
+/// - `XZEPR__ENVIRONMENT=production` - Set environment (affects sampling)
 pub fn init_tracing(config: TracingConfig) -> Result<(), Box<dyn std::error::Error>> {
     if !config.enabled {
         tracing::warn!("Tracing is disabled");
@@ -196,34 +292,106 @@ pub fn init_tracing(config: TracingConfig) -> Result<(), Box<dyn std::error::Err
         ))
     });
 
-    // Build subscriber based on log format
-    if config.json_logs {
-        // JSON formatted logs for production
-        let fmt_layer = fmt::layer()
-            .json()
-            .with_current_span(true)
-            .with_span_list(true)
-            .with_target(config.show_target)
-            .with_level(true)
-            .with_thread_ids(config.show_thread_ids)
-            .with_thread_names(config.show_thread_names)
-            .with_file(config.show_file_line)
-            .with_line_number(config.show_file_line)
-            .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE);
+    // Initialize OTLP tracer if enabled and get tracer
+    let otlp_tracer = if config.enable_otlp {
+        match init_otlp_tracer(&config) {
+            Ok(tracer_provider) => {
+                tracing::info!(
+                    otlp_endpoint = ?config.otlp_endpoint,
+                    sample_rate = config.sample_rate,
+                    "OTLP exporter initialized successfully"
+                );
+                // Set global tracer provider
+                global::set_tracer_provider(tracer_provider.clone());
 
-        Registry::default().with(env_filter).with(fmt_layer).init();
+                // Create tracer from provider
+                Some(tracer_provider.tracer(config.service_name.clone()))
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "Failed to initialize OTLP exporter, continuing without it"
+                );
+                None
+            }
+        }
     } else {
-        // Human-readable logs for development
-        let fmt_layer = fmt::layer()
-            .with_target(config.show_target)
-            .with_level(true)
-            .with_thread_ids(config.show_thread_ids)
-            .with_thread_names(config.show_thread_names)
-            .with_file(config.show_file_line)
-            .with_line_number(config.show_file_line)
-            .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE);
+        None
+    };
 
-        Registry::default().with(env_filter).with(fmt_layer).init();
+    // Build subscriber based on log format and OTLP configuration
+    // Use a simpler approach that avoids complex layer type constraints
+    match (config.json_logs, otlp_tracer) {
+        (true, Some(tracer)) => {
+            // JSON logs with OTLP
+            let fmt_layer = fmt::layer()
+                .json()
+                .with_current_span(true)
+                .with_span_list(true)
+                .with_target(config.show_target)
+                .with_level(true)
+                .with_thread_ids(config.show_thread_ids)
+                .with_thread_names(config.show_thread_names)
+                .with_file(config.show_file_line)
+                .with_line_number(config.show_file_line)
+                .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE);
+
+            let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+
+            Registry::default()
+                .with(env_filter)
+                .with(telemetry_layer)
+                .with(fmt_layer)
+                .init();
+        }
+        (true, None) => {
+            // JSON logs without OTLP
+            let fmt_layer = fmt::layer()
+                .json()
+                .with_current_span(true)
+                .with_span_list(true)
+                .with_target(config.show_target)
+                .with_level(true)
+                .with_thread_ids(config.show_thread_ids)
+                .with_thread_names(config.show_thread_names)
+                .with_file(config.show_file_line)
+                .with_line_number(config.show_file_line)
+                .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE);
+
+            Registry::default().with(env_filter).with(fmt_layer).init();
+        }
+        (false, Some(tracer)) => {
+            // Human-readable logs with OTLP
+            let fmt_layer = fmt::layer()
+                .with_target(config.show_target)
+                .with_level(true)
+                .with_thread_ids(config.show_thread_ids)
+                .with_thread_names(config.show_thread_names)
+                .with_file(config.show_file_line)
+                .with_line_number(config.show_file_line)
+                .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE);
+
+            let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+
+            Registry::default()
+                .with(env_filter)
+                .with(telemetry_layer)
+                .with(fmt_layer)
+                .init();
+        }
+        (false, None) => {
+            // Human-readable logs without OTLP
+            let fmt_layer = fmt::layer()
+                .with_target(config.show_target)
+                .with_level(true)
+                .with_thread_ids(config.show_thread_ids)
+                .with_thread_names(config.show_thread_names)
+                .with_file(config.show_file_line)
+                .with_line_number(config.show_file_line)
+                .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE);
+
+            Registry::default().with(env_filter).with(fmt_layer).init();
+        }
     }
 
     tracing::info!(
@@ -232,14 +400,18 @@ pub fn init_tracing(config: TracingConfig) -> Result<(), Box<dyn std::error::Err
         environment = %config.environment,
         log_level = %config.log_level,
         json_logs = config.json_logs,
+        otlp_enabled = config.enable_otlp,
         "Tracing initialized"
     );
 
-    if let Some(jaeger_endpoint) = &config.jaeger_endpoint {
-        tracing::info!(
-            jaeger_endpoint = %jaeger_endpoint,
-            "Jaeger endpoint configured (OpenTelemetry integration ready)"
-        );
+    if config.enable_otlp {
+        if let Some(otlp_endpoint) = &config.otlp_endpoint {
+            tracing::info!(
+                otlp_endpoint = %otlp_endpoint,
+                sample_rate = config.sample_rate,
+                "OTLP exporter configured and active"
+            );
+        }
     }
 
     Ok(())
@@ -247,11 +419,30 @@ pub fn init_tracing(config: TracingConfig) -> Result<(), Box<dyn std::error::Err
 
 /// Shutdown tracing gracefully
 ///
-/// This ensures all pending spans are flushed before shutdown.
-/// Currently a no-op but reserved for future OpenTelemetry integration.
+/// This ensures all pending spans are flushed to the OTLP collector before shutdown.
+/// This is critical to avoid losing traces when the application terminates.
+///
+/// # Example
+///
+/// ```ignore
+/// use xzepr::infrastructure::tracing::shutdown_tracing;
+///
+/// #[tokio::main]
+/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     // ... application code ...
+///
+///     // Shutdown tracing before exit
+///     shutdown_tracing();
+///     Ok(())
+/// }
+/// ```
 pub fn shutdown_tracing() {
-    tracing::info!("Shutting down tracing");
-    // Future: Flush OpenTelemetry spans
+    tracing::info!("Shutting down tracing and flushing spans");
+
+    // Shutdown OpenTelemetry global tracer provider to flush pending spans
+    global::shutdown_tracer_provider();
+
+    tracing::info!("Tracing shutdown complete");
 }
 
 /// Extract trace context from HTTP headers
@@ -322,6 +513,8 @@ mod tests {
         assert_eq!(config.sample_rate, 0.1);
         assert!(config.json_logs);
         assert_eq!(config.log_level, "info");
+        assert!(config.enable_otlp);
+        assert!(config.otlp_endpoint.is_some());
     }
 
     #[test]
@@ -332,6 +525,8 @@ mod tests {
         assert!(!config.json_logs);
         assert_eq!(config.log_level, "debug");
         assert!(config.show_file_line);
+        assert!(!config.enable_otlp); // Disabled by default in dev
+        assert!(config.otlp_endpoint.is_some()); // But endpoint is configured
     }
 
     #[test]
@@ -340,6 +535,7 @@ mod tests {
         assert_eq!(config.environment, "staging");
         assert_eq!(config.sample_rate, 0.5);
         assert!(config.json_logs);
+        assert!(config.enable_otlp);
     }
 
     #[test]

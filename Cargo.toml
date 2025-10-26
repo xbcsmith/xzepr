@@ -13,7 +13,7 @@ path = "src/bin/server.rs"
 
 [dependencies]
 # Async runtime
-tokio = { version = "1.40", features = ["full"] }
+tokio = { version = "1.38", features = ["full"] }
 tokio-rustls = "0.26"
 
 # Web framework
@@ -59,6 +59,10 @@ ulid = { version = "1.1", features = ["serde"] }
 # Observability
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+opentelemetry = "0.25"
+opentelemetry_sdk = { version = "0.25", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.25", features = [] }
+tracing-opentelemetry = "0.26"
 metrics = "0.23"
 metrics-exporter-prometheus = "0.15"
 
