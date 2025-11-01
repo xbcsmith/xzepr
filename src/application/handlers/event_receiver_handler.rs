@@ -1,25 +1,43 @@
 // src/application/handlers/event_receiver_handler.rs
 
+use crate::domain::entities::event::Event;
 use crate::domain::entities::event_receiver::EventReceiver;
 use crate::domain::repositories::event_receiver_repo::{
     EventReceiverRepository, FindEventReceiverCriteria,
 };
 use crate::domain::value_objects::EventReceiverId;
 use crate::error::{DomainError, Result};
+use crate::infrastructure::messaging::cloudevents::CloudEventMessage;
+use crate::infrastructure::messaging::producer::KafkaEventPublisher;
 
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 /// Application service for handling event receiver operations
 #[derive(Clone)]
 pub struct EventReceiverHandler {
     repository: Arc<dyn EventReceiverRepository>,
+    event_publisher: Option<Arc<KafkaEventPublisher>>,
 }
 
 impl EventReceiverHandler {
     /// Creates a new event receiver handler
     pub fn new(repository: Arc<dyn EventReceiverRepository>) -> Self {
-        Self { repository }
+        Self {
+            repository,
+            event_publisher: None,
+        }
+    }
+
+    /// Creates a new event receiver handler with event publisher
+    pub fn with_publisher(
+        repository: Arc<dyn EventReceiverRepository>,
+        event_publisher: Arc<KafkaEventPublisher>,
+    ) -> Self {
+        Self {
+            repository,
+            event_publisher: Some(event_publisher),
+        }
     }
 
     /// Creates a new event receiver
@@ -69,7 +87,57 @@ impl EventReceiverHandler {
             "Event receiver created successfully"
         );
 
+        // Publish system event to Kafka if publisher is configured
+        if let Some(publisher) = &self.event_publisher {
+            let system_event = self.create_receiver_created_event(&event_receiver);
+            let message =
+                CloudEventMessage::from_event_with_receiver(&system_event, &event_receiver);
+            if let Err(e) = publisher.publish_message(&message).await {
+                error!(
+                    receiver_id = %receiver_id,
+                    error = %e,
+                    "Failed to publish receiver creation event to Kafka"
+                );
+                // Note: We don't fail the request since the receiver was saved to the database
+            } else {
+                info!(
+                    receiver_id = %receiver_id,
+                    event_id = %system_event.id(),
+                    "Receiver creation event published to Kafka successfully"
+                );
+            }
+        }
+
         Ok(receiver_id)
+    }
+
+    /// Creates a system event for receiver creation
+    fn create_receiver_created_event(&self, receiver: &EventReceiver) -> Event {
+        use crate::domain::entities::event::CreateEventParams;
+        use serde_json::json;
+
+        let payload = json!({
+            "receiver_id": receiver.id().to_string(),
+            "name": receiver.name(),
+            "type": receiver.receiver_type(),
+            "version": receiver.version(),
+            "fingerprint": receiver.fingerprint(),
+            "description": receiver.description(),
+        });
+
+        // Create event - unwrap is safe here as we control all inputs
+        Event::new(CreateEventParams {
+            name: "xzepr.event.receiver.created".to_string(),
+            version: "1.0.0".to_string(),
+            release: "system".to_string(),
+            platform_id: "xzepr".to_string(),
+            package: "xzepr.system".to_string(),
+            description: format!("Event receiver '{}' created", receiver.name()),
+            payload,
+            success: true,
+            receiver_id: receiver.id(),
+        })
+        .expect("Failed to create system event for receiver creation")
     }
 
     /// Gets an event receiver by ID

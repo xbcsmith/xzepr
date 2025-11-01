@@ -126,23 +126,45 @@ The build process may take 5-10 minutes on first run as it downloads dependencie
 
 ## Step 5: Initialize the Database
 
-Run database migrations to set up the schema:
+The XZepr Docker image includes sqlx-cli for managing database migrations. Run migrations to set up the schema:
 
 ```bash
-# Run migrations using sqlx-cli in a temporary container
+# Run migrations using sqlx-cli built into the Docker image
 docker run --rm \
   --network xzepr_redpanda_network \
   -e DATABASE_URL=postgres://xzepr:password@postgres:5432/xzepr \
-  -v "$(pwd)/migrations:/migrations:ro" \
-  --entrypoint sh \
-  xzepr:demo -c "apt-get update && apt-get install -y postgresql-client && \
-    for file in /migrations/*.sql; do \
-      echo \"Running \$file...\"; \
-      PGPASSWORD=password psql -h postgres -U xzepr -d xzepr -f \"\$file\"; \
-    done"
+  xzepr:demo \
+  ./sqlx migrate run
 ```
 
-Alternatively, if you have `sqlx-cli` installed locally:
+This command:
+
+- Uses sqlx-cli which is built into the xzepr:demo image
+- Tracks migrations in the `_sqlx_migrations` table
+- Is idempotent and safe to run multiple times
+- Provides proper error handling and rollback support
+
+Check migration status:
+
+```bash
+# View applied migrations
+docker run --rm \
+  --network xzepr_redpanda_network \
+  -e DATABASE_URL=postgres://xzepr:password@postgres:5432/xzepr \
+  xzepr:demo \
+  ./sqlx migrate info
+```
+
+Expected output:
+
+```text
+Applied migrations:
+20240101000001/create_users_table (applied)
+20240101000002/create_events_table (applied)
+20240101000003/create_event_receivers_table (applied)
+```
+
+Alternatively, if you have sqlx-cli installed locally:
 
 ```bash
 export DATABASE_URL=postgres://xzepr:password@localhost:5432/xzepr
@@ -191,7 +213,7 @@ docker run --rm \
   --username eventmanager \
   --email manager@xzepr.local \
   --password Manager123! \
-  --role eventmanager
+  --role event_manager
 
 # Create an EventViewer user
 docker run --rm \
@@ -203,7 +225,7 @@ docker run --rm \
   --username viewer \
   --email viewer@xzepr.local \
   --password Viewer123! \
-  --role eventviewer
+  --role event_viewer
 
 # Create a regular User
 docker run --rm \
@@ -237,8 +259,8 @@ Expected output:
 ID                                   Username        Email                    Roles
 ----------------------------------------------------------------------------------------------------
 <uuid>                               admin           admin@xzepr.local        user, admin
-<uuid>                               eventmanager    manager@xzepr.local      user, eventmanager
-<uuid>                               viewer          viewer@xzepr.local       user, eventviewer
+<uuid>                               eventmanager    manager@xzepr.local      user, event_manager
+<uuid>                               viewer          viewer@xzepr.local       user, event_viewer
 <uuid>                               user            user@xzepr.local         user
 ```
 
@@ -281,7 +303,7 @@ export XZEPR_API_KEY="xzepr_<random-string>"
 Run the XZepr server in a Docker container:
 
 ```bash
-docker run -d \
+docker run \
   --name xzepr-server \
   --network xzepr_redpanda_network \
   -p 8042:8443 \
@@ -371,7 +393,7 @@ In the Redpanda Console:
 
 1. Click "Topics" in the sidebar
 2. Click "Create Topic"
-3. Enter name: `xzepr-events`
+3. Enter name: `xzepr.demo.events`
 4. Set partitions: `3`
 5. Click "Create"
 
@@ -416,10 +438,7 @@ mutation {
       description: "Webhook event receiver for CI/CD"
       schema: {
         type: "object"
-        properties: {
-          event: { type: "string" }
-          status: { type: "string" }
-        }
+        properties: { event: { type: "string" }, status: { type: "string" } }
         required: ["event"]
       }
     }
@@ -631,7 +650,7 @@ curl -X POST http://localhost:8042/graphql \
 
 1. Go to Redpanda Console: `http://localhost:8081`
 2. Click "Topics" in the sidebar
-3. Click on `xzepr-events` topic (if created)
+3. Click on `xzepr.dev.events` topic (if created)
 4. View messages being produced by XZepr
 5. Inspect message keys, values, and headers
 
@@ -686,7 +705,7 @@ docker run --rm \
   xzepr:demo \
   add-role \
   --username user \
-  --role eventmanager
+  --role event_manager
 ```
 
 ### Remove Role from User
@@ -697,8 +716,9 @@ docker run --rm \
   -e XZEPR__DATABASE__URL=postgres://xzepr:password@postgres:5432/xzepr \
   --entrypoint ./admin \
   xzepr:demo \
-  revoke-api-key \
-  --key-id <api-key-id>
+  remove-role \
+  --username user \
+  --role event_manager
 ```
 
 ## Step 19: Testing Complete Workflow
@@ -721,7 +741,7 @@ RECEIVER_RESPONSE=$(curl -s -X POST http://localhost:8042/api/v1/receivers \
     "schema": {"type": "object"}
   }')
 
-RECEIVER_ID=$(echo $RECEIVER_RESPONSE | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+RECEIVER_ID=$(echo $RECEIVER_RESPONSE | jq .data)
 echo "✓ Receiver created: $RECEIVER_ID"
 
 echo ""
@@ -741,7 +761,7 @@ EVENT_RESPONSE=$(curl -s -X POST http://localhost:8042/api/v1/events \
     \"success\": true
   }")
 
-EVENT_ID=$(echo $EVENT_RESPONSE | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+EVENT_ID=$(echo $EVENT_RESPONSE | jq .data)
 echo "✓ Event created: $EVENT_ID"
 
 echo ""
@@ -758,7 +778,7 @@ GROUP_RESPONSE=$(curl -s -X POST http://localhost:8042/api/v1/groups \
     \"event_receiver_ids\": [\"$RECEIVER_ID\"]
   }")
 
-GROUP_ID=$(echo $GROUP_RESPONSE | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+GROUP_ID=$(echo $GROUP_RESPONSE | jq .data)
 echo "✓ Group created: $GROUP_ID"
 
 echo ""
@@ -858,6 +878,38 @@ docker compose -f docker-compose.services.yaml ps postgres
 
 # Test connection
 docker exec -it $(docker ps -qf "name=postgres") psql -U xzepr -d xzepr -c "SELECT 1;"
+```
+
+### Migration Failed
+
+If migrations fail, check the status and fix issues:
+
+```bash
+# Check migration status
+docker run --rm \
+  --network xzepr_redpanda_network \
+  -e DATABASE_URL=postgres://xzepr:password@postgres:5432/xzepr \
+  xzepr:demo \
+  ./sqlx migrate info
+
+# View migration table directly
+docker exec -it $(docker ps -qf "name=postgres") \
+  psql -U xzepr -d xzepr -c "SELECT * FROM _sqlx_migrations ORDER BY installed_on;"
+
+# If a migration is marked as failed, you may need to manually fix it
+# Then revert the failed migration and try again
+docker run --rm \
+  --network xzepr_redpanda_network \
+  -e DATABASE_URL=postgres://xzepr:password@postgres:5432/xzepr \
+  xzepr:demo \
+  ./sqlx migrate revert
+
+# Run migrations again
+docker run --rm \
+  --network xzepr_redpanda_network \
+  -e DATABASE_URL=postgres://xzepr:password@postgres:5432/xzepr \
+  xzepr:demo \
+  ./sqlx migrate run
 ```
 
 ### Cannot Connect to Redpanda

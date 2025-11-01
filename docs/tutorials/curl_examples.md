@@ -71,7 +71,7 @@ curl --location --request POST 'http://localhost:8443/api/v1/events' \
   },
   "success": true,
   "event_receiver_id": "<PASTE EVENT RECEIVER ID FROM FIRST CURL COMMAND>"
-}
+}'
 ```
 
 The results of the command should look like this:
@@ -100,7 +100,7 @@ curl --location --request POST 'http://localhost:8443/api/v1/groups' \
   "event_receiver_ids": [
     "PASTE EVENT RECEIVER ID FROM FIRST CURL COMMAND"
   ]
-}
+}'
 ```
 
 Note: You can extract the event receiver id from the previous command by pipe

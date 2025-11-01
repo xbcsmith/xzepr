@@ -5,6 +5,7 @@ use crate::domain::repositories::event_receiver_repo::EventReceiverRepository;
 use crate::domain::repositories::event_repo::EventRepository;
 use crate::domain::value_objects::{EventId, EventReceiverId};
 use crate::error::{DomainError, Result};
+use crate::infrastructure::messaging::producer::KafkaEventPublisher;
 
 use std::sync::Arc;
 use tracing::{error, info, warn};
@@ -14,6 +15,7 @@ use tracing::{error, info, warn};
 pub struct EventHandler {
     event_repository: Arc<dyn EventRepository>,
     receiver_repository: Arc<dyn EventReceiverRepository>,
+    event_publisher: Option<Arc<KafkaEventPublisher>>,
 }
 
 impl EventHandler {
@@ -25,6 +27,20 @@ impl EventHandler {
         Self {
             event_repository,
             receiver_repository,
+            event_publisher: None,
+        }
+    }
+
+    /// Creates a new event handler with event publisher
+    pub fn with_publisher(
+        event_repository: Arc<dyn EventRepository>,
+        receiver_repository: Arc<dyn EventReceiverRepository>,
+        event_publisher: Arc<KafkaEventPublisher>,
+    ) -> Self {
+        Self {
+            event_repository,
+            receiver_repository,
+            event_publisher: Some(event_publisher),
         }
     }
 
@@ -82,6 +98,26 @@ impl EventHandler {
             success = %event.success(),
             "Event created successfully"
         );
+
+        // Publish event to Kafka if publisher is configured
+        if let Some(publisher) = &self.event_publisher {
+            if let Err(e) = publisher.publish(&event).await {
+                error!(
+                    event_id = %event_id,
+                    error = %e,
+                    "Failed to publish event to Kafka (event was saved to database)"
+                );
+                // Note: We don't fail the request since the event was saved to the database
+                // The event publication is best-effort
+            } else {
+                info!(
+                    event_id = %event_id,
+                    "Event published to Kafka successfully"
+                );
+            }
+        } else {
+            warn!("Event publisher not configured, skipping Kafka publication");
+        }
 
         Ok(event_id)
     }

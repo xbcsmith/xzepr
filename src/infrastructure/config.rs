@@ -25,6 +25,12 @@ pub struct DatabaseConfig {
 #[derive(Debug, Deserialize)]
 pub struct KafkaConfig {
     pub brokers: String,
+    #[serde(default = "default_kafka_topic")]
+    pub default_topic: String,
+    #[serde(default = "default_kafka_partitions")]
+    pub default_topic_partitions: i32,
+    #[serde(default = "default_kafka_replication_factor")]
+    pub default_topic_replication_factor: i32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -125,7 +131,10 @@ impl Settings {
                 "database.url",
                 "postgres://xzepr:password@localhost:5432/xzepr",
             )?
-            .set_default("kafka.brokers", "localhost:9092")?;
+            .set_default("kafka.brokers", "localhost:9092")?
+            .set_default("kafka.default_topic", "xzepr.dev.events")?
+            .set_default("kafka.default_topic_partitions", 3)?
+            .set_default("kafka.default_topic_replication_factor", 1)?;
 
         // Add configuration file if it exists
         builder = builder.add_source(File::with_name("config/default").required(false));
@@ -168,4 +177,17 @@ fn default_enable_rotation() -> bool {
 
 fn default_leeway() -> u64 {
     60 // 1 minute
+}
+
+// Default value functions for Kafka config
+fn default_kafka_topic() -> String {
+    "xzepr.dev.events".to_string()
+}
+
+fn default_kafka_partitions() -> i32 {
+    3
+}
+
+fn default_kafka_replication_factor() -> i32 {
+    1
 }

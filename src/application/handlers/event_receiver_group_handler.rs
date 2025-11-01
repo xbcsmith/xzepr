@@ -1,5 +1,6 @@
 // src/application/handlers/event_receiver_group_handler.rs
 
+use crate::domain::entities::event::Event;
 use crate::domain::entities::event_receiver_group::EventReceiverGroup;
 use crate::domain::repositories::event_receiver_group_repo::{
     EventReceiverGroupRepository, FindEventReceiverGroupCriteria,
@@ -7,6 +8,8 @@ use crate::domain::repositories::event_receiver_group_repo::{
 use crate::domain::repositories::event_receiver_repo::EventReceiverRepository;
 use crate::domain::value_objects::{EventReceiverGroupId, EventReceiverId};
 use crate::error::{DomainError, Result};
+use crate::infrastructure::messaging::cloudevents::CloudEventMessage;
+use crate::infrastructure::messaging::producer::KafkaEventPublisher;
 
 use std::sync::Arc;
 use tracing::{error, info, warn};
@@ -27,6 +30,7 @@ pub struct UpdateEventReceiverGroupParams {
 pub struct EventReceiverGroupHandler {
     group_repository: Arc<dyn EventReceiverGroupRepository>,
     receiver_repository: Arc<dyn EventReceiverRepository>,
+    event_publisher: Option<Arc<KafkaEventPublisher>>,
 }
 
 impl EventReceiverGroupHandler {
@@ -38,6 +42,20 @@ impl EventReceiverGroupHandler {
         Self {
             group_repository,
             receiver_repository,
+            event_publisher: None,
+        }
+    }
+
+    /// Creates a new event receiver group handler with event publisher
+    pub fn with_publisher(
+        group_repository: Arc<dyn EventReceiverGroupRepository>,
+        receiver_repository: Arc<dyn EventReceiverRepository>,
+        event_publisher: Arc<KafkaEventPublisher>,
+    ) -> Self {
+        Self {
+            group_repository,
+            receiver_repository,
+            event_publisher: Some(event_publisher),
         }
     }
 
@@ -111,7 +129,77 @@ impl EventReceiverGroupHandler {
             "Event receiver group created successfully"
         );
 
+        // Publish system event to Kafka if publisher is configured
+        if let Some(publisher) = &self.event_publisher {
+            let system_event = self.create_group_created_event(&event_receiver_group);
+            let message =
+                CloudEventMessage::from_event_with_group(&system_event, &event_receiver_group);
+            if let Err(e) = publisher.publish_message(&message).await {
+                error!(
+                    group_id = %group_id,
+                    error = %e,
+                    "Failed to publish group creation event to Kafka"
+                );
+                // Note: We don't fail the request since the group was saved to the database
+            } else {
+                info!(
+                    group_id = %group_id,
+                    event_id = %system_event.id(),
+                    "Group creation event published to Kafka successfully"
+                );
+            }
+        }
+
         Ok(group_id)
+    }
+
+    /// Creates a system event for group creation
+    fn create_group_created_event(&self, group: &EventReceiverGroup) -> Event {
+        use crate::domain::entities::event::CreateEventParams;
+        use serde_json::json;
+
+        let receiver_ids: Vec<String> = group
+            .event_receiver_ids()
+            .iter()
+            .map(|id| id.to_string())
+            .collect();
+
+        let payload = json!({
+            "group_id": group.id().to_string(),
+            "name": group.name(),
+            "type": group.group_type(),
+            "version": group.version(),
+            "description": group.description(),
+            "enabled": group.enabled(),
+            "receiver_ids": receiver_ids,
+            "receiver_count": group.receiver_count(),
+        });
+
+        // Create event - we need a receiver_id, so we'll use the first receiver in the group
+        // or create a synthetic system receiver ID if the group is empty
+        let receiver_id = group
+            .event_receiver_ids()
+            .first()
+            .copied()
+            .unwrap_or_else(|| {
+                // If group has no receivers, use the group's ID as a synthetic receiver ID
+                // This is acceptable for system events
+                EventReceiverId::from(group.id().as_ulid())
+            });
+
+        // Create event - unwrap is safe here as we control all inputs
+        Event::new(CreateEventParams {
+            name: "xzepr.event.receiver.group.created".to_string(),
+            version: "1.0.0".to_string(),
+            release: "system".to_string(),
+            platform_id: "xzepr".to_string(),
+            package: "xzepr.system".to_string(),
+            description: format!("Event receiver group '{}' created", group.name()),
+            payload,
+            success: true,
+            receiver_id,
+        })
+        .expect("Failed to create system event for group creation")
     }
 
     /// Gets an event receiver group by ID

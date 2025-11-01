@@ -21,6 +21,9 @@ RUN apt-get update && \
 # Add Rust to PATH
 ENV PATH="/root/.cargo/bin:${PATH}"
 
+# Install sqlx-cli with only postgres support (smaller binary)
+RUN cargo install sqlx-cli --no-default-features --features postgres
+
 # Set working directory
 WORKDIR /build
 
@@ -57,9 +60,11 @@ WORKDIR /app
 # Copy the binaries from builder stage
 COPY --from=builder /build/target/release/xzepr /app/xzepr
 COPY --from=builder /build/target/release/admin /app/admin
+COPY --from=builder /root/.cargo/bin/sqlx /app/sqlx
 
-# Copy configuration files
+# Copy configuration and migration files
 COPY --from=builder /build/config /app/config
+COPY --from=builder /build/migrations /app/migrations
 
 # Create directories for certificates and logs
 RUN mkdir -p /app/certs /app/logs && \

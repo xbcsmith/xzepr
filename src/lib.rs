@@ -18,6 +18,7 @@ pub use domain::value_objects::{ApiKeyId, EventId, EventReceiverGroupId, EventRe
 pub use error::{Error, Result};
 pub use infrastructure::config::Settings;
 pub use infrastructure::database::postgres::{PostgresApiKeyRepository, PostgresUserRepository};
+pub use infrastructure::messaging::TopicManager;
 
 // Application services
 pub use application::handlers::{EventHandler, EventReceiverGroupHandler, EventReceiverHandler};

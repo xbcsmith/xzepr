@@ -640,7 +640,7 @@ mod tests {
 **YOU MUST use this format:**
 
 ```text
-pr-{jira-issue}
+pr-<feat>-<issue>
 ```
 
 **Examples:**
@@ -663,7 +663,7 @@ pr-{jira-issue}
 **Format:**
 
 ```text
-<type>(<scope>): <description> (<JIRA-ISSUE>)
+<type>(<scope>): <description>
 
 [optional body explaining why change was made]
 
@@ -676,8 +676,7 @@ pr-{jira-issue}
 2. Scope is optional but recommended
 3. Description MUST be lowercase
 4. Description MUST use imperative mood ("add" not "added")
-5. JIRA issue MUST be uppercase in parentheses
-6. First line MUST be ≤72 characters (including JIRA issue)
+5. First line MUST be ≤72 characters
 
 **Types Explained:**
 
@@ -1093,9 +1092,8 @@ cargo clippy --all-targets --all-features -- -D warnings
 
 ### Git
 
-- [ ] Branch name follows `pr-{jira-issue}` format (lowercase)
+- [ ] Branch name follows `pr-<feat>-<issue>` format (lowercase)
 - [ ] Commit message follows conventional commits
-- [ ] Commit message includes JIRA issue in uppercase
 - [ ] Commit message first line ≤72 characters
 - [ ] Commit uses imperative mood ("add" not "added")
 
@@ -1198,7 +1196,7 @@ All four cargo commands MUST pass before claiming done:
 **FOLLOW THIS SEQUENCE FOR EVERY TASK:**
 
 ```text
-1. Create branch: pr-{jira-issue}
+1. Create branch: pr-<feat>-<issue>
 2. Implement code with /// doc comments
 3. Add tests (>80% coverage)
 4. Run: cargo fmt --all
@@ -1206,7 +1204,7 @@ All four cargo commands MUST pass before claiming done:
 6. Run: cargo clippy --all-targets --all-features -- -D warnings
 7. Run: cargo test --all-features
 8. Create: docs/explanations/{feature}_implementation.md
-9. Commit with proper format: <type>(<scope>): <description> (JIRA-ISSUE)
+9. Commit with proper format: <type>(<scope>): <description>
 10. Verify: All checklist items above are checked
 ```
 

@@ -28,7 +28,7 @@ use tower_http::{
     trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
     LatencyUnit,
 };
-use tracing::{error, info, Level};
+use tracing::{error, info, warn, Level};
 use xzepr::{
     api::graphql::{create_schema, graphql_handler, graphql_health, graphql_playground},
     application::handlers::{EventHandler, EventReceiverGroupHandler, EventReceiverHandler},
@@ -42,7 +42,8 @@ use xzepr::{
         event_repo::{EventRepository, FindEventCriteria},
     },
     domain::value_objects::{EventId, EventReceiverGroupId, EventReceiverId},
-    PostgresApiKeyRepository, PostgresUserRepository, Settings,
+    infrastructure::messaging::producer::KafkaEventPublisher,
+    PostgresApiKeyRepository, PostgresUserRepository, Settings, TopicManager,
 };
 
 use xzepr::api::graphql::Schema;
@@ -108,6 +109,44 @@ async fn main() -> Result<()> {
         .context("Failed to verify database connection")?;
     info!("Database health check passed");
 
+    // Initialize Kafka topic
+    info!("Ensuring Kafka topic exists...");
+    let topic_manager = TopicManager::new(&settings.kafka.brokers)
+        .context("Failed to create Kafka topic manager")?;
+
+    match topic_manager
+        .ensure_topic_exists(
+            &settings.kafka.default_topic,
+            settings.kafka.default_topic_partitions,
+            settings.kafka.default_topic_replication_factor,
+        )
+        .await
+    {
+        Ok(created) => {
+            if created {
+                info!(
+                    "Created Kafka topic '{}' with {} partitions and replication factor {}",
+                    settings.kafka.default_topic,
+                    settings.kafka.default_topic_partitions,
+                    settings.kafka.default_topic_replication_factor
+                );
+            } else {
+                info!(
+                    "Kafka topic '{}' already exists",
+                    settings.kafka.default_topic
+                );
+            }
+        }
+        Err(e) => {
+            error!(
+                "Failed to ensure Kafka topic exists: {}. Continuing anyway...",
+                e
+            );
+            // Don't fail startup if Kafka topic creation fails
+            // This allows the server to start even if Kafka is temporarily unavailable
+        }
+    }
+
     // Initialize authentication repositories
     let user_repo = Arc::new(PostgresUserRepository::new(db_pool.clone()));
     let api_key_repo = Arc::new(PostgresApiKeyRepository::new(db_pool.clone()));
@@ -119,10 +158,46 @@ async fn main() -> Result<()> {
     let receiver_repo = Arc::new(MockEventReceiverRepository::new());
     let group_repo = Arc::new(MockEventReceiverGroupRepository::new());
 
-    // Create application handlers
-    let event_handler = EventHandler::new(event_repo, receiver_repo.clone());
-    let receiver_handler = EventReceiverHandler::new(receiver_repo.clone());
-    let group_handler = EventReceiverGroupHandler::new(group_repo, receiver_repo);
+    // Initialize Kafka event publisher
+    info!("Initializing Kafka event publisher...");
+    let event_publisher = match KafkaEventPublisher::new(
+        &settings.kafka.brokers,
+        &settings.kafka.default_topic,
+    ) {
+        Ok(publisher) => {
+            info!(
+                "Kafka event publisher initialized successfully (topic: {})",
+                settings.kafka.default_topic
+            );
+            Some(Arc::new(publisher))
+        }
+        Err(e) => {
+            warn!(
+                "Failed to initialize Kafka event publisher: {}. Event publication will be disabled.",
+                e
+            );
+            None
+        }
+    };
+
+    // Create application handlers with event publisher
+    let event_handler = if let Some(ref publisher) = event_publisher {
+        EventHandler::with_publisher(event_repo, receiver_repo.clone(), publisher.clone())
+    } else {
+        EventHandler::new(event_repo, receiver_repo.clone())
+    };
+
+    let receiver_handler = if let Some(ref publisher) = event_publisher {
+        EventReceiverHandler::with_publisher(receiver_repo.clone(), publisher.clone())
+    } else {
+        EventReceiverHandler::new(receiver_repo.clone())
+    };
+
+    let group_handler = if let Some(ref publisher) = event_publisher {
+        EventReceiverGroupHandler::with_publisher(group_repo, receiver_repo, publisher.clone())
+    } else {
+        EventReceiverGroupHandler::new(group_repo, receiver_repo)
+    };
 
     // Create GraphQL schema
     let schema = create_schema(
