@@ -373,6 +373,81 @@ kafka:
 - `default_topic_partitions`: Number of partitions (for auto-creation)
 - `default_topic_replication_factor`: Replication factor (for auto-creation)
 
+### Authentication Configuration
+
+XZepr supports authenticated connections to Kafka clusters using SASL/SCRAM
+mechanisms. Authentication is optional and configured separately.
+
+**YAML Configuration with Authentication:**
+
+```yaml
+kafka:
+  brokers: "broker1.example.com:9093,broker2.example.com:9093"
+  default_topic: "xzepr.events"
+  default_topic_partitions: 3
+  default_topic_replication_factor: 3
+  auth:
+    security_protocol: "SASL_SSL"
+    sasl:
+      mechanism: "SCRAM-SHA-256"
+      username: "kafka-user"
+      password: "kafka-password"
+    ssl:
+      ca_location: "/path/to/ca-cert.pem"
+      certificate_location: "/path/to/client-cert.pem"
+      key_location: "/path/to/client-key.pem"
+```
+
+**Environment Variables (Recommended for Production):**
+
+```bash
+# Security protocol
+export XZEPR_KAFKA_SECURITY_PROTOCOL="SASL_SSL"
+
+# SASL credentials
+export XZEPR_KAFKA_SASL_MECHANISM="SCRAM-SHA-256"
+export XZEPR_KAFKA_SASL_USERNAME="kafka-user"
+export XZEPR_KAFKA_SASL_PASSWORD="kafka-password"
+
+# SSL certificates
+export XZEPR_KAFKA_SSL_CA_LOCATION="/path/to/ca-cert.pem"
+export XZEPR_KAFKA_SSL_CERTIFICATE_LOCATION="/path/to/client-cert.pem"
+export XZEPR_KAFKA_SSL_KEY_LOCATION="/path/to/client-key.pem"
+```
+
+**Authentication Options:**
+
+- `security_protocol`: Authentication mode
+  - `PLAINTEXT` - No authentication (default)
+  - `SASL_PLAINTEXT` - SASL without encryption
+  - `SASL_SSL` - SASL with SSL/TLS (recommended)
+  - `SSL` - Certificate-based authentication
+- `sasl.mechanism`: SASL authentication mechanism
+  - `SCRAM-SHA-256` - Recommended for production
+  - `SCRAM-SHA-512` - Higher security requirements
+  - `PLAIN` - Simple username/password
+  - `GSSAPI` - Kerberos
+  - `OAUTHBEARER` - OAuth 2.0
+- `sasl.username`: Kafka username
+- `sasl.password`: Kafka password
+- `ssl.ca_location`: Path to CA certificate
+- `ssl.certificate_location`: Path to client certificate (optional)
+- `ssl.key_location`: Path to client key (optional)
+
+**Security Best Practices:**
+
+1. Always use `SASL_SSL` in production for encrypted connections
+2. Store credentials in environment variables or secrets management systems
+3. Never commit credentials to version control
+4. Rotate credentials regularly
+5. Use `SCRAM-SHA-256` or `SCRAM-SHA-512` for SASL mechanism
+6. Ensure certificate files have appropriate permissions (600 for keys)
+
+For detailed authentication setup instructions, see:
+
+- [Configure Kafka Authentication](../how_to/configure_kafka_authentication.md)
+- [Kafka Authentication Example](../../examples/kafka_with_auth.rs)
+
 ## Event Schemas
 
 All events are published to Kafka in CloudEvents 1.0.1 compatible format. The CloudEvents envelope wraps the event data and provides standard fields for event routing and processing.

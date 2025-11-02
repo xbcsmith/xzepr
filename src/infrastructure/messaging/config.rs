@@ -4,6 +4,7 @@ use rdkafka::config::ClientConfig;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use thiserror::Error;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Errors that can occur during Kafka authentication configuration
 #[derive(Error, Debug)]
@@ -146,13 +147,17 @@ impl std::str::FromStr for SaslMechanism {
 }
 
 /// SASL authentication configuration
-#[derive(Clone, Serialize, Deserialize)]
+///
+/// The password field is automatically cleared from memory when the struct is dropped
+/// using the Zeroize trait for enhanced security.
+#[derive(Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct SaslConfig {
     /// SASL mechanism to use
+    #[zeroize(skip)]
     pub mechanism: SaslMechanism,
     /// SASL username
     pub username: String,
-    /// SASL password (will be redacted in debug output)
+    /// SASL password (will be redacted in debug output and cleared from memory on drop)
     pub password: String,
 }
 

@@ -184,6 +184,8 @@ using the [Diataxis Framework](https://diataxis.fr/):
   observability stack
 - **[Enable OTLP Tracing](docs/how_to/enable_otlp_tracing.md)** - Distributed
   tracing setup
+- **[Configure Kafka Authentication](docs/how_to/configure_kafka_authentication.md)** -
+  SASL/SCRAM setup
 
 ### Reference Documentation
 
@@ -327,12 +329,21 @@ export DATABASE_URL="postgres://xzepr:password@localhost:5432/xzepr"
 export XZEPR_AUTH_JWT_SECRET="your-secret-key-min-32-chars"
 export XZEPR_AUTH_JWT_EXPIRATION_HOURS=24
 
+<<<<<<< Updated upstream
 # Kafka/Redpanda
 export XZEPR_KAFKA_BROKERS="localhost:9092"
 export XZEPR_KAFKA_DEFAULT_TOPIC="xzepr.dev.events"
 export XZEPR_KAFKA_SASL_MECHANISM="SCRAM-SHA-256"
 export XZEPR_KAFKA_SASL_USERNAME="admin"
 export XZEPR_KAFKA_SASL_PASSWORD="admin-secret"
+=======
+# Kafka Authentication (optional)
+export XZEPR_KAFKA_SECURITY_PROTOCOL="SASL_SSL"
+export XZEPR_KAFKA_SASL_MECHANISM="SCRAM-SHA-256"
+export XZEPR_KAFKA_SASL_USERNAME="kafka-user"
+export XZEPR_KAFKA_SASL_PASSWORD="kafka-password"
+export XZEPR_KAFKA_SSL_CA_LOCATION="/path/to/ca-cert.pem"
+>>>>>>> Stashed changes
 
 # TLS
 export XZEPR_TLS_CERT_PATH="certs/cert.pem"
