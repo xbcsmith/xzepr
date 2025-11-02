@@ -433,7 +433,7 @@ mutation {
   createEventReceiver(
     eventReceiver: {
       name: "webhook-receiver"
-      type: "webhook"
+      type: "xzepr.event.webhook"
       version: "1.0.0"
       description: "Webhook event receiver for CI/CD"
       schema: {
@@ -533,15 +533,7 @@ curl -X POST http://localhost:8042/api/v1/receivers \
 Expected response:
 
 ```json
-{
-  "id": "<uuid>",
-  "name": "rest-webhook",
-  "type": "webhook",
-  "version": "1.0.0",
-  "description": "REST API webhook receiver",
-  "fingerprint": "<hash>",
-  "created_at": "2024-01-15T14:30:00Z"
-}
+{"data":"01K935TSPGKP0S63PKM5EPBW3F"}
 ```
 
 ### List Event Receivers
