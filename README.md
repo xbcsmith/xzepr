@@ -8,8 +8,8 @@
 XZepr is a production-ready event tracking and provenance system designed for
 tracking events, receivers, and groups across the software supply chain. Built
 with Rust for maximum performance and safety, it features real-time event
-streaming with Redpanda, comprehensive authentication with RBAC, and full
-observability.
+streaming with Redpanda, CloudEvents 1.0.1 compatibility, comprehensive
+authentication with RBAC, Kafka SASL/SCRAM security, and full observability.
 
 ## Features
 
@@ -17,11 +17,15 @@ observability.
 
 - **High-Performance Event Tracking** - Blazing-fast event ingestion and
   querying with Rust's zero-cost abstractions
-- **Real-Time Streaming** - Redpanda integration for high-throughput event
+- **Real-Time Streaming** - Redpanda/Kafka integration for high-throughput event
   streaming and processing
+- **CloudEvents 1.0.1 Compatible** - Industry-standard event format for
+  interoperability with external systems
 - **Dual API Support** - Both REST and GraphQL APIs for maximum flexibility
 - **Type-Safe Design** - Leverages Rust's type system to prevent bugs at
   compile time
+- **ULID Support** - Universally Unique Lexicographically Sortable Identifiers
+  for distributed systems
 
 ### Security & Authentication
 
@@ -31,15 +35,17 @@ observability.
   - API key authentication for service-to-service communication
 - **Role-Based Access Control (RBAC)** - Fine-grained permissions with Admin,
   EventManager, EventViewer, and User roles
+- **Kafka SASL/SCRAM Authentication** - Secure Kafka/Redpanda connections with
+  SASL/SCRAM-SHA-256 and SASL/SCRAM-SHA-512
 - **TLS 1.3 Support** - Secure communications with modern TLS
 - **Security Hardening** - Rate limiting, CORS, input validation, and audit logging
 
 ### Observability
 
 - **Prometheus Metrics** - Comprehensive application and business metrics
-- **Distributed Tracing** - OpenTelemetry integration with OTLP export
-- **Structured Logging** - JSON-formatted logs with correlation IDs
-- **Health Checks** - Readiness and liveness endpoints
+- **Distributed Tracing** - OpenTelemetry integration with Jaeger and OTLP export
+- **Structured Logging** - JSON-formatted logs with correlation IDs and tracing context
+- **Health Checks** - Readiness and liveness endpoints with dependency checks
 
 ### Production Ready
 
@@ -47,6 +53,8 @@ observability.
 - **Docker Support** - Multi-stage builds and Docker Compose configurations
 - **Extensive Testing** - Unit, integration, and benchmark tests with >80% coverage
 - **Comprehensive Tooling** - Feature-rich Makefile with 50+ automation commands
+- **Auto Topic Creation** - Automatic Kafka topic creation during startup
+- **CloudEvents Publishing** - All events published in CloudEvents 1.0.1 format
 
 ## Quick Start
 
@@ -140,15 +148,16 @@ XZepr follows a clean, layered architecture pattern:
 
 ### Key Design Decisions
 
-- **UUID v7 for IDs** - Time-ordered UUIDs for better database performance
-  and natural sorting
-- **ULID Support** - Universally Unique Lexicographically Sortable
-  Identifiers for distributed systems
+- **ULID for IDs** - Universally Unique Lexicographically Sortable Identifiers
+  for better database performance, natural sorting, and distributed system compatibility
+- **CloudEvents 1.0.1** - Industry-standard event format for interoperability
+  with Go systems and other CloudEvents-compatible consumers
 - **CQRS-lite Pattern** - Separation of commands and queries without full
   event sourcing complexity
 - **Axum Framework** - Ergonomic async web framework with excellent type
   safety
 - **SQLx** - Compile-time verified SQL queries with async support
+- **Kafka Auto-Configuration** - Automatic topic creation and SASL/SCRAM authentication
 
 ## Documentation
 
@@ -188,6 +197,8 @@ using the [Diataxis Framework](https://diataxis.fr/):
   usage guide
 - **[OTLP Quick Reference](docs/reference/otlp_quick_reference.md)** -
   OpenTelemetry setup
+- **[CloudEvents Format](docs/explanations/cloudevents_compatibility.md)** -
+  CloudEvents 1.0.1 implementation
 
 ### Explanations
 
@@ -201,6 +212,10 @@ using the [Diataxis Framework](https://diataxis.fr/):
   Authentication deep dive
 - **[Distributed Tracing Architecture](docs/explanations/distributed_tracing_architecture.md)**
   - Tracing
+- **[CloudEvents Compatibility](docs/explanations/cloudevents_compatibility.md)**
+  - Event format details
+- **[Kafka Topic Auto-Creation](docs/explanations/kafka_topic_auto_creation.md)**
+  - Topic management
 
 ## Development
 
@@ -312,6 +327,13 @@ export DATABASE_URL="postgres://xzepr:password@localhost:5432/xzepr"
 export XZEPR_AUTH_JWT_SECRET="your-secret-key-min-32-chars"
 export XZEPR_AUTH_JWT_EXPIRATION_HOURS=24
 
+# Kafka/Redpanda
+export XZEPR_KAFKA_BROKERS="localhost:9092"
+export XZEPR_KAFKA_DEFAULT_TOPIC="xzepr.dev.events"
+export XZEPR_KAFKA_SASL_MECHANISM="SCRAM-SHA-256"
+export XZEPR_KAFKA_SASL_USERNAME="admin"
+export XZEPR_KAFKA_SASL_PASSWORD="admin-secret"
+
 # TLS
 export XZEPR_TLS_CERT_PATH="certs/cert.pem"
 export XZEPR_TLS_KEY_PATH="certs/key.pem"
@@ -319,6 +341,7 @@ export XZEPR_TLS_KEY_PATH="certs/key.pem"
 # Observability
 export RUST_LOG="info,xzepr=debug"
 export XZEPR_OTLP_ENDPOINT="http://localhost:4317"
+export XZEPR_JAEGER_ENDPOINT="http://localhost:14268/api/traces"
 ```
 
 See [Configuration Reference](docs/reference/configuration.md) for complete details.
@@ -401,6 +424,7 @@ When running with Docker Compose:
 - **PostgreSQL**: localhost:5432
 - **Prometheus** (with monitoring profile): <http://localhost:9090>
 - **Grafana** (with monitoring profile): <http://localhost:3000>
+- **Jaeger UI** (with monitoring profile): <http://localhost:16686>
 
 ## Technology Stack
 
@@ -421,9 +445,9 @@ When running with Docker Compose:
 
 ### Observability
 
-- **Tracing**: OpenTelemetry 0.25
-- **Metrics**: Prometheus
-- **Logging**: tracing-subscriber with JSON formatting
+- **Tracing**: OpenTelemetry 0.25 with OTLP and Jaeger exporters
+- **Metrics**: Prometheus with custom business metrics
+- **Logging**: tracing-subscriber with JSON formatting and trace context
 
 ### Development Tools
 
@@ -456,6 +480,7 @@ XZepr implements defense-in-depth security:
 - **Authentication**: Multi-provider support (local, OIDC, API keys)
 - **Authorization**: Fine-grained RBAC with permission checks
 - **Transport Security**: TLS 1.3 with strong cipher suites
+- **Kafka Security**: SASL/SCRAM-SHA-256 and SASL/SCRAM-SHA-512 authentication
 - **Input Validation**: Schema validation on all inputs
 - **Rate Limiting**: Configurable per-endpoint rate limits
 - **Audit Logging**: Complete audit trail of security events
@@ -526,16 +551,19 @@ XZepr is under active development with production-ready features:
 - ✅ REST and GraphQL APIs
 - ✅ Multi-provider authentication
 - ✅ RBAC authorization
-- ✅ Database persistence
-- ✅ Event streaming
-- ✅ Comprehensive observability
+- ✅ Database persistence with ULID support
+- ✅ Event streaming with CloudEvents 1.0.1 format
+- ✅ Kafka SASL/SCRAM authentication
+- ✅ Automatic Kafka topic creation
+- ✅ Comprehensive observability (Prometheus, Jaeger, OTLP)
 - ✅ Docker deployment
 - ✅ Admin CLI
 - 🚧 Additional OIDC providers
 - 🚧 WebSocket support
 - 🚧 Event replay functionality
 - 🚧 Advanced analytics
+- 🚧 Schema registry integration
 
 ---
 
-**Built with ❤️ in Rust**
+**Built with Rust**
