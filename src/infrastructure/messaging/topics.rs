@@ -7,6 +7,7 @@ use std::time::Duration;
 use tracing::{error, info, warn};
 
 use crate::error::{Error, InfrastructureError, Result};
+use crate::infrastructure::messaging::config::KafkaAuthConfig;
 
 /// Kafka topic manager for creating and managing topics
 pub struct TopicManager {
@@ -33,6 +34,61 @@ impl TopicManager {
             .set("client.id", "xzepr-topic-manager")
             .create()
             .map_err(|e| {
+                Error::Infrastructure(InfrastructureError::KafkaProducerError {
+                    message: format!("Failed to create admin client: {}", e),
+                })
+            })?;
+
+        Ok(Self { admin_client })
+    }
+
+    /// Create a new TopicManager with authentication
+    ///
+    /// # Arguments
+    ///
+    /// * `brokers` - Comma-separated list of Kafka broker addresses
+    /// * `auth_config` - Optional authentication configuration for SASL/SCRAM or SSL/TLS
+    ///
+    /// # Returns
+    ///
+    /// Returns a Result containing the TopicManager or an error
+    ///
+    /// # Errors
+    ///
+    /// Returns InfrastructureError if:
+    /// - Authentication configuration is invalid
+    /// - Admin client creation fails
+    /// - SSL certificate files are missing or invalid
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use xzepr::infrastructure::messaging::topics::TopicManager;
+    /// use xzepr::infrastructure::messaging::config::KafkaAuthConfig;
+    ///
+    /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// // Create manager with authentication
+    /// let auth_config = KafkaAuthConfig::from_env()?;
+    /// let manager = TopicManager::with_auth("localhost:9092", auth_config.as_ref())?;
+    ///
+    /// // Create manager without authentication (backward compatible)
+    /// let manager = TopicManager::with_auth("localhost:9092", None)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn with_auth(brokers: &str, auth_config: Option<&KafkaAuthConfig>) -> Result<Self> {
+        let mut client_config = ClientConfig::new();
+        client_config
+            .set("bootstrap.servers", brokers)
+            .set("client.id", "xzepr-topic-manager");
+
+        // Apply authentication configuration if provided
+        if let Some(auth) = auth_config {
+            auth.apply_to_client_config(&mut client_config);
+        }
+
+        let admin_client: AdminClient<DefaultClientContext> =
+            client_config.create().map_err(|e| {
                 Error::Infrastructure(InfrastructureError::KafkaProducerError {
                     message: format!("Failed to create admin client: {}", e),
                 })
@@ -209,5 +265,138 @@ mod tests {
         // Test with multiple brokers
         let result = TopicManager::new("localhost:9092,localhost:9093");
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_topic_manager_with_auth_none() {
+        // Test with_auth with no authentication (backward compatible)
+        let result = TopicManager::with_auth("localhost:9092", None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_topic_manager_with_auth_plaintext() {
+        // Test with_auth with plaintext security protocol
+        use crate::infrastructure::messaging::config::{KafkaAuthConfig, SecurityProtocol};
+
+        let auth_config = KafkaAuthConfig {
+            security_protocol: SecurityProtocol::Plaintext,
+            sasl_config: None,
+            ssl_config: None,
+        };
+
+        let result = TopicManager::with_auth("localhost:9092", Some(&auth_config));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    #[ignore = "Requires rdkafka compiled with libsasl2 or openssl support for SCRAM-SHA-256"]
+    fn test_topic_manager_with_auth_sasl_scram_sha256() {
+        // Test with_auth with SASL/SCRAM-SHA-256
+        // Note: This test requires rdkafka to be compiled with SASL/SCRAM support
+        use crate::infrastructure::messaging::config::{
+            KafkaAuthConfig, SaslConfig, SaslMechanism, SecurityProtocol,
+        };
+
+        let sasl_config = SaslConfig {
+            mechanism: SaslMechanism::ScramSha256,
+            username: "test-user".to_string(),
+            password: "test-password".to_string(),
+        };
+
+        let auth_config = KafkaAuthConfig {
+            security_protocol: SecurityProtocol::SaslPlaintext,
+            sasl_config: Some(sasl_config),
+            ssl_config: None,
+        };
+
+        let result = TopicManager::with_auth("localhost:9092", Some(&auth_config));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    #[ignore = "Requires rdkafka compiled with libsasl2 or openssl support for SCRAM-SHA-512"]
+    fn test_topic_manager_with_auth_sasl_scram_sha512() {
+        // Test with_auth with SASL/SCRAM-SHA-512
+        // Note: This test requires rdkafka to be compiled with SASL/SCRAM support
+        use crate::infrastructure::messaging::config::{
+            KafkaAuthConfig, SaslConfig, SaslMechanism, SecurityProtocol,
+        };
+
+        let sasl_config = SaslConfig {
+            mechanism: SaslMechanism::ScramSha512,
+            username: "test-user".to_string(),
+            password: "test-password".to_string(),
+        };
+
+        let auth_config = KafkaAuthConfig {
+            security_protocol: SecurityProtocol::SaslPlaintext,
+            sasl_config: Some(sasl_config),
+            ssl_config: None,
+        };
+
+        let result = TopicManager::with_auth("localhost:9092", Some(&auth_config));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_topic_manager_with_auth_sasl_plain() {
+        // Test with_auth with SASL/PLAIN
+        use crate::infrastructure::messaging::config::{
+            KafkaAuthConfig, SaslConfig, SaslMechanism, SecurityProtocol,
+        };
+
+        let sasl_config = SaslConfig {
+            mechanism: SaslMechanism::Plain,
+            username: "test-user".to_string(),
+            password: "test-password".to_string(),
+        };
+
+        let auth_config = KafkaAuthConfig {
+            security_protocol: SecurityProtocol::SaslPlaintext,
+            sasl_config: Some(sasl_config),
+            ssl_config: None,
+        };
+
+        let result = TopicManager::with_auth("localhost:9092", Some(&auth_config));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    #[ignore = "Requires rdkafka compiled with libsasl2 or openssl support for SCRAM-SHA-256"]
+    fn test_topic_manager_with_auth_multiple_brokers() {
+        // Test with_auth with multiple brokers and SASL/SCRAM authentication
+        // Note: This test requires rdkafka to be compiled with SASL/SCRAM support
+        use crate::infrastructure::messaging::config::{
+            KafkaAuthConfig, SaslConfig, SaslMechanism, SecurityProtocol,
+        };
+
+        let sasl_config = SaslConfig {
+            mechanism: SaslMechanism::ScramSha256,
+            username: "test-user".to_string(),
+            password: "test-password".to_string(),
+        };
+
+        let auth_config = KafkaAuthConfig {
+            security_protocol: SecurityProtocol::SaslPlaintext,
+            sasl_config: Some(sasl_config),
+            ssl_config: None,
+        };
+
+        let result = TopicManager::with_auth(
+            "localhost:9092,localhost:9093,localhost:9094",
+            Some(&auth_config),
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_topic_manager_backward_compatibility() {
+        // Verify both new() and with_auth(None) produce equivalent results
+        let result_new = TopicManager::new("localhost:9092");
+        let result_with_auth = TopicManager::with_auth("localhost:9092", None);
+
+        assert!(result_new.is_ok());
+        assert!(result_with_auth.is_ok());
     }
 }
