@@ -1,0 +1,98 @@
+[package]
+name = "xzepr"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "admin"
+path = "src/bin/admin.rs"
+
+[[bin]]
+name = "server"
+path = "src/bin/server.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.38", features = ["full"] }
+tokio-rustls = "0.26"
+
+# Web framework
+axum = "0.7"
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "cors", "auth"] }
+
+# TLS
+rustls = "0.23"
+rustls-pemfile = "2.1"
+
+# Authentication & Authorization
+jsonwebtoken = "9.3"
+oauth2 = "4.4"
+openidconnect = "3.5"
+argon2 = "0.5"
+rand = "0.8"
+zeroize = { version = "1.8", features = ["derive"] }
+
+# GraphQL
+async-graphql = "7.0"
+async-graphql-axum = "7.0"
+
+# Database
+sqlx = { version = "0.8", features = ["postgres", "runtime-tokio", "uuid", "chrono", "json", "macros"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Validation
+validator = { version = "0.18", features = ["derive"] }
+regex = "1.10"
+
+# IDs
+uuid = { version = "1.10", features = ["v7", "serde"] }
+ulid = { version = "1.1", features = ["serde"] }
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+opentelemetry = "0.25"
+opentelemetry_sdk = { version = "0.25", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.25", features = [] }
+tracing-opentelemetry = "0.26"
+metrics = "0.23"
+metrics-exporter-prometheus = "0.15"
+
+# Messaging
+rdkafka = "0.36"
+
+# Configuration
+config = "0.14"
+dotenvy = "0.15"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+
+# Missing dependencies
+async-trait = "0.1"
+sha2 = "0.10"
+clap = { version = "4.5.48", features = ["derive"] }
+hex = "0.4"
+reqwest = { version = "0.12", features = ["json"] }
+env_logger = "0.11"
+redis = { version = "0.32.7", features = ["tokio-comp", "connection-manager"] }
+prometheus = { version = "0.14.0", features = ["process"] }
+
+[dev-dependencies]
+# Testing
+tokio-test = "0.4"
+testcontainers = "0.21"
+mockall = "0.13"
+fake = "2.9"
+criterion = "0.5"

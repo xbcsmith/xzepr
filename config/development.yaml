@@ -1,0 +1,28 @@
+# XZEPR Development Configuration
+# Settings optimized for local development
+
+server:
+  host: "127.0.0.1"
+  port: 8443
+  enable_https: true
+
+database:
+  url: "postgres://xzepr:password@localhost:5432/xzepr"
+
+auth:
+  jwt_secret: "dev-secret-not-for-production-use"
+  jwt_expiration_hours: 168  # 7 days for convenience
+  enable_local_auth: true
+  enable_oidc: true
+  keycloak:
+    issuer_url: "http://localhost:8080/realms/xzepr"
+    client_id: "xzepr-client"
+    client_secret: "dev-client-secret"
+    redirect_url: "https://localhost:8443/auth/callback"
+
+tls:
+  cert_path: "certs/cert.pem"
+  key_path: "certs/key.pem"
+
+kafka:
+  brokers: "localhost:19092"

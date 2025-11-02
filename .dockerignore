@@ -1,0 +1,59 @@
+# Rust build artifacts
+target/
+Cargo.lock
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+docs/
+
+# Test files
+tests/
+benches/
+
+# Docker files
+Dockerfile*
+docker-compose*.yaml
+.dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yaml
+.travis.yaml
+
+# Logs
+*.log
+logs/
+
+# Environment files
+.env*
+
+# Temporary files
+tmp/
+temp/
+
+# Development certificates (production should mount these)
+certs/*.pem
+certs/*.key
+
+# Local development
+.local/
