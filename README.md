@@ -22,8 +22,8 @@ authentication with RBAC, Kafka SASL/SCRAM security, and full observability.
 - **CloudEvents 1.0.1 Compatible** - Industry-standard event format for
   interoperability with external systems
 - **Dual API Support** - Both REST and GraphQL APIs for maximum flexibility
-- **Type-Safe Design** - Leverages Rust's type system to prevent bugs at
-  compile time
+- **Type-Safe Design** - Leverages Rust's type system to prevent bugs at compile
+  time
 - **ULID Support** - Universally Unique Lexicographically Sortable Identifiers
   for distributed systems
 
@@ -38,20 +38,24 @@ authentication with RBAC, Kafka SASL/SCRAM security, and full observability.
 - **Kafka SASL/SCRAM Authentication** - Secure Kafka/Redpanda connections with
   SASL/SCRAM-SHA-256 and SASL/SCRAM-SHA-512
 - **TLS 1.3 Support** - Secure communications with modern TLS
-- **Security Hardening** - Rate limiting, CORS, input validation, and audit logging
+- **Security Hardening** - Rate limiting, CORS, input validation, and audit
+  logging
 
 ### Observability
 
 - **Prometheus Metrics** - Comprehensive application and business metrics
-- **Distributed Tracing** - OpenTelemetry integration with Jaeger and OTLP export
-- **Structured Logging** - JSON-formatted logs with correlation IDs and tracing context
+- **Distributed Tracing** - OpenTelemetry integration with Jaeger and OTLP
+  export
+- **Structured Logging** - JSON-formatted logs with correlation IDs and tracing
+  context
 - **Health Checks** - Readiness and liveness endpoints with dependency checks
 
 ### Production Ready
 
 - **Database Migrations** - SQLx-based migrations with PostgreSQL
 - **Docker Support** - Multi-stage builds and Docker Compose configurations
-- **Extensive Testing** - Unit, integration, and benchmark tests with >80% coverage
+- **Extensive Testing** - Unit, integration, and benchmark tests with >80%
+  coverage
 - **Comprehensive Tooling** - Feature-rich Makefile with 50+ automation commands
 - **Auto Topic Creation** - Automatic Kafka topic creation during startup
 - **CloudEvents Publishing** - All events published in CloudEvents 1.0.1 format
@@ -149,15 +153,16 @@ XZepr follows a clean, layered architecture pattern:
 ### Key Design Decisions
 
 - **ULID for IDs** - Universally Unique Lexicographically Sortable Identifiers
-  for better database performance, natural sorting, and distributed system compatibility
+  for better database performance, natural sorting, and distributed system
+  compatibility
 - **CloudEvents 1.0.1** - Industry-standard event format for interoperability
   with Go systems and other CloudEvents-compatible consumers
-- **CQRS-lite Pattern** - Separation of commands and queries without full
-  event sourcing complexity
-- **Axum Framework** - Ergonomic async web framework with excellent type
-  safety
+- **CQRS-lite Pattern** - Separation of commands and queries without full event
+  sourcing complexity
+- **Axum Framework** - Ergonomic async web framework with excellent type safety
 - **SQLx** - Compile-time verified SQL queries with async support
-- **Kafka Auto-Configuration** - Automatic topic creation and SASL/SCRAM authentication
+- **Kafka Auto-Configuration** - Automatic topic creation and SASL/SCRAM
+  authentication
 
 ## Documentation
 
@@ -168,23 +173,23 @@ using the [Diataxis Framework](https://diataxis.fr/):
 
 - **[Getting Started Guide](docs/tutorials/getting_started.md)** - Your first
   steps with XZepr
-- **[Docker Demo](docs/tutorials/docker_demo.md)** - Complete Docker-based
-  setup tutorial
+- **[Docker Demo](docs/tutorials/docker_demo.md)** - Complete Docker-based setup
+  tutorial
 - **[cURL Examples](docs/tutorials/curl_examples.md)** - Command-line API
   examples
 
 ### How-To Guides
 
-- **[Running the Server](docs/how_to/running_server.md)** - Start, stop, and
+- **[Running the Server](docs/how_to/running_server.md)** Start, stop, and
   manage XZepr
-- **[JWT Authentication Setup](docs/how_to/jwt_authentication_setup.md)** -
+- **[JWT Authentication Setup](docs/how_to/jwt_authentication_setup.md)**
   Configure authentication
-- **[Deployment Guide](docs/how_to/deployment.md)** - Deploy to production
-- **[Setup Monitoring](docs/how_to/setup_monitoring.md)** - Configure
+- **[Deployment Guide](docs/how_to/deployment.md)** Deploy to production
+- **[Setup Monitoring](docs/how_to/setup_monitoring.md)** Configure
   observability stack
-- **[Enable OTLP Tracing](docs/how_to/enable_otlp_tracing.md)** - Distributed
+- **[Enable OTLP Tracing](docs/how_to/enable_otlp_tracing.md)** Distributed
   tracing setup
-- **[Configure Kafka Authentication](docs/how_to/configure_kafka_authentication.md)** -
+- **[Configure Kafka Authentication](docs/how_to/configure_kafka_authentication.md)**
   SASL/SCRAM setup
 
 ### Reference Documentation
@@ -204,8 +209,8 @@ using the [Diataxis Framework](https://diataxis.fr/):
 
 ### Explanations
 
-- **[Architecture Overview](docs/explanations/architecture.md)** - System
-  design and patterns
+- **[Architecture Overview](docs/explanations/architecture.md)** - System design
+  and patterns
 - **[Security Architecture](docs/explanations/security_architecture.md)** -
   Security design
 - **[Observability Architecture](docs/explanations/observability_architecture.md)**
@@ -329,21 +334,18 @@ export DATABASE_URL="postgres://xzepr:password@localhost:5432/xzepr"
 export XZEPR_AUTH_JWT_SECRET="your-secret-key-min-32-chars"
 export XZEPR_AUTH_JWT_EXPIRATION_HOURS=24
 
-<<<<<<< Updated upstream
 # Kafka/Redpanda
 export XZEPR_KAFKA_BROKERS="localhost:9092"
 export XZEPR_KAFKA_DEFAULT_TOPIC="xzepr.dev.events"
 export XZEPR_KAFKA_SASL_MECHANISM="SCRAM-SHA-256"
 export XZEPR_KAFKA_SASL_USERNAME="admin"
 export XZEPR_KAFKA_SASL_PASSWORD="admin-secret"
-=======
 # Kafka Authentication (optional)
 export XZEPR_KAFKA_SECURITY_PROTOCOL="SASL_SSL"
 export XZEPR_KAFKA_SASL_MECHANISM="SCRAM-SHA-256"
 export XZEPR_KAFKA_SASL_USERNAME="kafka-user"
 export XZEPR_KAFKA_SASL_PASSWORD="kafka-password"
 export XZEPR_KAFKA_SSL_CA_LOCATION="/path/to/ca-cert.pem"
->>>>>>> Stashed changes
 
 # TLS
 export XZEPR_TLS_CERT_PATH="certs/cert.pem"
@@ -355,7 +357,8 @@ export XZEPR_OTLP_ENDPOINT="http://localhost:4317"
 export XZEPR_JAEGER_ENDPOINT="http://localhost:14268/api/traces"
 ```
 
-See [Configuration Reference](docs/reference/configuration.md) for complete details.
+See [Configuration Reference](docs/reference/configuration.md) for complete
+details.
 
 ## Deployment
 
@@ -499,7 +502,8 @@ XZepr implements defense-in-depth security:
 - **CORS**: Configurable CORS policies
 - **SQL Injection Protection**: Parameterized queries via SQLx
 
-See [Security Architecture](docs/explanations/security_architecture.md) for details.
+See [Security Architecture](docs/explanations/security_architecture.md) for
+details.
 
 ## Contributing
 
@@ -538,7 +542,8 @@ See [AGENTS.md](AGENTS.md) for detailed development guidelines.
 
 ## License
 
-Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for
+details.
 
 ## Acknowledgments
 
