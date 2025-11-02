@@ -567,6 +567,21 @@ impl KafkaAuthConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    // Mutex to serialize tests that use environment variables
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    // Helper to clean up all Kafka-related environment variables
+    fn cleanup_env_vars() {
+        std::env::remove_var("KAFKA_SECURITY_PROTOCOL");
+        std::env::remove_var("KAFKA_SASL_MECHANISM");
+        std::env::remove_var("KAFKA_SASL_USERNAME");
+        std::env::remove_var("KAFKA_SASL_PASSWORD");
+        std::env::remove_var("KAFKA_SSL_CA_LOCATION");
+        std::env::remove_var("KAFKA_SSL_CERT_LOCATION");
+        std::env::remove_var("KAFKA_SSL_KEY_LOCATION");
+    }
 
     #[test]
     fn test_security_protocol_as_str() {
@@ -793,18 +808,20 @@ mod tests {
 
     #[test]
     fn test_kafka_auth_config_from_env_with_no_env_vars() {
-        // Clear any existing environment variables
-        std::env::remove_var("KAFKA_SECURITY_PROTOCOL");
-        std::env::remove_var("KAFKA_SASL_MECHANISM");
-        std::env::remove_var("KAFKA_SASL_USERNAME");
-        std::env::remove_var("KAFKA_SASL_PASSWORD");
+        let _lock = ENV_MUTEX.lock().unwrap();
+        cleanup_env_vars();
 
         let result = KafkaAuthConfig::from_env().unwrap();
         assert!(result.is_none());
+
+        cleanup_env_vars();
     }
 
     #[test]
     fn test_kafka_auth_config_from_env_with_plaintext() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        cleanup_env_vars();
+
         std::env::set_var("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT");
 
         let result = KafkaAuthConfig::from_env().unwrap();
@@ -813,11 +830,14 @@ mod tests {
         let config = result.unwrap();
         assert_eq!(config.security_protocol, SecurityProtocol::Plaintext);
 
-        std::env::remove_var("KAFKA_SECURITY_PROTOCOL");
+        cleanup_env_vars();
     }
 
     #[test]
     fn test_kafka_auth_config_from_env_with_sasl_ssl() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        cleanup_env_vars();
+
         std::env::set_var("KAFKA_SECURITY_PROTOCOL", "SASL_SSL");
         std::env::set_var("KAFKA_SASL_MECHANISM", "SCRAM-SHA-256");
         std::env::set_var("KAFKA_SASL_USERNAME", "testuser");
@@ -835,26 +855,28 @@ mod tests {
         assert_eq!(sasl.username, "testuser");
         assert_eq!(sasl.password, "testpass");
 
-        // Clean up
-        std::env::remove_var("KAFKA_SECURITY_PROTOCOL");
-        std::env::remove_var("KAFKA_SASL_MECHANISM");
-        std::env::remove_var("KAFKA_SASL_USERNAME");
-        std::env::remove_var("KAFKA_SASL_PASSWORD");
+        cleanup_env_vars();
     }
 
     #[test]
     fn test_kafka_auth_config_from_env_with_missing_sasl_credentials() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        cleanup_env_vars();
+
         std::env::set_var("KAFKA_SECURITY_PROTOCOL", "SASL_SSL");
         // Missing KAFKA_SASL_USERNAME and KAFKA_SASL_PASSWORD
 
         let result = KafkaAuthConfig::from_env();
         assert!(result.is_err());
 
-        std::env::remove_var("KAFKA_SECURITY_PROTOCOL");
+        cleanup_env_vars();
     }
 
     #[test]
     fn test_kafka_auth_config_from_env_defaults_to_scram_sha256() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        cleanup_env_vars();
+
         std::env::set_var("KAFKA_SECURITY_PROTOCOL", "SASL_SSL");
         // Don't set KAFKA_SASL_MECHANISM - should default to SCRAM-SHA-256
         std::env::set_var("KAFKA_SASL_USERNAME", "testuser");
@@ -870,9 +892,6 @@ mod tests {
             SaslMechanism::ScramSha256
         );
 
-        // Clean up
-        std::env::remove_var("KAFKA_SECURITY_PROTOCOL");
-        std::env::remove_var("KAFKA_SASL_USERNAME");
-        std::env::remove_var("KAFKA_SASL_PASSWORD");
+        cleanup_env_vars();
     }
 }
