@@ -393,7 +393,7 @@ Track these metrics to measure security posture:
 
 - Security Best Practices: `docs/how_to/kafka_security_best_practices.md`
 - Configuration Guide: `docs/how_to/configure_kafka_authentication.md`
-- Implementation Plan: `docs/explanations/kafka_sasl_scram_authentication_plan.md`
+- Implementation Plan: `docs/explanation/kafka_sasl_scram_authentication_plan.md`
 - API Reference: `docs/reference/api_specification.md`
 
 ### External Standards

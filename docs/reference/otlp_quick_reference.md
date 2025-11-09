@@ -328,9 +328,9 @@ INFO Tracing initialized service="xzepr" otlp_enabled=false
 
 ### Documentation
 
-- Implementation: `docs/explanations/otlp_exporter_implementation.md`
+- Implementation: `docs/explanation/otlp_exporter_implementation.md`
 - How-to: `docs/how_to/enable_otlp_tracing.md`
-- Validation: `docs/explanations/otlp_integration_validation.md`
+- Validation: `docs/explanation/otlp_integration_validation.md`
 
 ### External
 

@@ -44,7 +44,7 @@ zero warnings.
 - [ ] `cargo clippy --all-targets --all-features -- -D warnings` shows zero
       warnings
 - [ ] `cargo test --all-features` passes with >80% coverage
-- [ ] Documentation file created in `docs/explanations/` with
+- [ ] Documentation file created in `docs/explanation/` with
       lowercase_filename.md
 
 **IF ANY CHECK FAILS, YOU MUST FIX IT BEFORE PROCEEDING.**
@@ -102,15 +102,15 @@ build failures.
 
 ```text
 ✅ CORRECT:
-   docs/explanations/distributed_tracing_architecture.md
+   docs/explanation/distributed_tracing_architecture.md
    docs/how_to/setup_monitoring.md
    docs/reference/api_specification.md
    README.md (ONLY exception)
 
 ❌ WRONG:
-   docs/explanations/Distributed-Tracing-Architecture.md
-   docs/explanations/DistributedTracingArchitecture.md
-   docs/explanations/ARCHITECTURE.md
+   docs/explanation/Distributed-Tracing-Architecture.md
+   docs/explanation/DistributedTracingArchitecture.md
+   docs/explanation/ARCHITECTURE.md
    docs/how_to/setup-monitoring.md
    docs/how_to/Setup Monitoring.md
 ```
@@ -173,7 +173,7 @@ cargo test --all-features
 
 **YOU MUST:**
 
-- Create documentation file in `docs/explanations/` for EVERY feature/task
+- Create documentation file in `docs/explanation/` for EVERY feature/task
 - Use filename pattern: `{feature_name}_implementation.md` or
   `{phase}_summary.md`
 - Include: Overview, Components, Implementation Details, Testing, Examples
@@ -412,7 +412,7 @@ Test coverage and validation results
 
 #### Phase 3: Documentation
 
-**YOU MUST create** `docs/explanations/{feature}_implementation.md`:
+**YOU MUST create** `docs/explanation/{feature}_implementation.md`:
 
 ````markdown
 # Feature Name Implementation
@@ -425,7 +425,7 @@ Brief description of what was implemented and why.
 
 - `src/path/file.rs` (XXX lines) - Description
 - `src/path/tests.rs` (YYY lines) - Test coverage
-- `docs/explanations/feature.md` (ZZZ lines) - This document
+- `docs/explanation/feature.md` (ZZZ lines) - This document
 
 Total: ~N,NNN lines
 
@@ -478,7 +478,7 @@ fn main() {
 
 ## References
 
-- Architecture: `docs/explanations/architecture.md`
+- Architecture: `docs/explanation/architecture.md`
 - API Reference: `docs/reference/api.md`
 
 ### Phase 4: Validation (CRITICAL)
@@ -503,7 +503,7 @@ cargo test --all-features
 # Expected: "test result: ok. X passed; 0 failed" where X > previous count
 
 # 5. Verify documentation created
-ls -la docs/explanations/*{feature}*.md
+ls -la docs/explanation/*{feature}*.md
 # Expected: File exists with lowercase filename
 
 # 6. Verify no emoji in docs
@@ -742,7 +742,7 @@ feat(auth): add JWT token refresh feature that allows users to... (CPIPE-1234)  
 
 **Example**: `docs/how_to/setup_monitoring.md`
 
-### Category 3: Explanations (`docs/explanations/`) ← DEFAULT FOR YOUR SUMMARIES
+### Category 3: Explanations (`docs/explanation/`) ← DEFAULT FOR YOUR SUMMARIES
 
 **Purpose**: Understanding-oriented, conceptual discussion
 
@@ -753,7 +753,7 @@ feat(auth): add JWT token refresh feature that allows users to... (CPIPE-1234)  
 - Implementation summaries ← **YOU TYPICALLY CREATE THESE**
 - Concept clarifications
 
-**Example**: `docs/explanations/phase4_observability_implementation.md`
+**Example**: `docs/explanation/phase4_observability_implementation.md`
 
 ### Category 4: Reference (`docs/reference/`)
 
@@ -777,7 +777,7 @@ Is it a step-by-step tutorial?
    │  ├─ YES → docs/how_to/
    │  └─ NO
    │     ├─ Is it explaining concepts/architecture?
-   │     │  ├─ YES → docs/explanations/  ← MOST COMMON FOR AI AGENTS
+   │     │  ├─ YES → docs/explanation/  ← MOST COMMON FOR AI AGENTS
    │     │  └─ NO
    │     │     └─ Is it reference material?
    │     │        └─ YES → docs/reference/
@@ -820,20 +820,20 @@ find . -name "*.yml" -exec sh -c 'mv "$0" "${0%.yml}.yaml"' {} \;
 
 ```bash
 # ✅ Always use lowercase_with_underscores
-touch docs/explanations/distributed_tracing_implementation.md
+touch docs/explanation/distributed_tracing_implementation.md
 
 # ❌ Never use these patterns
-touch docs/explanations/DistributedTracingImplementation.md  # CamelCase
-touch docs/explanations/Distributed-Tracing-Implementation.md # Capitalized
-touch docs/explanations/DISTRIBUTED_TRACING.md # Uppercase
+touch docs/explanation/DistributedTracingImplementation.md  # CamelCase
+touch docs/explanation/Distributed-Tracing-Implementation.md # Capitalized
+touch docs/explanation/DISTRIBUTED_TRACING.md # Uppercase
 ```
 
 **FIX IF YOU MADE THIS MISTAKE**:
 
 ```bash
 # Rename to lowercase with underscores
-mv docs/explanations/DistributedTracing.md \
-   docs/explanations/distributed_tracing.md
+mv docs/explanation/DistributedTracing.md \
+   docs/explanation/distributed_tracing.md
 ```
 
 ### Pitfall 3: Forgetting to Run `cargo fmt`
@@ -898,7 +898,7 @@ grep -rn "unwrap()" src/
 
 ```bash
 # Immediately after starting a task, create doc file
-touch docs/explanations/feature_name_implementation.md
+touch docs/explanation/feature_name_implementation.md
 
 # Fill it in as you work
 # Add final validation section when done
@@ -1074,7 +1074,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 
 ### Documentation
 
-- [ ] Documentation file created in `docs/explanations/`
+- [ ] Documentation file created in `docs/explanation/`
 - [ ] Filename uses lowercase_with_underscores.md
 - [ ] README.md exception is ONLY uppercase filename
 - [ ] No emojis anywhere in documentation
@@ -1203,7 +1203,7 @@ All four cargo commands MUST pass before claiming done:
 5. Run: cargo check --all-targets --all-features
 6. Run: cargo clippy --all-targets --all-features -- -D warnings
 7. Run: cargo test --all-features
-8. Create: docs/explanations/{feature}_implementation.md
+8. Create: docs/explanation/{feature}_implementation.md
 9. Commit with proper format: <type>(<scope>): <description>
 10. Verify: All checklist items above are checked
 ```
@@ -1219,5 +1219,5 @@ All four cargo commands MUST pass before claiming done:
 This file is continuously updated as new patterns emerge. Last updated: 2024
 
 **For AI Agents**: You are a master Rust developer. Follow these rules
-precisely. Put all implementation summaries in `docs/explanations/` with
+precisely. Put all implementation summaries in `docs/explanation/` with
 lowercase filenames.

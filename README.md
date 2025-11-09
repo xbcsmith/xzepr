@@ -1,6 +1,7 @@
 # xzepr
-Event System in Rust
-=======
+
+# Event System in Rust
+
 # XZepr
 
 **High-Performance Event Tracking Server Built in Rust**
@@ -207,24 +208,24 @@ using the [Diataxis Framework](https://diataxis.fr/):
   usage guide
 - **[OTLP Quick Reference](docs/reference/otlp_quick_reference.md)** -
   OpenTelemetry setup
-- **[CloudEvents Format](docs/explanations/cloudevents_compatibility.md)** -
+- **[CloudEvents Format](docs/explanation/cloudevents_compatibility.md)** -
   CloudEvents 1.0.1 implementation
 
 ### Explanations
 
-- **[Architecture Overview](docs/explanations/architecture.md)** - System design
+- **[Architecture Overview](docs/explanation/architecture.md)** - System design
   and patterns
-- **[Security Architecture](docs/explanations/security_architecture.md)** -
+- **[Security Architecture](docs/explanation/security_architecture.md)** -
   Security design
-- **[Observability Architecture](docs/explanations/observability_architecture.md)**
+- **[Observability Architecture](docs/explanation/observability_architecture.md)**
   - Monitoring
-- **[JWT Authentication](docs/explanations/jwt_authentication.md)** -
+- **[JWT Authentication](docs/explanation/jwt_authentication.md)** -
   Authentication deep dive
-- **[Distributed Tracing Architecture](docs/explanations/distributed_tracing_architecture.md)**
+- **[Distributed Tracing Architecture](docs/explanation/distributed_tracing_architecture.md)**
   - Tracing
-- **[CloudEvents Compatibility](docs/explanations/cloudevents_compatibility.md)**
+- **[CloudEvents Compatibility](docs/explanation/cloudevents_compatibility.md)**
   - Event format details
-- **[Kafka Topic Auto-Creation](docs/explanations/kafka_topic_auto_creation.md)**
+- **[Kafka Topic Auto-Creation](docs/explanation/kafka_topic_auto_creation.md)**
   - Topic management
 
 ## Development
@@ -505,7 +506,7 @@ XZepr implements defense-in-depth security:
 - **CORS**: Configurable CORS policies
 - **SQL Injection Protection**: Parameterized queries via SQLx
 
-See [Security Architecture](docs/explanations/security_architecture.md) for
+See [Security Architecture](docs/explanation/security_architecture.md) for
 details.
 
 ## Contributing
