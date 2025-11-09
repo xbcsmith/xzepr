@@ -357,9 +357,9 @@ If any step fails, check logs and configuration as described in the troubleshoot
 
 ## See Also
 
-- Event Publication Implementation: `docs/explanations/event_publication_implementation.md`
+- Event Publication Implementation: `docs/explanation/event_publication_implementation.md`
 - CloudEvents Format Example: `examples/cloudevents_format.rs` (run with `cargo run --example cloudevents_format`)
 - CloudEvents Specification: https://github.com/cloudevents/spec/blob/v1.0.1/spec.md
-- Kafka Topic Auto-Creation: `docs/explanations/kafka_topic_auto_creation.md`
+- Kafka Topic Auto-Creation: `docs/explanation/kafka_topic_auto_creation.md`
 - Docker Demo Tutorial: `docs/tutorials/docker_demo.md`
 - API Reference: `docs/reference/api_specification.md`

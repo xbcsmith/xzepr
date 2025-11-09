@@ -708,7 +708,7 @@ After successful migration:
 - Configuration Guide: `docs/how_to/configure_kafka_authentication.md`
 - Security Best Practices: `docs/how_to/kafka_security_best_practices.md`
 - Security Checklist: `docs/reference/kafka_security_checklist.md`
-- Implementation Plan: `docs/explanations/kafka_sasl_scram_authentication_plan.md`
+- Implementation Plan: `docs/explanation/kafka_sasl_scram_authentication_plan.md`
 
 ### External Resources
 

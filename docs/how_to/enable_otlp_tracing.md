@@ -671,9 +671,9 @@ kubectl top pod -l app=xzepr
 
 ### Internal Documentation
 
-- Implementation: `docs/explanations/otlp_exporter_implementation.md`
-- Architecture: `docs/explanations/distributed_tracing_architecture.md`
-- Observability: `docs/explanations/observability_architecture.md`
+- Implementation: `docs/explanation/otlp_exporter_implementation.md`
+- Architecture: `docs/explanation/distributed_tracing_architecture.md`
+- Observability: `docs/explanation/observability_architecture.md`
 
 ### External Resources
 

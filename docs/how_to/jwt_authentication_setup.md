@@ -562,6 +562,6 @@ jwt:
 
 ## References
 
-- JWT Authentication Explanation: `docs/explanations/jwt_authentication.md`
+- JWT Authentication Explanation: `docs/explanation/jwt_authentication.md`
 - Configuration Reference: `docs/reference/configuration.md`
-- Production Readiness Roadmap: `docs/explanations/production_readiness_roadmap.md`
+- Production Readiness Roadmap: `docs/explanation/production_readiness_roadmap.md`

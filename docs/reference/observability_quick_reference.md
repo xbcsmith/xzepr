@@ -402,8 +402,8 @@ Covers:
 
 ## References
 
-- Architecture: `docs/explanations/observability_architecture.md`
-- Implementation: `docs/explanations/phase4_observability_implementation.md`
+- Architecture: `docs/explanation/observability_architecture.md`
+- Implementation: `docs/explanation/phase4_observability_implementation.md`
 - Custom Metrics: `docs/how_to/implement_custom_metrics.md`
 - Prometheus: https://prometheus.io/docs/
 - Grafana: https://grafana.com/docs/
