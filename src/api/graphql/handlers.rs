@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2025 Brett Smith <xbcsmith@gmail.com>
+// SPDX-License-Identifier: Apache-2.0
+
 // src/api/graphql/handlers.rs
 
 use async_graphql::http::{playground_source, GraphQLPlaygroundConfig};

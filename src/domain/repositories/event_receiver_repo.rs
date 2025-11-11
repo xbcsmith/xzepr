@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2025 Brett Smith <xbcsmith@gmail.com>
+// SPDX-License-Identifier: Apache-2.0
+
 // src/domain/repositories/event_receiver_repo.rs
 
 use crate::domain::entities::event_receiver::EventReceiver;

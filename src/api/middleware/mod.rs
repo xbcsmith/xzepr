@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2025 Brett Smith <xbcsmith@gmail.com>
+// SPDX-License-Identifier: Apache-2.0
+
 // src/api/middleware/mod.rs
 
 //! API middleware components for authentication, rate limiting, CORS, and security
