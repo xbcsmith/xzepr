@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2025 Brett Smith <xbcsmith@gmail.com>
+// SPDX-License-Identifier: Apache-2.0
+
 //! Kafka Authentication Example
 //!
 //! This example demonstrates how to create and configure a Kafka event publisher

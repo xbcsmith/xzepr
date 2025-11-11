@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2025 Brett Smith <xbcsmith@gmail.com>
+// SPDX-License-Identifier: Apache-2.0
+
 // src/api/middleware/tracing_middleware.rs
 
 //! Distributed tracing middleware for automatic span creation
