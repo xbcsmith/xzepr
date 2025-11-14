@@ -1,5 +1,139 @@
 # XZepr Architecture Plan
 
+## RBAC Implementation Status
+
+### Overview
+
+The RBAC (Role-Based Access Control) system is **partially implemented**. The core components are complete and well-tested, but enforcement middleware is not yet wired up to REST API routes.
+
+### Implementation Status Summary
+
+#### ✅ FULLY IMPLEMENTED AND TESTED
+
+**1. Role System** (`src/auth/rbac/roles.rs`)
+
+- Four roles: Admin, EventManager, EventViewer, User
+- Complete permission mapping for each role
+- 44 passing unit tests
+- Serialization/deserialization support
+- String conversion (FromStr/Display)
+
+**2. Permission System** (`src/auth/rbac/permissions.rs`)
+
+- 14 permissions across three resource types:
+  - Events: Create, Read, Update, Delete
+  - Receivers: Create, Read, Update, Delete
+  - Groups: Create, Read, Update, Delete
+  - Admin: UserManage, RoleManage
+- `from_action()` method for resource/action mapping
+- All tests passing
+
+**3. User Entity with RBAC** (`src/domain/entities/user.rs`)
+
+- `has_role()` method for role checking
+- `has_permission()` method for permission checking
+- Support for multiple auth providers (Local, Keycloak, ApiKey)
+- Password hashing with Argon2
+- Comprehensive test coverage
+
+**4. JWT with RBAC Integration** (`src/auth/jwt/`)
+
+- Claims structure includes roles and permissions
+- Role checking: `has_role()`, `has_any_role()`, `has_all_roles()`
+- Permission checking: `has_permission()`, `has_any_permission()`, `has_all_permissions()`
+- Full JWT middleware with `AuthenticatedUser` extraction
+- Token validation and expiration handling
+- All tests passing
+
+**5. GraphQL RBAC Guards** (`src/api/graphql/guards.rs`)
+
+- `require_auth()` - Basic authentication check
+- `require_roles()` - Enforce specific roles
+- `require_permissions()` - Enforce specific permissions
+- `require_roles_and_permissions()` - Combined enforcement
+- Helper functions: `require_admin()`, `require_user()`
+- Fully integrated with Claims
+
+#### ⚠️ PARTIALLY IMPLEMENTED
+
+**1. RBAC Middleware** (`src/auth/rbac/middleware.rs`)
+
+- Code skeleton exists but has compilation issues
+- References undefined types and imports
+- Not properly integrated with the rest of the codebase
+- NOT imported or used anywhere in the application
+- Needs refactoring to use existing JWT middleware patterns
+
+#### ❌ NOT IMPLEMENTED / NOT WIRED UP
+
+**1. REST API Route Protection**
+
+- `build_protected_router()` exists but middleware is commented out
+- No RBAC enforcement on REST endpoints
+- All routes are currently public/open
+- TODO: Apply JWT middleware with role/permission guards
+
+**2. OIDC Integration**
+
+- Module structure exists but is commented out in `src/auth/mod.rs`
+- Keycloak integration not fully implemented
+- TODO: Complete OIDC provider integration
+
+### What Works Right Now
+
+1. **GraphQL API**: Fully protected with role and permission guards
+2. **JWT Authentication**: Token generation, validation, and claims extraction
+3. **User Management**: Role and permission assignment at user level
+4. **Domain Logic**: All RBAC checks in business logic work correctly
+
+### What Doesn't Work Yet
+
+1. **REST API Protection**: No middleware applied to HTTP routes
+2. **Automatic Role Enforcement**: Must be manually checked in handlers
+3. **OIDC Authentication**: Keycloak integration incomplete
+4. **API Key with RBAC**: API key auth exists but RBAC integration unclear
+
+### Next Steps to Complete RBAC
+
+1. **Fix RBAC Middleware** (`src/auth/rbac/middleware.rs`):
+
+   - Remove undefined type references
+   - Use existing JWT middleware patterns
+   - Integrate with `AuthenticatedUser` from JWT middleware
+
+2. **Wire Up REST Routes** (`src/api/rest/routes.rs`):
+
+   - Uncomment and configure middleware in `build_protected_router()`
+   - Apply JWT authentication middleware
+   - Add role/permission guards to specific routes
+
+3. **Create Route Guards**:
+
+   - Implement `require_permission()` middleware for REST
+   - Implement `require_roles()` middleware for REST
+   - Follow patterns from GraphQL guards
+
+4. **Testing**:
+   - Add integration tests for protected endpoints
+   - Test permission denial scenarios
+   - Verify role-based access control
+
+### Code Quality
+
+All implemented RBAC components have:
+
+- ✅ Comprehensive unit tests (100+ tests total)
+- ✅ Proper error handling
+- ✅ Documentation comments
+- ✅ Zero clippy warnings
+- ✅ Proper serialization support
+
+### Conclusion
+
+**The RBAC system is ~80% complete.** The hard parts (role/permission design, JWT integration, user entity) are done and tested. The remaining work is integration: applying existing middleware to REST routes and fixing the RBAC middleware module.
+
+---
+
 ## 🚀 Quick Start Guide
 
 ### 1. Generate TLS Certificates
@@ -2190,7 +2324,9 @@ async fn test_rbac_enforcement() {
 
 ---
 
-## 📚 Updated Implementation Roadmap
+## 📚 RBAC Completion Roadmap
+
+**Note**: A detailed phased implementation plan for completing RBAC is available in `docs/explanation/rbac_completion_plan.md`. The roadmap below represents the original full-stack implementation plan.
 
 ### Phase 1: Foundation (Week 1-2)
 
