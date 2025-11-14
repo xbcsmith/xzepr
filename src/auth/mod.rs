@@ -6,5 +6,6 @@
 pub mod api_key;
 pub mod jwt;
 pub mod local;
-// pub mod oidc;
+pub mod oidc;
+pub mod provisioning;
 pub mod rbac;

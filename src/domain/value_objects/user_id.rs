@@ -27,6 +27,13 @@ impl UserId {
         Ok(Self(Ulid::from_string(s)?))
     }
 
+    /// Creates a user ID from a string representation
+    ///
+    /// This is an alias for `parse` for API compatibility
+    pub fn from_string(s: String) -> Result<Self, ulid::DecodeError> {
+        Self::parse(&s)
+    }
+
     /// Returns the inner ULID
     pub fn as_ulid(&self) -> Ulid {
         self.0
