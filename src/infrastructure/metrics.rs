@@ -21,6 +21,11 @@ pub struct PrometheusMetrics {
     validation_errors_total: CounterVec,
     graphql_complexity_violations_total: CounterVec,
 
+    // RBAC metrics
+    permission_checks_total: CounterVec,
+    auth_duration_seconds: HistogramVec,
+    active_sessions_total: Gauge,
+
     // Application metrics
     http_requests_total: CounterVec,
     http_request_duration_seconds: HistogramVec,
@@ -92,6 +97,32 @@ impl PrometheusMetrics {
         )?;
         registry.register(Box::new(graphql_complexity_violations_total.clone()))?;
 
+        // RBAC metrics
+        let permission_checks_total = CounterVec::new(
+            Opts::new(
+                "xzepr_permission_checks_total",
+                "Total number of permission checks",
+            ),
+            &["result", "permission"],
+        )?;
+        registry.register(Box::new(permission_checks_total.clone()))?;
+
+        let auth_duration_seconds = HistogramVec::new(
+            HistogramOpts::new(
+                "xzepr_auth_duration_seconds",
+                "Authentication operation duration in seconds",
+            )
+            .buckets(vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0]),
+            &["operation"],
+        )?;
+        registry.register(Box::new(auth_duration_seconds.clone()))?;
+
+        let active_sessions_total = Gauge::new(
+            "xzepr_active_sessions_total",
+            "Number of active user sessions",
+        )?;
+        registry.register(Box::new(active_sessions_total.clone()))?;
+
         // Application metrics
         let http_requests_total = CounterVec::new(
             Opts::new("xzepr_http_requests_total", "Total number of HTTP requests"),
@@ -134,6 +165,9 @@ impl PrometheusMetrics {
             cors_violations_total,
             validation_errors_total,
             graphql_complexity_violations_total,
+            permission_checks_total,
+            auth_duration_seconds,
+            active_sessions_total,
             http_requests_total,
             http_request_duration_seconds,
             active_connections,
@@ -182,6 +216,36 @@ impl PrometheusMetrics {
         self.graphql_complexity_violations_total
             .with_label_values(&[client_id])
             .inc();
+    }
+
+    /// Records a permission check
+    pub fn record_permission_check(&self, granted: bool, permission: &str) {
+        let result = if granted { "granted" } else { "denied" };
+        self.permission_checks_total
+            .with_label_values(&[result, permission])
+            .inc();
+    }
+
+    /// Records authentication operation duration
+    pub fn record_auth_duration(&self, operation: &str, duration_secs: f64) {
+        self.auth_duration_seconds
+            .with_label_values(&[operation])
+            .observe(duration_secs);
+    }
+
+    /// Sets the number of active sessions
+    pub fn set_active_sessions(&self, count: i64) {
+        self.active_sessions_total.set(count as f64);
+    }
+
+    /// Increments active sessions
+    pub fn increment_active_sessions(&self) {
+        self.active_sessions_total.inc();
+    }
+
+    /// Decrements active sessions
+    pub fn decrement_active_sessions(&self) {
+        self.active_sessions_total.dec();
     }
 
     /// Records an HTTP request
@@ -352,5 +416,39 @@ mod tests {
         let output = metrics.gather().unwrap();
         assert!(output.contains("xzepr_http_requests_total"));
         assert!(output.contains("xzepr_auth_failures_total"));
+    }
+
+    #[test]
+    fn test_record_permission_check() {
+        let metrics = PrometheusMetrics::new().unwrap();
+
+        metrics.record_permission_check(true, "event:read");
+        metrics.record_permission_check(false, "admin:write");
+
+        let output = metrics.gather().unwrap();
+        assert!(output.contains("xzepr_permission_checks_total"));
+    }
+
+    #[test]
+    fn test_record_auth_duration() {
+        let metrics = PrometheusMetrics::new().unwrap();
+
+        metrics.record_auth_duration("jwt_validation", 0.025);
+        metrics.record_auth_duration("oidc_callback", 0.150);
+
+        let output = metrics.gather().unwrap();
+        assert!(output.contains("xzepr_auth_duration_seconds"));
+    }
+
+    #[test]
+    fn test_active_sessions() {
+        let metrics = PrometheusMetrics::new().unwrap();
+
+        metrics.increment_active_sessions();
+        metrics.increment_active_sessions();
+        metrics.decrement_active_sessions();
+
+        let output = metrics.gather().unwrap();
+        assert!(output.contains("xzepr_active_sessions_total"));
     }
 }
