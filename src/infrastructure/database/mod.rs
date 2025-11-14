@@ -5,6 +5,8 @@
 
 pub mod postgres;
 pub mod postgres_event_repo;
+pub mod postgres_user_repo;
 
-pub use postgres::PostgresUserRepository;
+pub use postgres::PostgresApiKeyRepository;
 pub use postgres_event_repo::PostgresEventRepository;
+pub use postgres_user_repo::PostgresUserRepository;

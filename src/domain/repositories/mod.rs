@@ -6,3 +6,4 @@
 pub mod event_receiver_group_repo;
 pub mod event_receiver_repo;
 pub mod event_repo;
+pub mod user_repo;

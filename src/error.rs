@@ -171,6 +171,18 @@ pub enum DomainError {
 
     #[error("Validation error in field '{field}': {message}")]
     ValidationError { field: String, message: String },
+
+    #[error("Entity not found: {entity} with id {id}")]
+    NotFound { entity: String, id: String },
+
+    #[error("Entity already exists: {entity} with identifier {identifier}")]
+    AlreadyExists { entity: String, identifier: String },
+
+    #[error("Invalid data: {0}")]
+    InvalidData(String),
+
+    #[error("Storage error: {0}")]
+    StorageError(String),
 }
 
 /// Infrastructure-related errors

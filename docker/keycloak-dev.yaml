@@ -1,0 +1,82 @@
+# Docker Compose for Keycloak Development Environment
+#
+# This configuration provides a local Keycloak instance for OIDC testing
+# with XZepr. It includes:
+# - Keycloak server with preconfigured realm
+# - PostgreSQL database for Keycloak persistence
+# - Development-friendly settings (HTTP enabled, auto-admin user)
+#
+# Usage:
+#   docker-compose -f docker/keycloak-dev.yaml up -d
+#   Access Keycloak admin console: http://localhost:8080
+#   Admin credentials: admin / admin
+
+version: '3.8'
+
+services:
+  keycloak-db:
+    image: postgres:15-alpine
+    container_name: xzepr-keycloak-db
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    volumes:
+      - keycloak-db-data:/var/lib/postgresql/data
+    networks:
+      - keycloak-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:23.0
+    container_name: xzepr-keycloak
+    command:
+      - start-dev
+      - --import-realm
+    environment:
+      # Database configuration
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+
+      # Admin user (created automatically on first start)
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+
+      # Development settings
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_PROXY: edge
+
+      # Logging
+      KC_LOG_LEVEL: INFO
+    ports:
+      - "8080:8080"
+    volumes:
+      # Mount realm export (if it exists)
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    networks:
+      - keycloak-network
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080;echo -e 'GET /health/ready HTTP/1.1\r\nhost: 127.0.0.1:8080\r\nConnection: close\r\n\r\n' >&3;grep 'HTTP/1.1 200 OK' <&3"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+networks:
+  keycloak-network:
+    driver: bridge
+
+volumes:
+  keycloak-db-data:
+    driver: local

@@ -3,10 +3,12 @@
 
 // src/api/rest/mod.rs
 
+pub mod auth;
 pub mod dtos;
 pub mod events;
 pub mod routes;
 
+pub use auth::{AuthState, LoginRequest, LoginResponse, RefreshRequest};
 pub use dtos::*;
 pub use events::AppState;
 pub use routes::{build_protected_router, build_router};
