@@ -3,6 +3,7 @@
 
 // Generated mod file
 
+pub mod audit;
 pub mod config;
 pub mod database;
 pub mod messaging;
@@ -11,6 +12,7 @@ pub mod monitoring;
 pub mod security_config;
 pub mod tracing;
 
+pub use audit::{AuditAction, AuditEvent, AuditLogger, AuditOutcome};
 pub use messaging::TopicManager;
 pub use metrics::PrometheusMetrics;
 pub use monitoring::{

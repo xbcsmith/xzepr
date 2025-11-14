@@ -15,9 +15,11 @@ use axum::{
 };
 use serde_json::json;
 use std::sync::Arc;
+use std::time::Instant;
 use tracing::{debug, warn};
 
 use crate::auth::jwt::{Claims, JwtService};
+use crate::infrastructure::{AuditAction, AuditLogger, AuditOutcome, PrometheusMetrics};
 
 /// Extension type for authenticated user claims
 #[derive(Debug, Clone)]
@@ -52,6 +54,8 @@ impl AuthenticatedUser {
 #[derive(Clone)]
 pub struct JwtMiddlewareState {
     jwt_service: Arc<JwtService>,
+    audit_logger: Option<Arc<AuditLogger>>,
+    metrics: Option<Arc<PrometheusMetrics>>,
 }
 
 impl JwtMiddlewareState {
@@ -59,7 +63,21 @@ impl JwtMiddlewareState {
     pub fn new(jwt_service: JwtService) -> Self {
         Self {
             jwt_service: Arc::new(jwt_service),
+            audit_logger: None,
+            metrics: None,
         }
+    }
+
+    /// Create new middleware state with audit logging
+    pub fn with_audit(mut self, audit_logger: Arc<AuditLogger>) -> Self {
+        self.audit_logger = Some(audit_logger);
+        self
+    }
+
+    /// Create new middleware state with metrics
+    pub fn with_metrics(mut self, metrics: Arc<PrometheusMetrics>) -> Self {
+        self.metrics = Some(metrics);
+        self
     }
 }
 
@@ -93,16 +111,95 @@ pub async fn jwt_auth_middleware(
     mut request: Request,
     next: Next,
 ) -> Result<Response, AuthError> {
+    let start = Instant::now();
+    let path = request.uri().path().to_string();
+
+    // Extract IP address from headers if available
+    let ip_address = request
+        .headers()
+        .get("x-forwarded-for")
+        .and_then(|h| h.to_str().ok())
+        .or_else(|| {
+            request
+                .headers()
+                .get("x-real-ip")
+                .and_then(|h| h.to_str().ok())
+        })
+        .map(|s| s.to_string());
+
     // Extract token from Authorization header
-    let token = extract_token_from_header(&request)?;
+    let token = match extract_token_from_header(&request) {
+        Ok(t) => t,
+        Err(e) => {
+            // Log authentication failure
+            if let Some(audit_logger) = &state.audit_logger {
+                let event = crate::infrastructure::AuditEvent::builder()
+                    .action(AuditAction::TokenValidation)
+                    .resource(&path)
+                    .outcome(AuditOutcome::Failure)
+                    .error_message(e.to_string())
+                    .ip_address_opt(ip_address.as_deref())
+                    .build();
+                audit_logger.log_event(event);
+            }
+
+            // Record metrics
+            if let Some(metrics) = &state.metrics {
+                metrics.record_auth_failure("missing_token", "unknown");
+            }
+
+            return Err(e);
+        }
+    };
 
     // Validate token
-    let claims = state.jwt_service.validate_token(token).await.map_err(|e| {
-        warn!("Token validation failed: {}", e);
-        AuthError::InvalidToken(e.to_string())
-    })?;
+    let claims = match state.jwt_service.validate_token(token).await {
+        Ok(c) => c,
+        Err(e) => {
+            warn!("Token validation failed: {}", e);
 
-    debug!(user_id = %claims.sub, "User authenticated");
+            // Log authentication failure
+            if let Some(audit_logger) = &state.audit_logger {
+                let event = crate::infrastructure::AuditEvent::builder()
+                    .action(AuditAction::TokenValidation)
+                    .resource(&path)
+                    .outcome(AuditOutcome::Failure)
+                    .error_message(e.to_string())
+                    .ip_address_opt(ip_address.as_deref())
+                    .build();
+                audit_logger.log_event(event);
+            }
+
+            // Record metrics
+            if let Some(metrics) = &state.metrics {
+                metrics.record_auth_failure("invalid_token", "unknown");
+            }
+
+            return Err(AuthError::InvalidToken(e.to_string()));
+        }
+    };
+
+    let user_id = claims.sub.clone();
+    debug!(user_id = %user_id, "User authenticated");
+
+    // Log successful authentication
+    if let Some(audit_logger) = &state.audit_logger {
+        let event = crate::infrastructure::AuditEvent::builder()
+            .user_id(&user_id)
+            .action(AuditAction::TokenValidation)
+            .resource(&path)
+            .outcome(AuditOutcome::Success)
+            .ip_address_opt(ip_address.as_deref())
+            .duration_ms(start.elapsed().as_millis() as u64)
+            .build();
+        audit_logger.log_event(event);
+    }
+
+    // Record successful authentication metrics
+    if let Some(metrics) = &state.metrics {
+        metrics.record_auth_success("jwt", &user_id);
+        metrics.record_auth_duration("jwt_validation", start.elapsed().as_secs_f64());
+    }
 
     // Add claims to request extensions
     request

@@ -7,17 +7,55 @@
 //! enforcement on REST API routes based on HTTP method and path.
 
 use axum::{
-    extract::Request,
+    extract::{Request, State},
     http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Response},
     Json,
 };
 use serde_json::json;
+use std::sync::Arc;
+use std::time::Instant;
 use tracing::{debug, warn};
 
 use super::jwt::AuthenticatedUser;
 use super::rbac_helpers::route_to_permission;
+use crate::infrastructure::{AuditLogger, PrometheusMetrics};
+
+/// State for RBAC middleware with audit logging and metrics
+#[derive(Clone)]
+pub struct RbacMiddlewareState {
+    audit_logger: Option<Arc<AuditLogger>>,
+    metrics: Option<Arc<PrometheusMetrics>>,
+}
+
+impl RbacMiddlewareState {
+    /// Create new RBAC middleware state
+    pub fn new() -> Self {
+        Self {
+            audit_logger: None,
+            metrics: None,
+        }
+    }
+
+    /// Add audit logging
+    pub fn with_audit(mut self, audit_logger: Arc<AuditLogger>) -> Self {
+        self.audit_logger = Some(audit_logger);
+        self
+    }
+
+    /// Add metrics
+    pub fn with_metrics(mut self, metrics: Arc<PrometheusMetrics>) -> Self {
+        self.metrics = Some(metrics);
+        self
+    }
+}
+
+impl Default for RbacMiddlewareState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// RBAC enforcement middleware
 ///
@@ -83,7 +121,10 @@ pub async fn rbac_enforcement_middleware(
         })?;
 
     // Check permission
-    if !user.has_permission(&format!("{:?}", required_permission)) {
+    let permission_str = format!("{:?}", required_permission);
+    let has_permission = user.has_permission(&permission_str);
+
+    if !has_permission {
         warn!(
             user_id = %user.user_id(),
             required_permission = ?required_permission,
@@ -93,7 +134,7 @@ pub async fn rbac_enforcement_middleware(
             "Access denied: user lacks required permission"
         );
         return Err(RbacError::Forbidden {
-            required_permission: format!("{:?}", required_permission),
+            required_permission: permission_str,
             user_permissions: user.claims.permissions.clone(),
         });
     }
@@ -105,6 +146,105 @@ pub async fn rbac_enforcement_middleware(
         path = %path,
         "Access granted"
     );
+
+    Ok(next.run(request).await)
+}
+
+/// RBAC enforcement middleware with audit logging and metrics
+///
+/// Enhanced version that logs permission checks and records metrics.
+pub async fn rbac_enforcement_middleware_with_state(
+    State(state): State<RbacMiddlewareState>,
+    request: Request,
+    next: Next,
+) -> Result<Response, RbacError> {
+    let start = Instant::now();
+    let method = request.method().clone();
+    let path = request.uri().path().to_string();
+
+    // Determine required permission
+    let required_permission = match route_to_permission(&method, &path) {
+        Some(perm) => perm,
+        None => {
+            // Public route or unmapped route - allow through
+            debug!(
+                method = %method,
+                path = %path,
+                "Route is public or unmapped, allowing access"
+            );
+            return Ok(next.run(request).await);
+        }
+    };
+
+    // Extract authenticated user
+    let user = request
+        .extensions()
+        .get::<AuthenticatedUser>()
+        .ok_or_else(|| {
+            warn!(
+                method = %method,
+                path = %path,
+                "RBAC middleware called but no authenticated user found"
+            );
+            RbacError::Unauthorized
+        })?;
+
+    let user_id = user.user_id().to_string();
+    let permission_str = format!("{:?}", required_permission);
+    let has_permission = user.has_permission(&permission_str);
+
+    // Check permission
+    if !has_permission {
+        warn!(
+            user_id = %user_id,
+            required_permission = ?required_permission,
+            user_permissions = ?user.claims.permissions,
+            method = %method,
+            path = %path,
+            "Access denied: user lacks required permission"
+        );
+
+        // Log permission denial
+        if let Some(audit_logger) = &state.audit_logger {
+            let event = crate::infrastructure::AuditEvent::permission_denied(
+                &user_id,
+                &path,
+                &permission_str,
+            );
+            audit_logger.log_event(event);
+        }
+
+        // Record metrics
+        if let Some(metrics) = &state.metrics {
+            metrics.record_permission_check(false, &permission_str);
+        }
+
+        return Err(RbacError::Forbidden {
+            required_permission: permission_str,
+            user_permissions: user.claims.permissions.clone(),
+        });
+    }
+
+    debug!(
+        user_id = %user_id,
+        permission = ?required_permission,
+        method = %method,
+        path = %path,
+        "Access granted"
+    );
+
+    // Log permission granted
+    if let Some(audit_logger) = &state.audit_logger {
+        let mut event =
+            crate::infrastructure::AuditEvent::permission_granted(&user_id, &path, &permission_str);
+        event.duration_ms = Some(start.elapsed().as_millis() as u64);
+        audit_logger.log_event(event);
+    }
+
+    // Record metrics
+    if let Some(metrics) = &state.metrics {
+        metrics.record_permission_check(true, &permission_str);
+    }
 
     Ok(next.run(request).await)
 }

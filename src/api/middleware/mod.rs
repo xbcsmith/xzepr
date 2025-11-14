@@ -39,7 +39,10 @@ pub use rate_limit::{
     rate_limit_middleware, InMemoryRateLimitStore, RateLimitConfig, RateLimitStore,
     RateLimiterState,
 };
-pub use rbac::{rbac_enforcement_middleware, RbacError};
+pub use rbac::{
+    rbac_enforcement_middleware, rbac_enforcement_middleware_with_state, RbacError,
+    RbacMiddlewareState,
+};
 pub use rbac_helpers::{
     extract_resource_id, get_resource_permissions, is_public_route, route_to_permission,
 };
