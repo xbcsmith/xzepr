@@ -4,10 +4,15 @@
 // src/api/rest/routes.rs
 
 use axum::{
+    middleware,
     routing::{delete, get, post, put},
     Router,
 };
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
+
+use crate::api::middleware::{
+    jwt_auth_middleware, rbac_enforcement_middleware, JwtMiddlewareState,
+};
 
 use crate::api::graphql::{create_schema, graphql_handler, graphql_health, graphql_playground};
 use crate::api::rest::events::{
@@ -54,21 +59,47 @@ pub fn build_router(state: AppState) -> Router {
 }
 
 /// Builds router with authentication middleware for protected routes
-pub fn build_protected_router(state: AppState) -> Router {
+///
+/// This router applies JWT authentication and RBAC enforcement to all
+/// `/api/v1/*` routes while keeping health and GraphQL endpoints public.
+///
+/// # Arguments
+///
+/// * `state` - Application state containing repositories and handlers
+/// * `jwt_state` - JWT middleware state for token validation
+///
+/// # Returns
+///
+/// A configured Router with RBAC protection enabled
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use xzepr::api::rest::routes::build_protected_router;
+/// use xzepr::api::middleware::JwtMiddlewareState;
+/// use xzepr::auth::jwt::{JwtConfig, JwtService};
+///
+/// let jwt_service = JwtService::from_config(JwtConfig::development())?;
+/// let jwt_state = JwtMiddlewareState::new(jwt_service);
+/// let router = build_protected_router(app_state, jwt_state);
+/// ```
+pub fn build_protected_router(state: AppState, jwt_state: JwtMiddlewareState) -> Router {
     // Create GraphQL schema
     let schema = create_schema(
         std::sync::Arc::new(state.event_receiver_handler.clone()),
         std::sync::Arc::new(state.event_receiver_group_handler.clone()),
     );
 
-    Router::new()
-        // Health check (public)
+    // Build public routes (no authentication required)
+    let public_routes = Router::new()
         .route("/health", get(health_check))
-        // GraphQL routes (public for now, can be protected later)
         .route("/graphql", post(graphql_handler))
         .route("/graphql/playground", get(graphql_playground))
         .route("/graphql/health", get(graphql_health))
-        .with_state(schema.clone())
+        .with_state(schema.clone());
+
+    // Build protected API routes (require authentication and RBAC)
+    let protected_routes = Router::new()
         // Protected event routes
         .route("/api/v1/events", post(create_event))
         .route("/api/v1/events/:id", get(get_event))
@@ -84,12 +115,18 @@ pub fn build_protected_router(state: AppState) -> Router {
         .route("/api/v1/groups/:id", put(update_event_receiver_group))
         .route("/api/v1/groups/:id", delete(delete_event_receiver_group))
         .with_state(state)
-        // Add authentication middleware here when implemented
-        // .route_layer(middleware::from_fn_with_state(
-        //     state.clone(),
-        //     extract_user,
-        // ))
-        // Middleware layers
+        // Apply RBAC enforcement first (checks permissions)
+        .layer(middleware::from_fn(rbac_enforcement_middleware))
+        // Then JWT authentication (validates token and extracts user)
+        .layer(middleware::from_fn_with_state(
+            jwt_state,
+            jwt_auth_middleware,
+        ));
+
+    // Combine public and protected routes
+    public_routes
+        .merge(protected_routes)
+        // Global middleware layers
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
 }
@@ -429,16 +466,23 @@ mod tests {
         let receiver_repo = Arc::new(MockEventReceiverRepository::new());
         let group_repo = Arc::new(MockEventReceiverGroupRepository::new());
 
-        let event_handler = EventHandler::new(event_repo, receiver_repo.clone());
+        let event_handler = EventHandler::new(event_repo.clone(), receiver_repo.clone());
         let event_receiver_handler = EventReceiverHandler::new(receiver_repo.clone());
         let event_receiver_group_handler =
-            EventReceiverGroupHandler::new(group_repo, receiver_repo);
+            EventReceiverGroupHandler::new(group_repo.clone(), receiver_repo.clone());
 
         AppState {
             event_handler,
             event_receiver_handler,
             event_receiver_group_handler,
         }
+    }
+
+    fn create_test_jwt_state() -> JwtMiddlewareState {
+        use crate::auth::jwt::{JwtConfig, JwtService};
+        let config = JwtConfig::development();
+        let jwt_service = JwtService::from_config(config).unwrap();
+        JwtMiddlewareState::new(jwt_service)
     }
 
     #[tokio::test]
@@ -481,7 +525,8 @@ mod tests {
     #[tokio::test]
     async fn test_protected_router_health_check() {
         let state = create_test_state();
-        let app = build_protected_router(state);
+        let jwt_state = create_test_jwt_state();
+        let app = build_protected_router(state, jwt_state);
 
         let request = Request::builder()
             .method(Method::GET)
@@ -496,7 +541,8 @@ mod tests {
     #[tokio::test]
     async fn test_protected_router_routes_exist() {
         let state = create_test_state();
-        let app = build_protected_router(state);
+        let jwt_state = create_test_jwt_state();
+        let app = build_protected_router(state, jwt_state);
 
         // Test that protected routes are registered
         let routes = vec!["/api/v1/events", "/api/v1/receivers", "/api/v1/groups"];

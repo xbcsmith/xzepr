@@ -16,6 +16,8 @@ pub mod cors;
 pub mod jwt;
 pub mod metrics;
 pub mod rate_limit;
+pub mod rbac;
+pub mod rbac_helpers;
 pub mod security_headers;
 pub mod tracing_middleware;
 pub mod validation;
@@ -36,6 +38,10 @@ pub use metrics::{
 pub use rate_limit::{
     rate_limit_middleware, InMemoryRateLimitStore, RateLimitConfig, RateLimitStore,
     RateLimiterState,
+};
+pub use rbac::{rbac_enforcement_middleware, RbacError};
+pub use rbac_helpers::{
+    extract_resource_id, get_resource_permissions, is_public_route, route_to_permission,
 };
 pub use security_headers::{
     security_headers_middleware, security_headers_middleware_with_config, FrameOptions,
