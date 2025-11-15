@@ -6,4 +6,5 @@
 pub mod event;
 pub mod event_receiver;
 pub mod event_receiver_group;
+pub mod event_receiver_group_membership;
 pub mod user;

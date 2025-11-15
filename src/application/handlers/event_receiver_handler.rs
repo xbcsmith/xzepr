@@ -51,6 +51,7 @@ impl EventReceiverHandler {
         version: String,
         description: String,
         schema: serde_json::Value,
+        owner_id: crate::domain::value_objects::UserId,
     ) -> Result<EventReceiverId> {
         info!(
             name = %name,
@@ -77,7 +78,7 @@ impl EventReceiverHandler {
         }
 
         // Create the domain entity
-        let event_receiver = EventReceiver::new(name, receiver_type, version, description, schema)?;
+        let event_receiver = EventReceiver::new(name, receiver_type, version, description, schema, owner_id)?;
 
         let receiver_id = event_receiver.id();
 

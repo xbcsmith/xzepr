@@ -94,6 +94,64 @@ pub trait EventReceiverGroupRepository: Send + Sync {
         &self,
         group_id: EventReceiverGroupId,
     ) -> Result<Vec<EventReceiverId>>;
+
+    /// Finds all event receiver groups owned by a specific user
+    async fn find_by_owner(
+        &self,
+        owner_id: crate::domain::value_objects::UserId,
+    ) -> Result<Vec<EventReceiverGroup>>;
+
+    /// Finds event receiver groups by owner with pagination
+    async fn find_by_owner_paginated(
+        &self,
+        owner_id: crate::domain::value_objects::UserId,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<EventReceiverGroup>>;
+
+    /// Checks if a user owns a specific event receiver group
+    async fn is_owner(
+        &self,
+        group_id: EventReceiverGroupId,
+        user_id: crate::domain::value_objects::UserId,
+    ) -> Result<bool>;
+
+    /// Gets the current resource version of an event receiver group
+    async fn get_resource_version(&self, group_id: EventReceiverGroupId) -> Result<Option<i64>>;
+
+    /// Checks if a user is a member of a specific group
+    async fn is_member(
+        &self,
+        group_id: EventReceiverGroupId,
+        user_id: crate::domain::value_objects::UserId,
+    ) -> Result<bool>;
+
+    /// Gets all member user IDs for a specific group
+    async fn get_group_members(
+        &self,
+        group_id: EventReceiverGroupId,
+    ) -> Result<Vec<crate::domain::value_objects::UserId>>;
+
+    /// Adds a member to a group
+    async fn add_member(
+        &self,
+        group_id: EventReceiverGroupId,
+        user_id: crate::domain::value_objects::UserId,
+        added_by: crate::domain::value_objects::UserId,
+    ) -> Result<()>;
+
+    /// Removes a member from a group
+    async fn remove_member(
+        &self,
+        group_id: EventReceiverGroupId,
+        user_id: crate::domain::value_objects::UserId,
+    ) -> Result<()>;
+
+    /// Finds all groups that a user is a member of
+    async fn find_groups_for_user(
+        &self,
+        user_id: crate::domain::value_objects::UserId,
+    ) -> Result<Vec<EventReceiverGroup>>;
 }
 
 /// Criteria for finding event receiver groups

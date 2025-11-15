@@ -218,6 +218,31 @@ mod tests {
         ) -> Result<Vec<EventReceiver>> {
             Ok(vec![])
         }
+
+        async fn find_by_owner(&self, _owner_id: crate::domain::value_objects::UserId) -> Result<Vec<EventReceiver>> {
+            Ok(vec![])
+        }
+
+        async fn find_by_owner_paginated(
+            &self,
+            _owner_id: crate::domain::value_objects::UserId,
+            _limit: usize,
+            _offset: usize,
+        ) -> Result<Vec<EventReceiver>> {
+            Ok(vec![])
+        }
+
+        async fn is_owner(
+            &self,
+            _receiver_id: EventReceiverId,
+            _user_id: crate::domain::value_objects::UserId,
+        ) -> Result<bool> {
+            Ok(false)
+        }
+
+        async fn get_resource_version(&self, _receiver_id: EventReceiverId) -> Result<Option<i64>> {
+            Ok(None)
+        }
     }
 
     // Mock group repository for testing
@@ -359,6 +384,70 @@ mod tests {
             _criteria: FindEventReceiverGroupCriteria,
         ) -> Result<Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>>
         {
+            Ok(vec![])
+        }
+
+        async fn find_by_owner(&self, _owner_id: crate::domain::value_objects::UserId) -> Result<Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>> {
+            Ok(vec![])
+        }
+
+        async fn find_by_owner_paginated(
+            &self,
+            _owner_id: crate::domain::value_objects::UserId,
+            _limit: usize,
+            _offset: usize,
+        ) -> Result<Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>> {
+            Ok(vec![])
+        }
+
+        async fn is_owner(
+            &self,
+            _group_id: EventReceiverGroupId,
+            _user_id: crate::domain::value_objects::UserId,
+        ) -> Result<bool> {
+            Ok(false)
+        }
+
+        async fn get_resource_version(&self, _group_id: EventReceiverGroupId) -> Result<Option<i64>> {
+            Ok(None)
+        }
+
+        async fn is_member(
+            &self,
+            _group_id: EventReceiverGroupId,
+            _user_id: crate::domain::value_objects::UserId,
+        ) -> Result<bool> {
+            Ok(false)
+        }
+
+        async fn get_group_members(
+            &self,
+            _group_id: EventReceiverGroupId,
+        ) -> Result<Vec<crate::domain::value_objects::UserId>> {
+            Ok(vec![])
+        }
+
+        async fn add_member(
+            &self,
+            _group_id: EventReceiverGroupId,
+            _user_id: crate::domain::value_objects::UserId,
+            _added_by: crate::domain::value_objects::UserId,
+        ) -> Result<()> {
+            Ok(())
+        }
+
+        async fn remove_member(
+            &self,
+            _group_id: EventReceiverGroupId,
+            _user_id: crate::domain::value_objects::UserId,
+        ) -> Result<()> {
+            Ok(())
+        }
+
+        async fn find_groups_for_user(
+            &self,
+            _user_id: crate::domain::value_objects::UserId,
+        ) -> Result<Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>> {
             Ok(vec![])
         }
     }

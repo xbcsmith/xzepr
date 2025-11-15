@@ -71,6 +71,7 @@ impl EventReceiverGroupHandler {
         description: String,
         enabled: bool,
         event_receiver_ids: Vec<EventReceiverId>,
+        owner_id: crate::domain::value_objects::UserId,
     ) -> Result<EventReceiverGroupId> {
         info!(
             name = %name,
@@ -119,6 +120,7 @@ impl EventReceiverGroupHandler {
             description,
             enabled,
             event_receiver_ids,
+            owner_id,
         )?;
 
         let group_id = event_receiver_group.id();
