@@ -525,14 +525,138 @@ pub struct PaginationMeta {
 
 impl PaginationMeta {
     pub fn new(limit: usize, offset: usize, total: usize) -> Self {
-        let has_more = offset + limit < total;
         Self {
             limit,
             offset,
             total,
-            has_more,
+            has_more: offset + limit < total,
         }
     }
+}
+
+/// Request body for adding a member to a group
+///
+/// This DTO is used when adding a user to an event receiver group,
+/// granting them permission to POST events to receivers in that group.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AddMemberRequest {
+    /// The ID of the user to add as a member
+    pub user_id: String,
+}
+
+impl AddMemberRequest {
+    /// Validates the add member request
+    ///
+    /// # Returns
+    ///
+    /// Returns Ok(()) if validation passes, or an ErrorResponse if validation fails
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use xzepr::api::rest::dtos::AddMemberRequest;
+    ///
+    /// let request = AddMemberRequest {
+    ///     user_id: "01HN6Z5K8XQZJQY7WZXR5VQMB0".to_string(),
+    /// };
+    /// assert!(request.validate().is_ok());
+    /// ```
+    pub fn validate(&self) -> Result<(), ErrorResponse> {
+        if self.user_id.trim().is_empty() {
+            return Err(ErrorResponse::with_field(
+                "ValidationError".to_string(),
+                "user_id cannot be empty".to_string(),
+                "user_id".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Parses the user_id string into a UserId value object
+    ///
+    /// # Returns
+    ///
+    /// Returns the parsed UserId or an ErrorResponse if parsing fails
+    pub fn parse_user_id(&self) -> Result<crate::domain::value_objects::UserId, ErrorResponse> {
+        self.user_id.parse().map_err(|_| {
+            ErrorResponse::new(
+                "ValidationError".to_string(),
+                "Invalid user_id format".to_string(),
+            )
+        })
+    }
+}
+
+/// Request body for removing a member from a group
+///
+/// This DTO is used when removing a user from an event receiver group,
+/// revoking their permission to POST events to receivers in that group.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RemoveMemberRequest {
+    /// The ID of the user to remove from the group
+    pub user_id: String,
+}
+
+impl RemoveMemberRequest {
+    /// Validates the remove member request
+    ///
+    /// # Returns
+    ///
+    /// Returns Ok(()) if validation passes, or an ErrorResponse if validation fails
+    pub fn validate(&self) -> Result<(), ErrorResponse> {
+        if self.user_id.trim().is_empty() {
+            return Err(ErrorResponse::with_field(
+                "ValidationError".to_string(),
+                "user_id cannot be empty".to_string(),
+                "user_id".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Parses the user_id string into a UserId value object
+    ///
+    /// # Returns
+    ///
+    /// Returns the parsed UserId or an ErrorResponse if parsing fails
+    pub fn parse_user_id(&self) -> Result<crate::domain::value_objects::UserId, ErrorResponse> {
+        self.user_id.parse().map_err(|_| {
+            ErrorResponse::new(
+                "ValidationError".to_string(),
+                "Invalid user_id format".to_string(),
+            )
+        })
+    }
+}
+
+/// Response body for a single group member
+///
+/// Contains information about a user who is a member of an event receiver group.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupMemberResponse {
+    /// The unique identifier of the user
+    pub user_id: String,
+    /// The username of the member
+    pub username: String,
+    /// The email address of the member
+    pub email: String,
+    /// Timestamp when this user was added to the group
+    pub added_at: DateTime<Utc>,
+    /// The user ID of who added this member to the group
+    pub added_by: String,
+}
+
+/// Response body for listing all members of a group
+///
+/// Contains the group ID and a list of all members in that group.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupMembersResponse {
+    /// The unique identifier of the group
+    pub group_id: String,
+    /// List of all members in the group
+    pub members: Vec<GroupMemberResponse>,
 }
 
 #[cfg(test)]
@@ -664,5 +788,143 @@ mod tests {
         };
 
         assert!(invalid_request.parse_event_receiver_id().is_err());
+    }
+
+    #[test]
+    fn test_add_member_request_validation() {
+        let valid_request = AddMemberRequest {
+            user_id: "01HN6Z5K8XQZJQY7WZXR5VQMB0".to_string(),
+        };
+        assert!(valid_request.validate().is_ok());
+
+        let empty_request = AddMemberRequest {
+            user_id: "".to_string(),
+        };
+        assert!(empty_request.validate().is_err());
+
+        let whitespace_request = AddMemberRequest {
+            user_id: "   ".to_string(),
+        };
+        assert!(whitespace_request.validate().is_err());
+    }
+
+    #[test]
+    fn test_add_member_request_parse_user_id() {
+        use crate::domain::value_objects::UserId;
+
+        let user_id = UserId::new();
+        let request = AddMemberRequest {
+            user_id: user_id.to_string(),
+        };
+
+        let parsed = request.parse_user_id();
+        assert!(parsed.is_ok());
+        assert_eq!(parsed.unwrap(), user_id);
+    }
+
+    #[test]
+    fn test_add_member_request_parse_invalid_user_id() {
+        let request = AddMemberRequest {
+            user_id: "invalid-id".to_string(),
+        };
+
+        let parsed = request.parse_user_id();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn test_remove_member_request_validation() {
+        let valid_request = RemoveMemberRequest {
+            user_id: "01HN6Z5K8XQZJQY7WZXR5VQMB0".to_string(),
+        };
+        assert!(valid_request.validate().is_ok());
+
+        let empty_request = RemoveMemberRequest {
+            user_id: "".to_string(),
+        };
+        assert!(empty_request.validate().is_err());
+
+        let whitespace_request = RemoveMemberRequest {
+            user_id: "   ".to_string(),
+        };
+        assert!(whitespace_request.validate().is_err());
+    }
+
+    #[test]
+    fn test_remove_member_request_parse_user_id() {
+        use crate::domain::value_objects::UserId;
+
+        let user_id = UserId::new();
+        let request = RemoveMemberRequest {
+            user_id: user_id.to_string(),
+        };
+
+        let parsed = request.parse_user_id();
+        assert!(parsed.is_ok());
+        assert_eq!(parsed.unwrap(), user_id);
+    }
+
+    #[test]
+    fn test_remove_member_request_parse_invalid_user_id() {
+        let request = RemoveMemberRequest {
+            user_id: "invalid-id".to_string(),
+        };
+
+        let parsed = request.parse_user_id();
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn test_group_member_response_serialization() {
+        let response = GroupMemberResponse {
+            user_id: "01HN6Z5K8XQZJQY7WZXR5VQMB0".to_string(),
+            username: "testuser".to_string(),
+            email: "test@example.com".to_string(),
+            added_at: Utc::now(),
+            added_by: "01HN6Z5K8XQZJQY7WZXR5VQMB1".to_string(),
+        };
+
+        let serialized = serde_json::to_string(&response);
+        assert!(serialized.is_ok());
+
+        let json_str = serialized.unwrap();
+        assert!(json_str.contains("user_id"));
+        assert!(json_str.contains("username"));
+        assert!(json_str.contains("email"));
+        assert!(json_str.contains("added_at"));
+        assert!(json_str.contains("added_by"));
+    }
+
+    #[test]
+    fn test_group_members_response_serialization() {
+        let member1 = GroupMemberResponse {
+            user_id: "01HN6Z5K8XQZJQY7WZXR5VQMB0".to_string(),
+            username: "user1".to_string(),
+            email: "user1@example.com".to_string(),
+            added_at: Utc::now(),
+            added_by: "01HN6Z5K8XQZJQY7WZXR5VQMB2".to_string(),
+        };
+
+        let member2 = GroupMemberResponse {
+            user_id: "01HN6Z5K8XQZJQY7WZXR5VQMB1".to_string(),
+            username: "user2".to_string(),
+            email: "user2@example.com".to_string(),
+            added_at: Utc::now(),
+            added_by: "01HN6Z5K8XQZJQY7WZXR5VQMB2".to_string(),
+        };
+
+        let response = GroupMembersResponse {
+            group_id: "01HN6Z5K8XQZJQY7WZXR5VQMB3".to_string(),
+            members: vec![member1, member2],
+        };
+
+        let serialized = serde_json::to_string(&response);
+        assert!(serialized.is_ok());
+
+        let json_str = serialized.unwrap();
+        assert!(json_str.contains("group_id"));
+        assert!(json_str.contains("members"));
+        assert!(json_str.contains("user1"));
+        assert!(json_str.contains("user2"));
     }
 }

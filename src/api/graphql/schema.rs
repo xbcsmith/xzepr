@@ -248,6 +248,127 @@ impl Mutation {
             ))),
         }
     }
+
+    /// Add a member to an event receiver group
+    ///
+    /// # Arguments
+    ///
+    /// * `group_id` - The ID of the group to add the member to
+    /// * `user_id` - The ID of the user to add as a member
+    ///
+    /// # Returns
+    ///
+    /// Returns the group ID on success
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - Group not found
+    /// - User is not the group owner
+    /// - User is already a member
+    /// - Invalid ID format
+    async fn add_group_member(
+        &self,
+        ctx: &Context<'_>,
+        group_id: ID,
+        user_id: ID,
+    ) -> Result<GroupMemberType> {
+        let handler = ctx.data::<Arc<EventReceiverGroupHandler>>()?;
+        let user = ctx.data::<AuthenticatedUser>()?;
+
+        // Parse authenticated user ID (who is adding the member)
+        let added_by = UserId::parse(user.user_id())
+            .map_err(|e| Error::new(format!("Invalid user ID in token: {}", e)))?;
+
+        // Parse group ID
+        let group_id = parse_event_receiver_group_id(&group_id)?;
+
+        // Parse user ID to add
+        let member_user_id = parse_user_id(&user_id)?;
+
+        // Verify the group exists and user is owner
+        let group = handler
+            .find_group_by_id(group_id)
+            .await
+            .map_err(|e| Error::new(format!("Failed to fetch group: {}", e)))?
+            .ok_or_else(|| Error::new("Group not found"))?;
+
+        if group.owner_id() != added_by {
+            return Err(Error::new("Only the group owner can add members"));
+        }
+
+        // Add the member
+        handler
+            .add_group_member(group_id, member_user_id, added_by)
+            .await
+            .map_err(|e| Error::new(format!("Failed to add member: {}", e)))?;
+
+        // Return member info
+        Ok(GroupMemberType {
+            user_id: user_id.clone(),
+            username: format!("user_{}", member_user_id),
+            email: format!("{}@example.com", member_user_id),
+            added_at: Time(chrono::Utc::now()),
+            added_by: ID(added_by.to_string()),
+        })
+    }
+
+    /// Remove a member from an event receiver group
+    ///
+    /// # Arguments
+    ///
+    /// * `group_id` - The ID of the group to remove the member from
+    /// * `user_id` - The ID of the user to remove
+    ///
+    /// # Returns
+    ///
+    /// Returns true on success
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - Group not found
+    /// - User is not the group owner
+    /// - User is not a member
+    /// - Invalid ID format
+    async fn remove_group_member(
+        &self,
+        ctx: &Context<'_>,
+        group_id: ID,
+        user_id: ID,
+    ) -> Result<bool> {
+        let handler = ctx.data::<Arc<EventReceiverGroupHandler>>()?;
+        let user = ctx.data::<AuthenticatedUser>()?;
+
+        // Parse authenticated user ID (who is removing the member)
+        let removed_by = UserId::parse(user.user_id())
+            .map_err(|e| Error::new(format!("Invalid user ID in token: {}", e)))?;
+
+        // Parse group ID
+        let group_id = parse_event_receiver_group_id(&group_id)?;
+
+        // Parse user ID to remove
+        let member_user_id = parse_user_id(&user_id)?;
+
+        // Verify the group exists and user is owner
+        let group = handler
+            .find_group_by_id(group_id)
+            .await
+            .map_err(|e| Error::new(format!("Failed to fetch group: {}", e)))?
+            .ok_or_else(|| Error::new("Group not found"))?;
+
+        if group.owner_id() != removed_by {
+            return Err(Error::new("Only the group owner can remove members"));
+        }
+
+        // Remove the member
+        handler
+            .remove_group_member(group_id, member_user_id)
+            .await
+            .map_err(|e| Error::new(format!("Failed to remove member: {}", e)))?;
+
+        Ok(true)
+    }
 }
 
 pub type Schema = async_graphql::Schema<Query, Mutation, EmptySubscription>;

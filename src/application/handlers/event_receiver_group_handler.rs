@@ -9,7 +9,7 @@ use crate::domain::repositories::event_receiver_group_repo::{
     EventReceiverGroupRepository, FindEventReceiverGroupCriteria,
 };
 use crate::domain::repositories::event_receiver_repo::EventReceiverRepository;
-use crate::domain::value_objects::{EventReceiverGroupId, EventReceiverId};
+use crate::domain::value_objects::{EventReceiverGroupId, EventReceiverId, UserId};
 use crate::error::{DomainError, Result};
 use crate::infrastructure::messaging::cloudevents::CloudEventMessage;
 use crate::infrastructure::messaging::producer::KafkaEventPublisher;
@@ -586,6 +586,190 @@ impl EventReceiverGroupHandler {
     ) -> Result<Vec<EventReceiverId>> {
         let group = self.get_event_receiver_group_or_error(group_id).await?;
         Ok(group.event_receiver_ids().to_vec())
+    }
+
+    /// Finds a group by its ID
+    ///
+    /// # Arguments
+    ///
+    /// * `group_id` - The ID of the group to find
+    ///
+    /// # Returns
+    ///
+    /// Returns the group if found, or None if not found
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use xzepr::application::handlers::EventReceiverGroupHandler;
+    /// use xzepr::domain::value_objects::EventReceiverGroupId;
+    ///
+    /// # async fn example(handler: EventReceiverGroupHandler) -> xzepr::error::Result<()> {
+    /// let group_id = EventReceiverGroupId::new();
+    /// let group = handler.find_group_by_id(group_id).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn find_group_by_id(
+        &self,
+        group_id: EventReceiverGroupId,
+    ) -> Result<Option<EventReceiverGroup>> {
+        self.group_repository.find_by_id(group_id).await
+    }
+
+    /// Adds a member to an event receiver group
+    ///
+    /// # Arguments
+    ///
+    /// * `group_id` - The ID of the group
+    /// * `user_id` - The ID of the user to add as a member
+    /// * `added_by` - The ID of the user adding the member (typically the group owner)
+    ///
+    /// # Returns
+    ///
+    /// Returns Ok(()) on success
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - The group does not exist
+    /// - The user is already a member
+    /// - Database operation fails
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use xzepr::application::handlers::EventReceiverGroupHandler;
+    /// use xzepr::domain::value_objects::{EventReceiverGroupId, UserId};
+    ///
+    /// # async fn example(handler: EventReceiverGroupHandler) -> xzepr::error::Result<()> {
+    /// let group_id = EventReceiverGroupId::new();
+    /// let user_id = UserId::new();
+    /// let owner_id = UserId::new();
+    /// handler.add_group_member(group_id, user_id, owner_id).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn add_group_member(
+        &self,
+        group_id: EventReceiverGroupId,
+        user_id: UserId,
+        added_by: UserId,
+    ) -> Result<()> {
+        self.group_repository
+            .add_member(group_id, user_id, added_by)
+            .await
+    }
+
+    /// Removes a member from an event receiver group
+    ///
+    /// # Arguments
+    ///
+    /// * `group_id` - The ID of the group
+    /// * `user_id` - The ID of the user to remove from the group
+    ///
+    /// # Returns
+    ///
+    /// Returns Ok(()) on success
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - The group does not exist
+    /// - The user is not a member
+    /// - Database operation fails
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use xzepr::application::handlers::EventReceiverGroupHandler;
+    /// use xzepr::domain::value_objects::{EventReceiverGroupId, UserId};
+    ///
+    /// # async fn example(handler: EventReceiverGroupHandler) -> xzepr::error::Result<()> {
+    /// let group_id = EventReceiverGroupId::new();
+    /// let user_id = UserId::new();
+    /// handler.remove_group_member(group_id, user_id).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn remove_group_member(
+        &self,
+        group_id: EventReceiverGroupId,
+        user_id: UserId,
+    ) -> Result<()> {
+        self.group_repository.remove_member(group_id, user_id).await
+    }
+
+    /// Gets all members of an event receiver group
+    ///
+    /// # Arguments
+    ///
+    /// * `group_id` - The ID of the group
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of user IDs who are members of the group
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - The group does not exist
+    /// - Database operation fails
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use xzepr::application::handlers::EventReceiverGroupHandler;
+    /// use xzepr::domain::value_objects::EventReceiverGroupId;
+    ///
+    /// # async fn example(handler: EventReceiverGroupHandler) -> xzepr::error::Result<()> {
+    /// let group_id = EventReceiverGroupId::new();
+    /// let members = handler.get_group_members(group_id).await?;
+    /// println!("Group has {} members", members.len());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn get_group_members(&self, group_id: EventReceiverGroupId) -> Result<Vec<UserId>> {
+        self.group_repository.get_group_members(group_id).await
+    }
+
+    /// Checks if a user is a member of an event receiver group
+    ///
+    /// # Arguments
+    ///
+    /// * `group_id` - The ID of the group
+    /// * `user_id` - The ID of the user to check
+    ///
+    /// # Returns
+    ///
+    /// Returns true if the user is a member, false otherwise
+    ///
+    /// # Errors
+    ///
+    /// Returns error if database operation fails
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use xzepr::application::handlers::EventReceiverGroupHandler;
+    /// use xzepr::domain::value_objects::{EventReceiverGroupId, UserId};
+    ///
+    /// # async fn example(handler: EventReceiverGroupHandler) -> xzepr::error::Result<()> {
+    /// let group_id = EventReceiverGroupId::new();
+    /// let user_id = UserId::new();
+    /// let is_member = handler.is_group_member(group_id, user_id).await?;
+    /// if is_member {
+    ///     println!("User is a member of the group");
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn is_group_member(
+        &self,
+        group_id: EventReceiverGroupId,
+        user_id: UserId,
+    ) -> Result<bool> {
+        self.group_repository.is_member(group_id, user_id).await
     }
 }
 
