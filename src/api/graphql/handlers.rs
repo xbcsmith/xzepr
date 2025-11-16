@@ -13,6 +13,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::api::graphql::Schema;
+use crate::api::middleware::jwt::AuthenticatedUser;
 
 /// GraphQL request structure
 #[derive(Debug, Deserialize)]
@@ -63,10 +64,14 @@ pub struct GraphQLResponse {
 /// ```
 pub async fn graphql_handler(
     State(schema): State<Schema>,
+    user: AuthenticatedUser,
     Json(req): Json<GraphQLRequest>,
 ) -> Response {
     // Build the GraphQL request
     let mut request = async_graphql::Request::new(req.query);
+
+    // Add authenticated user to GraphQL context
+    request = request.data(user);
 
     // Add operation name if provided
     if let Some(operation_name) = req.operation_name {

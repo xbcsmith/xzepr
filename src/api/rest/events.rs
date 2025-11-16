@@ -10,6 +10,7 @@ use axum::{
 };
 use tracing::{error, info, warn};
 
+use crate::api::middleware::jwt::AuthenticatedUser;
 use crate::api::rest::dtos::{
     CreateEventReceiverGroupRequest, CreateEventReceiverGroupResponse, CreateEventReceiverRequest,
     CreateEventReceiverResponse, CreateEventRequest, CreateEventResponse, ErrorResponse,
@@ -19,7 +20,7 @@ use crate::api::rest::dtos::{
 use crate::application::handlers::event_receiver_group_handler::UpdateEventReceiverGroupParams;
 use crate::application::handlers::{EventHandler, EventReceiverGroupHandler, EventReceiverHandler};
 use crate::domain::entities::event::CreateEventParams;
-use crate::domain::value_objects::{EventId, EventReceiverGroupId, EventReceiverId};
+use crate::domain::value_objects::{EventId, EventReceiverGroupId, EventReceiverId, UserId};
 
 /// Application state containing handlers
 #[derive(Clone)]
@@ -32,9 +33,30 @@ pub struct AppState {
 /// Creates a new event
 pub async fn create_event(
     State(state): State<AppState>,
+    user: AuthenticatedUser,
     Json(request): Json<CreateEventRequest>,
 ) -> Result<Json<CreateEventResponse>, (StatusCode, Json<ErrorResponse>)> {
-    info!("Creating new event: {}", request.name);
+    let user_id_str = user.user_id();
+    info!(
+        user_id = %user_id_str,
+        event_name = %request.name,
+        "Creating new event"
+    );
+
+    // Parse user ID
+    let owner_id = match UserId::parse(user_id_str) {
+        Ok(id) => id,
+        Err(e) => {
+            error!("Invalid user ID in JWT token: {}", e);
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::new(
+                    "internal_error".to_string(),
+                    "Invalid user ID in authentication token".to_string(),
+                )),
+            ));
+        }
+    };
 
     // Validate request
     if let Err(e) = request.validate() {
@@ -77,6 +99,7 @@ pub async fn create_event(
             payload: request.payload,
             success: request.success,
             receiver_id,
+            owner_id,
         })
         .await
     {
@@ -155,9 +178,30 @@ pub async fn get_event(
 /// Creates a new event receiver
 pub async fn create_event_receiver(
     State(state): State<AppState>,
+    user: AuthenticatedUser,
     Json(request): Json<CreateEventReceiverRequest>,
 ) -> Result<Json<CreateEventReceiverResponse>, (StatusCode, Json<ErrorResponse>)> {
-    info!("Creating new event receiver: {}", request.name);
+    let user_id_str = user.user_id();
+    info!(
+        user_id = %user_id_str,
+        receiver_name = %request.name,
+        "Creating new event receiver"
+    );
+
+    // Parse user ID
+    let owner_id = match UserId::parse(user_id_str) {
+        Ok(id) => id,
+        Err(e) => {
+            error!("Invalid user ID in JWT token: {}", e);
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::new(
+                    "internal_error".to_string(),
+                    "Invalid user ID in authentication token".to_string(),
+                )),
+            ));
+        }
+    };
 
     // Validate request
     if let Err(e) = request.validate() {
@@ -180,6 +224,7 @@ pub async fn create_event_receiver(
             request.version,
             request.description,
             request.schema,
+            owner_id,
         )
         .await
     {
@@ -435,9 +480,30 @@ pub async fn delete_event_receiver(
 /// Creates a new event receiver group
 pub async fn create_event_receiver_group(
     State(state): State<AppState>,
+    user: AuthenticatedUser,
     Json(request): Json<CreateEventReceiverGroupRequest>,
 ) -> Result<Json<CreateEventReceiverGroupResponse>, (StatusCode, Json<ErrorResponse>)> {
-    info!("Creating new event receiver group: {}", request.name);
+    let user_id_str = user.user_id();
+    info!(
+        user_id = %user_id_str,
+        group_name = %request.name,
+        "Creating new event receiver group"
+    );
+
+    // Parse user ID
+    let owner_id = match UserId::parse(user_id_str) {
+        Ok(id) => id,
+        Err(e) => {
+            error!("Invalid user ID in JWT token: {}", e);
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::new(
+                    "internal_error".to_string(),
+                    "Invalid user ID in authentication token".to_string(),
+                )),
+            ));
+        }
+    };
 
     // Validate request
     if let Err(e) = request.validate() {
@@ -477,6 +543,7 @@ pub async fn create_event_receiver_group(
             request.description,
             request.enabled,
             receiver_ids,
+            owner_id,
         )
         .await
     {

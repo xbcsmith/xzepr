@@ -232,6 +232,14 @@ pub struct ResourceContext {
     /// Group members (user IDs) if resource is group-owned
     #[serde(default)]
     pub members: Vec<String>,
+
+    /// Resource version for cache invalidation
+    #[serde(default = "default_resource_version")]
+    pub resource_version: i64,
+}
+
+fn default_resource_version() -> i64 {
+    1
 }
 
 /// OPA policy evaluation response
@@ -367,6 +375,7 @@ mod tests {
                 owner_id: Some("user123".to_string()),
                 group_id: None,
                 members: vec![],
+                resource_version: 1,
             },
         };
 

@@ -1711,7 +1711,7 @@ Create `docs/reference/authorization_api.md`:
 - Document API endpoints for membership management
 - Provide examples for each use case
 
-Create `docs/how_to/manage_group_membership.md`:
+Create `docs/how-to/manage_group_membership.md`:
 
 - Step-by-step guide for creating groups
 - How to add/remove members
@@ -1721,7 +1721,7 @@ Create `docs/how_to/manage_group_membership.md`:
 **Files to Create**:
 
 - `docs/reference/authorization_api.md`
-- `docs/how_to/manage_group_membership.md`
+- `docs/how-to/manage_group_membership.md`
 
 #### Task 6.2: Create Policy Bundle Server Setup
 
@@ -1729,7 +1729,7 @@ Create `docs/how_to/manage_group_membership.md`:
 
 **Changes Required**:
 
-Create `docs/how_to/setup_opa_bundle_server.md`:
+Create `docs/how-to/setup_opa_bundle_server.md`:
 
 ```markdown
 ## OPA Bundle Server Setup
@@ -1790,7 +1790,7 @@ Create `scripts/build_opa_bundle.sh`:
 
 **Files to Create**:
 
-- `docs/how_to/setup_opa_bundle_server.md`
+- `docs/how-to/setup_opa_bundle_server.md`
 - `scripts/build_opa_bundle.sh`
 - `scripts/validate_opa_policies.sh`
 - `.github/workflows/opa_bundle_deploy.yaml`
@@ -1868,7 +1868,7 @@ Update OpenAPI specification files:
 
 **Changes Required**:
 
-Create `docs/how_to/develop_opa_policies.md`:
+Create `docs/how-to/develop_opa_policies.md`:
 
 - How to write Rego policies
 - How to test policies locally
@@ -1878,7 +1878,7 @@ Create `docs/how_to/develop_opa_policies.md`:
 
 **Files to Create**:
 
-- `docs/how_to/develop_opa_policies.md`
+- `docs/how-to/develop_opa_policies.md`
 
 #### Task 6.6: Testing Requirements
 

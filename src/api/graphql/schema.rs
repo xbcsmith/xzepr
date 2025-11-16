@@ -7,9 +7,11 @@ use async_graphql::*;
 use std::sync::Arc;
 
 use crate::api::graphql::types::*;
+use crate::api::middleware::jwt::AuthenticatedUser;
 use crate::application::handlers::{EventReceiverGroupHandler, EventReceiverHandler};
 use crate::domain::repositories::event_receiver_group_repo::FindEventReceiverGroupCriteria;
 use crate::domain::repositories::event_receiver_repo::FindEventReceiverCriteria;
+use crate::domain::value_objects::UserId;
 
 pub struct Query;
 
@@ -159,6 +161,11 @@ impl Mutation {
         event_receiver: CreateEventReceiverInput,
     ) -> Result<ID> {
         let handler = ctx.data::<Arc<EventReceiverHandler>>()?;
+        let user = ctx.data::<AuthenticatedUser>()?;
+
+        // Parse user ID from authenticated user
+        let owner_id = UserId::parse(user.user_id())
+            .map_err(|e| Error::new(format!("Invalid user ID: {}", e)))?;
 
         match handler
             .create_event_receiver(
@@ -167,6 +174,7 @@ impl Mutation {
                 event_receiver.version,
                 event_receiver.description,
                 event_receiver.schema.0,
+                owner_id,
             )
             .await
         {
@@ -185,6 +193,11 @@ impl Mutation {
         event_receiver_group: CreateEventReceiverGroupInput,
     ) -> Result<ID> {
         let handler = ctx.data::<Arc<EventReceiverGroupHandler>>()?;
+        let user = ctx.data::<AuthenticatedUser>()?;
+
+        // Parse user ID from authenticated user
+        let owner_id = UserId::parse(user.user_id())
+            .map_err(|e| Error::new(format!("Invalid user ID: {}", e)))?;
 
         let receiver_ids = parse_event_receiver_ids(&event_receiver_group.event_receiver_ids)?;
 
@@ -196,6 +209,7 @@ impl Mutation {
                 event_receiver_group.description,
                 event_receiver_group.enabled,
                 receiver_ids,
+                owner_id,
             )
             .await
         {

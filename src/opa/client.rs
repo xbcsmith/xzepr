@@ -457,9 +457,10 @@ mod tests {
             resource: ResourceContext {
                 resource_type: "event_receiver".to_string(),
                 resource_id: Some("receiver123".to_string()),
-                owner_id: Some("user123".to_string()),
+                owner_id: Some("owner456".to_string()),
                 group_id: None,
                 members: vec![],
+                resource_version: 1,
             },
         };
 
