@@ -219,7 +219,10 @@ mod tests {
             Ok(vec![])
         }
 
-        async fn find_by_owner(&self, _owner_id: crate::domain::value_objects::UserId) -> Result<Vec<EventReceiver>> {
+        async fn find_by_owner(
+            &self,
+            _owner_id: crate::domain::value_objects::UserId,
+        ) -> Result<Vec<EventReceiver>> {
             Ok(vec![])
         }
 
@@ -387,7 +390,11 @@ mod tests {
             Ok(vec![])
         }
 
-        async fn find_by_owner(&self, _owner_id: crate::domain::value_objects::UserId) -> Result<Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>> {
+        async fn find_by_owner(
+            &self,
+            _owner_id: crate::domain::value_objects::UserId,
+        ) -> Result<Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>>
+        {
             Ok(vec![])
         }
 
@@ -396,7 +403,8 @@ mod tests {
             _owner_id: crate::domain::value_objects::UserId,
             _limit: usize,
             _offset: usize,
-        ) -> Result<Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>> {
+        ) -> Result<Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>>
+        {
             Ok(vec![])
         }
 
@@ -408,7 +416,10 @@ mod tests {
             Ok(false)
         }
 
-        async fn get_resource_version(&self, _group_id: EventReceiverGroupId) -> Result<Option<i64>> {
+        async fn get_resource_version(
+            &self,
+            _group_id: EventReceiverGroupId,
+        ) -> Result<Option<i64>> {
             Ok(None)
         }
 
@@ -447,7 +458,8 @@ mod tests {
         async fn find_groups_for_user(
             &self,
             _user_id: crate::domain::value_objects::UserId,
-        ) -> Result<Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>> {
+        ) -> Result<Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>>
+        {
             Ok(vec![])
         }
     }

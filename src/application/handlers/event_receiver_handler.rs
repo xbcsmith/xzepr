@@ -78,7 +78,8 @@ impl EventReceiverHandler {
         }
 
         // Create the domain entity
-        let event_receiver = EventReceiver::new(name, receiver_type, version, description, schema, owner_id)?;
+        let event_receiver =
+            EventReceiver::new(name, receiver_type, version, description, schema, owner_id)?;
 
         let receiver_id = event_receiver.id();
 
