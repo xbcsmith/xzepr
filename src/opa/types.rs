@@ -148,12 +148,11 @@ pub enum OpaError {
 /// # Examples
 ///
 /// ```
-/// use xzepr::opa::types::{OpaRequest, OpaInput};
-/// use uuid::Uuid;
+/// use xzepr::opa::types::{OpaRequest, OpaInput, UserContext, ResourceContext};
 ///
 /// let input = OpaInput {
 ///     user: UserContext {
-///         user_id: Uuid::new_v4().to_string(),
+///         user_id: "user-123-abc".to_string(),
 ///         username: "alice".to_string(),
 ///         roles: vec!["user".to_string()],
 ///         groups: vec![],
@@ -161,10 +160,11 @@ pub enum OpaError {
 ///     action: "create".to_string(),
 ///     resource: ResourceContext {
 ///         resource_type: "event".to_string(),
-///         resource_id: Some(Uuid::new_v4().to_string()),
-///         owner_id: Some(Uuid::new_v4().to_string()),
+///         resource_id: Some("event-456-def".to_string()),
+///         owner_id: Some("user-123-abc".to_string()),
 ///         group_id: None,
 ///         members: vec![],
+///         resource_version: 1,
 ///     },
 /// };
 ///
@@ -249,7 +249,7 @@ fn default_resource_version() -> i64 {
 /// # Examples
 ///
 /// ```
-/// use xzepr::opa::types::OpaResponse;
+/// use xzepr::opa::types::{OpaResponse, AuthorizationDecision};
 ///
 /// let response = OpaResponse {
 ///     result: Some(AuthorizationDecision {
@@ -397,7 +397,7 @@ mod tests {
         }"#;
 
         let response: OpaResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(response.result.unwrap().allow, true);
+        assert!(response.result.unwrap().allow);
     }
 
     #[test]

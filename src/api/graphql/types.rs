@@ -302,6 +302,7 @@ mod tests {
             "1.0.0".to_string(),
             "A test receiver".to_string(),
             schema.clone(),
+            UserId::new(),
         )
         .unwrap();
 

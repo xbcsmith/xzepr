@@ -4,5 +4,6 @@
 // Generated mod file
 
 pub mod audit;
+pub mod authorization_tracing;
 pub mod logging;
 pub mod tracing;

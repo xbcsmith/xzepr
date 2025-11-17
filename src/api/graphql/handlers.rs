@@ -479,6 +479,22 @@ mod tests {
         create_schema(receiver_handler, group_handler)
     }
 
+    fn create_test_authenticated_user() -> AuthenticatedUser {
+        use crate::auth::jwt::claims::Claims;
+        use chrono::Duration;
+
+        let claims = Claims::new_access_token(
+            "test-user".to_string(),
+            vec!["user".to_string()],
+            vec!["read:events".to_string()],
+            "xzepr".to_string(),
+            "xzepr-api".to_string(),
+            Duration::hours(1),
+        );
+
+        AuthenticatedUser { claims }
+    }
+
     #[tokio::test]
     async fn test_graphql_handler_executes_query() {
         let schema = create_test_schema();
@@ -497,7 +513,8 @@ mod tests {
             variables: None,
         };
 
-        let response = graphql_handler(State(schema), Json(request)).await;
+        let user = create_test_authenticated_user();
+        let response = graphql_handler(State(schema), user, Json(request)).await;
 
         // Verify we get a response (status check)
         assert_eq!(response.status(), StatusCode::OK);
@@ -521,7 +538,8 @@ mod tests {
             variables: None,
         };
 
-        let response = graphql_handler(State(schema), Json(request)).await;
+        let user = create_test_authenticated_user();
+        let response = graphql_handler(State(schema), user, Json(request)).await;
 
         assert_eq!(response.status(), StatusCode::OK);
     }
@@ -574,7 +592,8 @@ mod tests {
             variables: Some(variables),
         };
 
-        let response = graphql_handler(State(schema), Json(request)).await;
+        let user = create_test_authenticated_user();
+        let response = graphql_handler(State(schema), user, Json(request)).await;
 
         assert_eq!(response.status(), StatusCode::OK);
     }

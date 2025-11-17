@@ -517,8 +517,9 @@ mod tests {
         use std::sync::Arc;
 
         // Create mock repositories
-        use crate::domain::repositories::EventReceiverGroupRepository;
-        use crate::domain::repositories::EventReceiverRepository;
+        use crate::domain::repositories::event_receiver_group_repo::EventReceiverGroupRepository;
+        use crate::domain::repositories::event_receiver_repo::EventReceiverRepository;
+        use crate::domain::value_objects::EventReceiverId;
 
         // Note: This is a compile-time test to ensure Clone is implemented
         // In practice, we'd use actual mock repositories for testing
@@ -679,7 +680,7 @@ mod tests {
 
             async fn find_by_owner(
                 &self,
-                _owner_id: UserId,
+                _owner_id: crate::domain::value_objects::UserId,
             ) -> crate::error::Result<
                 Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>,
             > {
@@ -688,7 +689,7 @@ mod tests {
 
             async fn find_by_owner_paginated(
                 &self,
-                _owner_id: UserId,
+                _owner_id: crate::domain::value_objects::UserId,
                 _limit: usize,
                 _offset: usize,
             ) -> crate::error::Result<
@@ -700,7 +701,7 @@ mod tests {
             async fn is_owner(
                 &self,
                 _group_id: EventReceiverGroupId,
-                _user_id: UserId,
+                _user_id: crate::domain::value_objects::UserId,
             ) -> crate::error::Result<bool> {
                 unimplemented!()
             }
@@ -715,7 +716,7 @@ mod tests {
             async fn is_member(
                 &self,
                 _group_id: EventReceiverGroupId,
-                _user_id: UserId,
+                _user_id: crate::domain::value_objects::UserId,
             ) -> crate::error::Result<bool> {
                 unimplemented!()
             }
@@ -723,15 +724,15 @@ mod tests {
             async fn get_group_members(
                 &self,
                 _group_id: EventReceiverGroupId,
-            ) -> crate::error::Result<Vec<UserId>> {
+            ) -> crate::error::Result<Vec<crate::domain::value_objects::UserId>> {
                 unimplemented!()
             }
 
             async fn add_member(
                 &self,
                 _group_id: EventReceiverGroupId,
-                _user_id: UserId,
-                _added_by: UserId,
+                _user_id: crate::domain::value_objects::UserId,
+                _added_by: crate::domain::value_objects::UserId,
             ) -> crate::error::Result<()> {
                 unimplemented!()
             }
@@ -739,14 +740,14 @@ mod tests {
             async fn remove_member(
                 &self,
                 _group_id: EventReceiverGroupId,
-                _user_id: UserId,
+                _user_id: crate::domain::value_objects::UserId,
             ) -> crate::error::Result<()> {
                 unimplemented!()
             }
 
             async fn find_groups_for_user(
                 &self,
-                _user_id: UserId,
+                _user_id: crate::domain::value_objects::UserId,
             ) -> crate::error::Result<
                 Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>,
             > {
@@ -828,17 +829,17 @@ mod tests {
                 unimplemented!()
             }
 
-            async fn find_by_criteria(
+            async fn find_by_fingerprint(
                 &self,
-                _criteria: crate::domain::repositories::event_receiver_repo::FindEventReceiverCriteria,
-            ) -> crate::error::Result<Vec<crate::domain::entities::event_receiver::EventReceiver>>
+                _fingerprint: &str,
+            ) -> crate::error::Result<Option<crate::domain::entities::event_receiver::EventReceiver>>
             {
                 unimplemented!()
             }
 
             async fn find_by_owner(
                 &self,
-                _owner_id: UserId,
+                _owner_id: crate::domain::value_objects::UserId,
             ) -> crate::error::Result<Vec<crate::domain::entities::event_receiver::EventReceiver>>
             {
                 unimplemented!()
@@ -846,7 +847,7 @@ mod tests {
 
             async fn find_by_owner_paginated(
                 &self,
-                _owner_id: UserId,
+                _owner_id: crate::domain::value_objects::UserId,
                 _limit: usize,
                 _offset: usize,
             ) -> crate::error::Result<Vec<crate::domain::entities::event_receiver::EventReceiver>>
@@ -857,7 +858,7 @@ mod tests {
             async fn is_owner(
                 &self,
                 _receiver_id: EventReceiverId,
-                _user_id: UserId,
+                _user_id: crate::domain::value_objects::UserId,
             ) -> crate::error::Result<bool> {
                 unimplemented!()
             }
@@ -868,13 +869,18 @@ mod tests {
             ) -> crate::error::Result<Option<i64>> {
                 unimplemented!()
             }
+
+            async fn find_by_criteria(
+                &self,
+                _criteria: crate::domain::repositories::event_receiver_repo::FindEventReceiverCriteria,
+            ) -> crate::error::Result<Vec<crate::domain::entities::event_receiver::EventReceiver>>
+            {
+                unimplemented!()
+            }
         }
 
-        let handler = EventReceiverGroupHandler::new(
-            Arc::new(MockGroupRepo),
-            Arc::new(MockReceiverRepo),
-            None,
-        );
+        let handler =
+            EventReceiverGroupHandler::new(Arc::new(MockGroupRepo), Arc::new(MockReceiverRepo));
 
         let state = GroupMembershipState {
             group_handler: handler,

@@ -11,7 +11,7 @@
 
 use async_trait::async_trait;
 use std::sync::Arc;
-use tracing::{debug, warn};
+use tracing::debug;
 
 use crate::domain::repositories::event_receiver_group_repo::EventReceiverGroupRepository;
 use crate::domain::repositories::event_receiver_repo::EventReceiverRepository;
@@ -53,6 +53,7 @@ pub struct EventReceiverContextBuilder {
     /// Repository for querying event receivers
     receiver_repo: Arc<dyn EventReceiverRepository>,
     /// Repository for querying event receiver groups
+    #[allow(dead_code)]
     group_repo: Arc<dyn EventReceiverGroupRepository>,
 }
 
@@ -89,40 +90,14 @@ impl ResourceContextBuilder for EventReceiverContextBuilder {
             .map_err(|e| format!("Failed to load receiver: {}", e))?
             .ok_or_else(|| format!("Receiver not found: {}", resource_id))?;
 
-        let owner_id = receiver.owner_id().map(|id| id.to_string());
-        let group_id = receiver.group_id().map(|id| id.to_string());
-        let resource_version = receiver.version();
+        let owner_id = Some(receiver.owner_id().to_string());
+        let resource_version = receiver.resource_version();
 
-        // If receiver has a group, fetch group members
-        let group_members = if let Some(gid) = receiver.group_id() {
-            match self.group_repo.find_by_id(gid).await {
-                Ok(Some(group)) => {
-                    debug!(
-                        group_id = %gid,
-                        member_count = group.members().len(),
-                        "Loaded group members for receiver"
-                    );
-                    group.members().iter().map(|m| m.to_string()).collect()
-                }
-                Ok(None) => {
-                    warn!(
-                        group_id = %gid,
-                        "Receiver references group that does not exist"
-                    );
-                    Vec::new()
-                }
-                Err(e) => {
-                    warn!(
-                        group_id = %gid,
-                        error = %e,
-                        "Failed to load group members"
-                    );
-                    Vec::new()
-                }
-            }
-        } else {
-            Vec::new()
-        };
+        // TODO: Implement group membership lookup
+        // EventReceiver doesn't have a direct group_id field
+        // Need to query which groups contain this receiver
+        let group_id = None;
+        let group_members = Vec::new();
 
         Ok(ResourceContext {
             resource_type: "event_receiver".to_string(),
@@ -139,9 +114,10 @@ impl ResourceContextBuilder for EventReceiverContextBuilder {
 pub struct EventContextBuilder {
     /// Repository for querying events
     event_repo: Arc<dyn EventRepository>,
-    /// Repository for querying event receivers (to get ownership from parent)
+    /// Repository for querying event receivers
     receiver_repo: Arc<dyn EventReceiverRepository>,
     /// Repository for querying event receiver groups
+    #[allow(dead_code)]
     group_repo: Arc<dyn EventReceiverGroupRepository>,
 }
 
@@ -189,40 +165,14 @@ impl ResourceContextBuilder for EventContextBuilder {
             .map_err(|e| format!("Failed to load event receiver: {}", e))?
             .ok_or_else(|| format!("Event receiver not found: {}", receiver_id))?;
 
-        let owner_id = receiver.owner_id().map(|id| id.to_string());
-        let group_id = receiver.group_id().map(|id| id.to_string());
-        let resource_version = event.version();
+        let owner_id = Some(receiver.owner_id().to_string());
+        let resource_version = event.resource_version();
 
-        // If receiver has a group, fetch group members
-        let group_members = if let Some(gid) = receiver.group_id() {
-            match self.group_repo.find_by_id(gid).await {
-                Ok(Some(group)) => {
-                    debug!(
-                        group_id = %gid,
-                        member_count = group.members().len(),
-                        "Loaded group members for event"
-                    );
-                    group.members().iter().map(|m| m.to_string()).collect()
-                }
-                Ok(None) => {
-                    warn!(
-                        group_id = %gid,
-                        "Receiver references group that does not exist"
-                    );
-                    Vec::new()
-                }
-                Err(e) => {
-                    warn!(
-                        group_id = %gid,
-                        error = %e,
-                        "Failed to load group members"
-                    );
-                    Vec::new()
-                }
-            }
-        } else {
-            Vec::new()
-        };
+        // TODO: Implement group membership lookup
+        // EventReceiver doesn't have a direct group_id field
+        // Need to query which groups contain this receiver
+        let group_id = None;
+        let group_members = Vec::new();
 
         Ok(ResourceContext {
             resource_type: "event".to_string(),
@@ -268,9 +218,11 @@ impl ResourceContextBuilder for EventReceiverGroupContextBuilder {
             .map_err(|e| format!("Failed to load group: {}", e))?
             .ok_or_else(|| format!("Group not found: {}", resource_id))?;
 
-        let owner_id = group.owner_id().map(|id| id.to_string());
-        let group_members = group.members().iter().map(|m| m.to_string()).collect();
-        let resource_version = group.version();
+        let owner_id = Some(group.owner_id().to_string());
+        let resource_version = group.resource_version();
+
+        // TODO: Query group members from membership table
+        let group_members = Vec::new();
 
         Ok(ResourceContext {
             resource_type: "event_receiver_group".to_string(),

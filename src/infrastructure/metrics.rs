@@ -26,6 +26,15 @@ pub struct PrometheusMetrics {
     auth_duration_seconds: HistogramVec,
     active_sessions_total: Gauge,
 
+    // OPA Authorization metrics
+    opa_authorization_requests_total: CounterVec,
+    opa_authorization_duration_seconds: HistogramVec,
+    opa_authorization_denials_total: CounterVec,
+    opa_cache_hits_total: CounterVec,
+    opa_cache_misses_total: CounterVec,
+    opa_fallback_total: CounterVec,
+    opa_circuit_breaker_state: GaugeVec,
+
     // Application metrics
     http_requests_total: CounterVec,
     http_request_duration_seconds: HistogramVec,
@@ -123,6 +132,71 @@ impl PrometheusMetrics {
         )?;
         registry.register(Box::new(active_sessions_total.clone()))?;
 
+        // OPA Authorization metrics
+        let opa_authorization_requests_total = CounterVec::new(
+            Opts::new(
+                "xzepr_opa_authorization_requests_total",
+                "Total number of OPA authorization requests",
+            ),
+            &["decision", "resource_type", "action"],
+        )?;
+        registry.register(Box::new(opa_authorization_requests_total.clone()))?;
+
+        let opa_authorization_duration_seconds = HistogramVec::new(
+            HistogramOpts::new(
+                "xzepr_opa_authorization_duration_seconds",
+                "OPA authorization request duration in seconds",
+            )
+            .buckets(vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0]),
+            &["decision", "resource_type"],
+        )?;
+        registry.register(Box::new(opa_authorization_duration_seconds.clone()))?;
+
+        let opa_authorization_denials_total = CounterVec::new(
+            Opts::new(
+                "xzepr_opa_authorization_denials_total",
+                "Total number of OPA authorization denials",
+            ),
+            &["resource_type", "action", "reason"],
+        )?;
+        registry.register(Box::new(opa_authorization_denials_total.clone()))?;
+
+        let opa_cache_hits_total = CounterVec::new(
+            Opts::new(
+                "xzepr_opa_cache_hits_total",
+                "Total number of OPA cache hits",
+            ),
+            &["resource_type"],
+        )?;
+        registry.register(Box::new(opa_cache_hits_total.clone()))?;
+
+        let opa_cache_misses_total = CounterVec::new(
+            Opts::new(
+                "xzepr_opa_cache_misses_total",
+                "Total number of OPA cache misses",
+            ),
+            &["resource_type"],
+        )?;
+        registry.register(Box::new(opa_cache_misses_total.clone()))?;
+
+        let opa_fallback_total = CounterVec::new(
+            Opts::new(
+                "xzepr_opa_fallback_total",
+                "Total number of fallbacks to legacy RBAC",
+            ),
+            &["reason", "resource_type"],
+        )?;
+        registry.register(Box::new(opa_fallback_total.clone()))?;
+
+        let opa_circuit_breaker_state = GaugeVec::new(
+            Opts::new(
+                "xzepr_opa_circuit_breaker_state",
+                "OPA circuit breaker state (0=closed, 1=open, 2=half-open)",
+            ),
+            &["instance"],
+        )?;
+        registry.register(Box::new(opa_circuit_breaker_state.clone()))?;
+
         // Application metrics
         let http_requests_total = CounterVec::new(
             Opts::new("xzepr_http_requests_total", "Total number of HTTP requests"),
@@ -173,6 +247,13 @@ impl PrometheusMetrics {
             active_connections,
             uptime_seconds,
             info,
+            opa_authorization_requests_total,
+            opa_authorization_duration_seconds,
+            opa_authorization_denials_total,
+            opa_cache_hits_total,
+            opa_cache_misses_total,
+            opa_fallback_total,
+            opa_circuit_breaker_state,
         })
     }
 
@@ -279,6 +360,79 @@ impl PrometheusMetrics {
     /// Updates the uptime gauge
     pub fn update_uptime(&self, uptime_secs: u64) {
         self.uptime_seconds.set(uptime_secs as f64);
+    }
+
+    /// Records an OPA authorization decision
+    ///
+    /// # Arguments
+    ///
+    /// * `decision` - Whether access was granted ("allowed" or "denied")
+    /// * `resource_type` - Type of resource being authorized
+    /// * `action` - Action being authorized
+    /// * `duration_secs` - Duration of the authorization check in seconds
+    /// * `fallback_used` - Whether fallback to legacy RBAC was used
+    pub fn record_authorization_decision(
+        &self,
+        decision: bool,
+        resource_type: &str,
+        action: &str,
+        duration_secs: f64,
+        fallback_used: bool,
+    ) {
+        let decision_str = if decision { "allowed" } else { "denied" };
+
+        self.opa_authorization_requests_total
+            .with_label_values(&[decision_str, resource_type, action])
+            .inc();
+
+        self.opa_authorization_duration_seconds
+            .with_label_values(&[decision_str, resource_type])
+            .observe(duration_secs);
+
+        if !decision {
+            self.opa_authorization_denials_total
+                .with_label_values(&[resource_type, action, "policy_violation"])
+                .inc();
+        }
+
+        if fallback_used {
+            self.opa_fallback_total
+                .with_label_values(&["opa_unavailable", resource_type])
+                .inc();
+        }
+    }
+
+    /// Records an OPA cache hit
+    pub fn record_cache_hit(&self, resource_type: &str) {
+        self.opa_cache_hits_total
+            .with_label_values(&[resource_type])
+            .inc();
+    }
+
+    /// Records an OPA cache miss
+    pub fn record_cache_miss(&self, resource_type: &str) {
+        self.opa_cache_misses_total
+            .with_label_values(&[resource_type])
+            .inc();
+    }
+
+    /// Records a fallback to legacy RBAC
+    pub fn record_fallback(&self, reason: &str, resource_type: &str) {
+        self.opa_fallback_total
+            .with_label_values(&[reason, resource_type])
+            .inc();
+    }
+
+    /// Sets the circuit breaker state
+    ///
+    /// # Arguments
+    ///
+    /// * `instance` - Circuit breaker instance identifier
+    /// * `state` - State value (0=closed, 1=open, 2=half-open)
+    pub fn set_circuit_breaker_state(&self, instance: &str, state: f64) {
+        self.opa_circuit_breaker_state
+            .with_label_values(&[instance])
+            .set(state);
     }
 
     /// Gathers all metrics and returns them in Prometheus text format
@@ -450,5 +604,106 @@ mod tests {
 
         let output = metrics.gather().unwrap();
         assert!(output.contains("xzepr_active_sessions_total"));
+    }
+
+    #[test]
+    fn test_record_authorization_decision_allowed() {
+        let metrics = PrometheusMetrics::new().unwrap();
+
+        metrics.record_authorization_decision(true, "event_receiver", "read", 0.025, false);
+
+        let output = metrics.gather().unwrap();
+        assert!(output.contains("xzepr_opa_authorization_requests_total"));
+        assert!(output.contains("xzepr_opa_authorization_duration_seconds"));
+    }
+
+    #[test]
+    fn test_record_authorization_decision_denied() {
+        let metrics = PrometheusMetrics::new().unwrap();
+
+        metrics.record_authorization_decision(false, "event_receiver", "write", 0.030, false);
+
+        let output = metrics.gather().unwrap();
+        assert!(output.contains("xzepr_opa_authorization_requests_total"));
+        assert!(output.contains("xzepr_opa_authorization_denials_total"));
+    }
+
+    #[test]
+    fn test_record_authorization_decision_with_fallback() {
+        let metrics = PrometheusMetrics::new().unwrap();
+
+        metrics.record_authorization_decision(true, "event", "read", 0.015, true);
+
+        let output = metrics.gather().unwrap();
+        assert!(output.contains("xzepr_opa_fallback_total"));
+    }
+
+    #[test]
+    fn test_record_cache_hit() {
+        let metrics = PrometheusMetrics::new().unwrap();
+
+        metrics.record_cache_hit("event_receiver");
+        metrics.record_cache_hit("event_receiver");
+
+        let output = metrics.gather().unwrap();
+        assert!(output.contains("xzepr_opa_cache_hits_total"));
+    }
+
+    #[test]
+    fn test_record_cache_miss() {
+        let metrics = PrometheusMetrics::new().unwrap();
+
+        metrics.record_cache_miss("event_receiver");
+
+        let output = metrics.gather().unwrap();
+        assert!(output.contains("xzepr_opa_cache_misses_total"));
+    }
+
+    #[test]
+    fn test_record_fallback() {
+        let metrics = PrometheusMetrics::new().unwrap();
+
+        metrics.record_fallback("opa_unavailable", "event_receiver");
+        metrics.record_fallback("opa_timeout", "event");
+
+        let output = metrics.gather().unwrap();
+        assert!(output.contains("xzepr_opa_fallback_total"));
+    }
+
+    #[test]
+    fn test_set_circuit_breaker_state() {
+        let metrics = PrometheusMetrics::new().unwrap();
+
+        metrics.set_circuit_breaker_state("opa-primary", 0.0);
+        metrics.set_circuit_breaker_state("opa-primary", 1.0);
+        metrics.set_circuit_breaker_state("opa-primary", 2.0);
+
+        let output = metrics.gather().unwrap();
+        assert!(output.contains("xzepr_opa_circuit_breaker_state"));
+    }
+
+    #[test]
+    fn test_multiple_authorization_recordings() {
+        let metrics = PrometheusMetrics::new().unwrap();
+
+        for i in 0..10 {
+            metrics.record_authorization_decision(
+                i % 3 != 0,
+                "event_receiver",
+                "read",
+                0.01 * i as f64,
+                false,
+            );
+        }
+
+        for _i in 0..5 {
+            metrics.record_cache_hit("event_receiver");
+            metrics.record_cache_miss("event");
+        }
+
+        let output = metrics.gather().unwrap();
+        assert!(output.contains("xzepr_opa_authorization_requests_total"));
+        assert!(output.contains("xzepr_opa_cache_hits_total"));
+        assert!(output.contains("xzepr_opa_cache_misses_total"));
     }
 }

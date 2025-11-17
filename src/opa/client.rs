@@ -52,6 +52,7 @@ use std::time::Duration as StdDuration;
 ///         owner_id: Some("user123".to_string()),
 ///         group_id: None,
 ///         members: vec![],
+///         resource_version: 1,
 ///     },
 /// };
 ///
@@ -164,6 +165,7 @@ impl OpaClient {
     ///         owner_id: Some("user123".to_string()),
     ///         group_id: None,
     ///         members: vec![],
+    ///         resource_version: 1,
     ///     },
     /// };
     ///

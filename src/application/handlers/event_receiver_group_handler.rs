@@ -63,6 +63,7 @@ impl EventReceiverGroupHandler {
     }
 
     /// Creates a new event receiver group
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_event_receiver_group(
         &self,
         name: String,
@@ -203,6 +204,7 @@ impl EventReceiverGroupHandler {
             payload,
             success: true,
             receiver_id,
+            owner_id: group.owner_id(),
         })
         .expect("Failed to create system event for group creation")
     }
@@ -850,6 +852,34 @@ mod tests {
         ) -> Result<Vec<EventReceiver>> {
             Ok(vec![])
         }
+
+        async fn find_by_owner(
+            &self,
+            _owner_id: crate::domain::value_objects::UserId,
+        ) -> Result<Vec<EventReceiver>> {
+            Ok(vec![])
+        }
+
+        async fn find_by_owner_paginated(
+            &self,
+            _owner_id: crate::domain::value_objects::UserId,
+            _limit: usize,
+            _offset: usize,
+        ) -> Result<Vec<EventReceiver>> {
+            Ok(vec![])
+        }
+
+        async fn is_owner(
+            &self,
+            _receiver_id: EventReceiverId,
+            _user_id: crate::domain::value_objects::UserId,
+        ) -> Result<bool> {
+            Ok(false)
+        }
+
+        async fn get_resource_version(&self, _receiver_id: EventReceiverId) -> Result<Option<i64>> {
+            Ok(Some(1))
+        }
     }
 
     struct MockEventReceiverGroupRepository {
@@ -968,6 +998,76 @@ mod tests {
         ) -> Result<Vec<EventReceiverId>> {
             Ok(vec![])
         }
+
+        async fn find_by_owner(
+            &self,
+            _owner_id: crate::domain::value_objects::UserId,
+        ) -> Result<Vec<EventReceiverGroup>> {
+            Ok(vec![])
+        }
+
+        async fn find_by_owner_paginated(
+            &self,
+            _owner_id: crate::domain::value_objects::UserId,
+            _limit: usize,
+            _offset: usize,
+        ) -> Result<Vec<EventReceiverGroup>> {
+            Ok(vec![])
+        }
+
+        async fn is_owner(
+            &self,
+            _group_id: EventReceiverGroupId,
+            _user_id: crate::domain::value_objects::UserId,
+        ) -> Result<bool> {
+            Ok(false)
+        }
+
+        async fn get_resource_version(
+            &self,
+            _group_id: EventReceiverGroupId,
+        ) -> Result<Option<i64>> {
+            Ok(Some(1))
+        }
+
+        async fn is_member(
+            &self,
+            _group_id: EventReceiverGroupId,
+            _user_id: crate::domain::value_objects::UserId,
+        ) -> Result<bool> {
+            Ok(false)
+        }
+
+        async fn get_group_members(
+            &self,
+            _group_id: EventReceiverGroupId,
+        ) -> Result<Vec<crate::domain::value_objects::UserId>> {
+            Ok(vec![])
+        }
+
+        async fn add_member(
+            &self,
+            _group_id: EventReceiverGroupId,
+            _user_id: crate::domain::value_objects::UserId,
+            _added_by: crate::domain::value_objects::UserId,
+        ) -> Result<()> {
+            Ok(())
+        }
+
+        async fn remove_member(
+            &self,
+            _group_id: EventReceiverGroupId,
+            _user_id: crate::domain::value_objects::UserId,
+        ) -> Result<()> {
+            Ok(())
+        }
+
+        async fn find_groups_for_user(
+            &self,
+            _user_id: crate::domain::value_objects::UserId,
+        ) -> Result<Vec<EventReceiverGroup>> {
+            Ok(vec![])
+        }
     }
 
     #[tokio::test]
@@ -983,6 +1083,7 @@ mod tests {
             "1.0.0".to_string(),
             "A test receiver".to_string(),
             json!({"type": "object"}),
+            crate::domain::value_objects::UserId::new(),
         )
         .unwrap();
         let receiver_id = receiver.id();
@@ -996,6 +1097,7 @@ mod tests {
                 "A test group".to_string(),
                 true,
                 vec![receiver_id],
+                crate::domain::value_objects::UserId::new(),
             )
             .await;
 
@@ -1027,6 +1129,7 @@ mod tests {
                 "A test group".to_string(),
                 true,
                 vec![nonexistent_receiver_id],
+                crate::domain::value_objects::UserId::new(),
             )
             .await;
 
@@ -1046,6 +1149,7 @@ mod tests {
             "1.0.0".to_string(),
             "A test receiver".to_string(),
             json!({"type": "object"}),
+            crate::domain::value_objects::UserId::new(),
         )
         .unwrap();
         let receiver_id = receiver.id();
@@ -1060,6 +1164,7 @@ mod tests {
                 "A test group".to_string(),
                 false,
                 vec![receiver_id],
+                crate::domain::value_objects::UserId::new(),
             )
             .await
             .unwrap();

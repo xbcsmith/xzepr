@@ -223,7 +223,7 @@ fn extract_resource_from_path(path: &str) -> ResourceContext {
 
     if parts.len() >= 2 {
         let resource_type = parts[0].to_string();
-        let resource_id = if parts[1] != "" {
+        let resource_id = if !parts[1].is_empty() {
             Some(parts[1].to_string())
         } else {
             None
@@ -239,7 +239,7 @@ fn extract_resource_from_path(path: &str) -> ResourceContext {
         }
     } else {
         ResourceContext {
-            resource_type: parts.get(0).unwrap_or(&"unknown").to_string(),
+            resource_type: parts.first().unwrap_or(&"unknown").to_string(),
             resource_id: None,
             owner_id: None,
             group_id: None,
@@ -296,7 +296,7 @@ fn legacy_rbac_check(user: &AuthenticatedUser, action: &str, resource: &Resource
 
     // Group members can read resources in their group
     if action == "read" {
-        if let Some(group_id) = &resource.group_id {
+        if let Some(_group_id) = &resource.group_id {
             // Check if user is a member of the group
             if resource.members.contains(&user.user_id().to_string()) {
                 return true;
@@ -449,14 +449,20 @@ mod tests {
 
     #[test]
     fn test_legacy_rbac_admin() {
+        use crate::auth::jwt::claims::TokenType;
         use crate::auth::jwt::Claims;
 
         let claims = Claims {
             sub: "user123".to_string(),
             roles: vec!["admin".to_string()],
             permissions: vec![],
-            exp: 0,
+            exp: 9999999999,
             iat: 0,
+            nbf: 0,
+            jti: "test-jti-1".to_string(),
+            iss: "xzepr".to_string(),
+            aud: "xzepr-api".to_string(),
+            token_type: TokenType::Access,
         };
         let user = AuthenticatedUser::new(claims);
 
@@ -474,14 +480,20 @@ mod tests {
 
     #[test]
     fn test_legacy_rbac_owner() {
+        use crate::auth::jwt::claims::TokenType;
         use crate::auth::jwt::Claims;
 
         let claims = Claims {
             sub: "user123".to_string(),
             roles: vec!["user".to_string()],
             permissions: vec![],
-            exp: 0,
+            exp: 9999999999,
             iat: 0,
+            nbf: 0,
+            jti: "test-jti-2".to_string(),
+            iss: "xzepr".to_string(),
+            aud: "xzepr-api".to_string(),
+            token_type: TokenType::Access,
         };
         let user = AuthenticatedUser::new(claims);
 
@@ -499,14 +511,20 @@ mod tests {
 
     #[test]
     fn test_legacy_rbac_group_member_read() {
+        use crate::auth::jwt::claims::TokenType;
         use crate::auth::jwt::Claims;
 
         let claims = Claims {
             sub: "user123".to_string(),
             roles: vec!["user".to_string()],
             permissions: vec![],
-            exp: 0,
+            exp: 9999999999,
             iat: 0,
+            nbf: 0,
+            jti: "test-jti-3".to_string(),
+            iss: "xzepr".to_string(),
+            aud: "xzepr-api".to_string(),
+            token_type: TokenType::Access,
         };
         let user = AuthenticatedUser::new(claims);
 
@@ -525,14 +543,20 @@ mod tests {
 
     #[test]
     fn test_legacy_rbac_denied() {
+        use crate::auth::jwt::claims::TokenType;
         use crate::auth::jwt::Claims;
 
         let claims = Claims {
             sub: "user123".to_string(),
             roles: vec!["user".to_string()],
             permissions: vec![],
-            exp: 0,
+            exp: 9999999999,
             iat: 0,
+            nbf: 0,
+            jti: "test-jti-4".to_string(),
+            iss: "xzepr".to_string(),
+            aud: "xzepr-api".to_string(),
+            token_type: TokenType::Access,
         };
         let user = AuthenticatedUser::new(claims);
 

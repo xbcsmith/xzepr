@@ -216,7 +216,7 @@ impl KafkaEventPublisher {
 mod tests {
     use super::*;
     use crate::domain::entities::event::CreateEventParams;
-    use crate::domain::value_objects::EventReceiverId;
+    use crate::domain::value_objects::{EventReceiverId, UserId};
 
     #[test]
     fn test_kafka_publisher_creation() {
@@ -246,6 +246,7 @@ mod tests {
             payload: serde_json::json!({"key": "value"}),
             success: true,
             receiver_id,
+            owner_id: UserId::new(),
         })
         .unwrap();
 
