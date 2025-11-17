@@ -118,6 +118,14 @@ impl PostgresEventRepository {
             e
         })?;
 
+        let owner_id: crate::domain::value_objects::UserId = row
+            .try_get::<String, _>("owner_id")
+            .ok()
+            .and_then(|s| crate::domain::value_objects::UserId::from_string(s).ok())
+            .unwrap_or_else(crate::domain::value_objects::UserId::new);
+
+        let resource_version: i64 = row.try_get("resource_version").unwrap_or(1);
+
         // Reconstruct event from database fields with original ID and timestamp
         Ok(Event::from_database(DatabaseEventFields {
             id,
@@ -131,6 +139,8 @@ impl PostgresEventRepository {
             success,
             event_receiver_id,
             created_at,
+            owner_id,
+            resource_version,
         }))
     }
 }
@@ -156,9 +166,9 @@ impl EventRepository for PostgresEventRepository {
             INSERT INTO events (
                 id, event_receiver_id, name, version, release,
                 platform_id, package, description, payload, success,
-                created_at
+                created_at, owner_id, resource_version
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             ON CONFLICT (id) DO UPDATE SET
                 name = EXCLUDED.name,
                 version = EXCLUDED.version,
@@ -167,7 +177,8 @@ impl EventRepository for PostgresEventRepository {
                 package = EXCLUDED.package,
                 description = EXCLUDED.description,
                 payload = EXCLUDED.payload,
-                success = EXCLUDED.success
+                success = EXCLUDED.success,
+                resource_version = EXCLUDED.resource_version
             "#,
         )
         .bind(event.id())
@@ -181,6 +192,8 @@ impl EventRepository for PostgresEventRepository {
         .bind(event.payload())
         .bind(event.success())
         .bind(event.created_at())
+        .bind(event.owner_id().to_string())
+        .bind(event.resource_version())
         .execute(&self.pool)
         .await?;
 
@@ -206,7 +219,7 @@ impl EventRepository for PostgresEventRepository {
             r#"
             SELECT id, event_receiver_id, name, version, release,
                    platform_id, package, description, payload, success,
-                   created_at
+                   created_at, owner_id, resource_version
             FROM events
             WHERE id = $1
             "#,
@@ -700,6 +713,103 @@ impl EventRepository for PostgresEventRepository {
         let rows = sql_query.fetch_all(&self.pool).await?;
 
         rows.into_iter().map(|row| self.row_to_event(row)).collect()
+    }
+
+    /// Finds events owned by a specific user
+    async fn find_by_owner(
+        &self,
+        owner_id: crate::domain::value_objects::UserId,
+    ) -> Result<Vec<Event>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, event_receiver_id, name, version, release,
+                   platform_id, package, description, payload, success,
+                   created_at, owner_id, resource_version
+            FROM events
+            WHERE owner_id = $1
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(owner_id.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut events = Vec::new();
+        for row in rows {
+            events.push(self.row_to_event(row)?);
+        }
+
+        Ok(events)
+    }
+
+    /// Finds events by owner with pagination
+    async fn find_by_owner_paginated(
+        &self,
+        owner_id: crate::domain::value_objects::UserId,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<Event>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, event_receiver_id, name, version, release,
+                   platform_id, package, description, payload, success,
+                   created_at, owner_id, resource_version
+            FROM events
+            WHERE owner_id = $1
+            ORDER BY created_at DESC
+            LIMIT $2 OFFSET $3
+            "#,
+        )
+        .bind(owner_id.to_string())
+        .bind(limit as i64)
+        .bind(offset as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut events = Vec::new();
+        for row in rows {
+            events.push(self.row_to_event(row)?);
+        }
+
+        Ok(events)
+    }
+
+    /// Checks if a user owns a specific event
+    async fn is_owner(
+        &self,
+        event_id: EventId,
+        user_id: crate::domain::value_objects::UserId,
+    ) -> Result<bool> {
+        let result = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM events
+                WHERE id = $1 AND owner_id = $2
+            )
+            "#,
+        )
+        .bind(event_id.to_string())
+        .bind(user_id.to_string())
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(result)
+    }
+
+    /// Gets the current resource version of an event
+    async fn get_resource_version(&self, event_id: EventId) -> Result<Option<i64>> {
+        let result = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT resource_version
+            FROM events
+            WHERE id = $1
+            "#,
+        )
+        .bind(event_id.to_string())
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(result)
     }
 }
 

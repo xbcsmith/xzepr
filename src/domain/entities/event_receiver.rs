@@ -3,7 +3,7 @@
 
 // src/domain/entities/event_receiver.rs
 
-use crate::domain::value_objects::EventReceiverId;
+use crate::domain::value_objects::{EventReceiverId, UserId};
 use crate::error::DomainError;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -20,6 +20,8 @@ pub struct EventReceiverData {
     pub description: String,
     pub schema: JsonValue,
     pub fingerprint: String,
+    pub owner_id: UserId,
+    pub resource_version: i64,
     pub created_at: DateTime<Utc>,
 }
 
@@ -33,17 +35,53 @@ pub struct EventReceiver {
     description: String,
     schema: JsonValue,
     fingerprint: String,
+    owner_id: UserId,
+    resource_version: i64,
     created_at: DateTime<Utc>,
 }
 
 impl EventReceiver {
     /// Creates a new event receiver with validation
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the event receiver
+    /// * `receiver_type` - The type of the event receiver
+    /// * `version` - The version of the event receiver
+    /// * `description` - A description of the event receiver
+    /// * `schema` - The JSON schema for event validation
+    /// * `owner_id` - The user ID of the owner who created this receiver
+    ///
+    /// # Returns
+    ///
+    /// Returns a new EventReceiver or DomainError if validation fails
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use xzepr::domain::entities::event_receiver::EventReceiver;
+    /// use xzepr::domain::value_objects::UserId;
+    /// use serde_json::json;
+    ///
+    /// let schema = json!({"type": "object"});
+    /// let owner_id = UserId::new();
+    /// let receiver = EventReceiver::new(
+    ///     "My Receiver".to_string(),
+    ///     "webhook".to_string(),
+    ///     "1.0.0".to_string(),
+    ///     "Test receiver".to_string(),
+    ///     schema,
+    ///     owner_id,
+    /// );
+    /// assert!(receiver.is_ok());
+    /// ```
     pub fn new(
         name: String,
         receiver_type: String,
         version: String,
         description: String,
         schema: JsonValue,
+        owner_id: UserId,
     ) -> Result<Self, DomainError> {
         Self::validate_name(&name)?;
         Self::validate_type(&receiver_type)?;
@@ -61,6 +99,8 @@ impl EventReceiver {
             description,
             schema,
             fingerprint,
+            owner_id,
+            resource_version: 1,
             created_at: Utc::now(),
         })
     }
@@ -81,11 +121,27 @@ impl EventReceiver {
             description: data.description,
             schema: data.schema,
             fingerprint: data.fingerprint,
+            owner_id: data.owner_id,
+            resource_version: data.resource_version,
             created_at: data.created_at,
         })
     }
 
     /// Updates the event receiver with new data
+    ///
+    /// Increments the resource_version on any update to support cache invalidation.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Optional new name
+    /// * `receiver_type` - Optional new type
+    /// * `version` - Optional new version
+    /// * `description` - Optional new description
+    /// * `schema` - Optional new schema
+    ///
+    /// # Returns
+    ///
+    /// Returns Ok(()) if validation passes, otherwise DomainError
     pub fn update(
         &mut self,
         name: Option<String>,
@@ -133,6 +189,7 @@ impl EventReceiver {
                 &self.version,
                 &self.schema,
             );
+            self.resource_version += 1;
         }
 
         Ok(())
@@ -286,6 +343,19 @@ impl EventReceiver {
     pub fn created_at(&self) -> DateTime<Utc> {
         self.created_at
     }
+
+    /// Returns the owner user ID of this event receiver
+    pub fn owner_id(&self) -> UserId {
+        self.owner_id
+    }
+
+    /// Returns the current resource version for cache invalidation
+    ///
+    /// This version is incremented on every update and used by the
+    /// authorization cache to detect stale entries.
+    pub fn resource_version(&self) -> i64 {
+        self.resource_version
+    }
 }
 
 #[cfg(test)]
@@ -307,12 +377,14 @@ mod tests {
     #[test]
     fn test_create_event_receiver() {
         let schema = create_valid_schema();
+        let owner_id = crate::domain::value_objects::UserId::new();
         let receiver = EventReceiver::new(
             "Test Receiver".to_string(),
             "webhook".to_string(),
             "1.0.0".to_string(),
             "A test event receiver".to_string(),
             schema,
+            owner_id,
         );
 
         assert!(receiver.is_ok());
@@ -321,17 +393,21 @@ mod tests {
         assert_eq!(receiver.receiver_type(), "webhook");
         assert_eq!(receiver.version(), "1.0.0");
         assert!(!receiver.fingerprint().is_empty());
+        assert_eq!(receiver.owner_id(), owner_id);
+        assert_eq!(receiver.resource_version(), 1);
     }
 
     #[test]
     fn test_validate_empty_name() {
         let schema = create_valid_schema();
+        let owner_id = crate::domain::value_objects::UserId::new();
         let result = EventReceiver::new(
             "".to_string(),
             "webhook".to_string(),
             "1.0.0".to_string(),
             "A test event receiver".to_string(),
             schema,
+            owner_id,
         );
 
         assert!(result.is_err());
@@ -343,12 +419,14 @@ mod tests {
     #[test]
     fn test_validate_invalid_schema() {
         let invalid_schema = json!("not an object");
+        let owner_id = crate::domain::value_objects::UserId::new();
         let result = EventReceiver::new(
             "Test Receiver".to_string(),
             "webhook".to_string(),
             "1.0.0".to_string(),
             "A test event receiver".to_string(),
             invalid_schema,
+            owner_id,
         );
 
         assert!(result.is_err());
@@ -360,12 +438,14 @@ mod tests {
     #[test]
     fn test_fingerprint_consistency() {
         let schema = create_valid_schema();
+        let owner_id = crate::domain::value_objects::UserId::new();
         let receiver1 = EventReceiver::new(
             "Test Receiver".to_string(),
             "webhook".to_string(),
             "1.0.0".to_string(),
             "A test event receiver".to_string(),
             schema.clone(),
+            owner_id,
         )
         .unwrap();
 
@@ -375,6 +455,7 @@ mod tests {
             "1.0.0".to_string(),
             "Different description".to_string(), // Description doesn't affect fingerprint
             schema,
+            owner_id,
         )
         .unwrap();
 
@@ -384,16 +465,19 @@ mod tests {
     #[test]
     fn test_update_receiver() {
         let schema = create_valid_schema();
+        let owner_id = crate::domain::value_objects::UserId::new();
         let mut receiver = EventReceiver::new(
             "Test Receiver".to_string(),
             "webhook".to_string(),
             "1.0.0".to_string(),
             "A test event receiver".to_string(),
             schema,
+            owner_id,
         )
         .unwrap();
 
         let original_fingerprint = receiver.fingerprint().to_string();
+        let original_version = receiver.resource_version();
 
         // Update description (should not change fingerprint)
         receiver
@@ -408,6 +492,7 @@ mod tests {
 
         assert_eq!(receiver.description(), "Updated description");
         assert_eq!(receiver.fingerprint(), original_fingerprint);
+        assert_eq!(receiver.resource_version(), original_version); // Version not incremented for description-only change
 
         // Update name (should change fingerprint)
         receiver
@@ -416,17 +501,20 @@ mod tests {
 
         assert_eq!(receiver.name(), "Updated Receiver");
         assert_ne!(receiver.fingerprint(), original_fingerprint);
+        assert_eq!(receiver.resource_version(), original_version + 1); // Version incremented
     }
 
     #[test]
     fn test_validate_event_payload() {
         let schema = create_valid_schema();
+        let owner_id = crate::domain::value_objects::UserId::new();
         let receiver = EventReceiver::new(
             "Test Receiver".to_string(),
             "webhook".to_string(),
             "1.0.0".to_string(),
             "A test event receiver".to_string(),
             schema,
+            owner_id,
         )
         .unwrap();
 
@@ -445,12 +533,14 @@ mod tests {
     fn test_empty_schema_is_valid() {
         // Empty schema {} should be valid - allows free-form event payloads
         let empty_schema = json!({});
+        let owner_id = crate::domain::value_objects::UserId::new();
         let receiver = EventReceiver::new(
             "Test Receiver".to_string(),
             "webhook".to_string(),
             "1.0.0".to_string(),
             "A test event receiver with no schema constraints".to_string(),
             empty_schema,
+            owner_id,
         );
 
         assert!(receiver.is_ok());
@@ -466,14 +556,69 @@ mod tests {
                 "any_field": {"type": "string"}
             }
         });
+        let owner_id = crate::domain::value_objects::UserId::new();
         let receiver = EventReceiver::new(
             "Test Receiver".to_string(),
             "webhook".to_string(),
             "1.0.0".to_string(),
             "A test event receiver".to_string(),
             schema,
+            owner_id,
         );
 
         assert!(receiver.is_ok());
+    }
+
+    #[test]
+    fn test_resource_version_increments_on_update() {
+        let schema = create_valid_schema();
+        let owner_id = crate::domain::value_objects::UserId::new();
+        let mut receiver = EventReceiver::new(
+            "Test Receiver".to_string(),
+            "webhook".to_string(),
+            "1.0.0".to_string(),
+            "A test event receiver".to_string(),
+            schema,
+            owner_id,
+        )
+        .unwrap();
+
+        assert_eq!(receiver.resource_version(), 1);
+
+        // Update name (should increment version)
+        receiver
+            .update(Some("Updated Name".to_string()), None, None, None, None)
+            .unwrap();
+        assert_eq!(receiver.resource_version(), 2);
+
+        // Update type (should increment version)
+        receiver
+            .update(None, Some("webhook_v2".to_string()), None, None, None)
+            .unwrap();
+        assert_eq!(receiver.resource_version(), 3);
+    }
+
+    #[test]
+    fn test_owner_id_is_preserved() {
+        let schema = create_valid_schema();
+        let owner_id = crate::domain::value_objects::UserId::new();
+        let receiver = EventReceiver::new(
+            "Test Receiver".to_string(),
+            "webhook".to_string(),
+            "1.0.0".to_string(),
+            "A test event receiver".to_string(),
+            schema,
+            owner_id,
+        )
+        .unwrap();
+
+        assert_eq!(receiver.owner_id(), owner_id);
+
+        // Owner ID should not change on updates
+        let mut receiver_copy = receiver.clone();
+        receiver_copy
+            .update(Some("New Name".to_string()), None, None, None, None)
+            .unwrap();
+        assert_eq!(receiver_copy.owner_id(), owner_id);
     }
 }

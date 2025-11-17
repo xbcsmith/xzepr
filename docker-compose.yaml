@@ -23,6 +23,28 @@ services:
       - postgres
       - redpanda-0
       - keycloak
+      - opa
+
+  opa:
+    image: openpolicyagent/opa:latest
+    container_name: xzepr-opa
+    command:
+      - "run"
+      - "--server"
+      - "--addr=0.0.0.0:8181"
+      - "--log-level=info"
+      - "/policies"
+    ports:
+      - "8181:8181"
+    volumes:
+      - ./policies:/policies:ro
+    networks:
+      - redpanda_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8181/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   postgres:
     image: postgres:16

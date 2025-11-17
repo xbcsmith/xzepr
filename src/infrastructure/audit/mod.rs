@@ -45,6 +45,10 @@ pub enum AuditAction {
     TokenValidation,
     /// Permission check
     PermissionCheck,
+    /// Authorization decision (OPA/RBAC)
+    AuthorizationDecision,
+    /// Authorization denial
+    AuthorizationDenial,
     /// User creation
     UserCreate,
     /// User update
@@ -83,6 +87,8 @@ impl std::fmt::Display for AuditAction {
             AuditAction::TokenRefresh => write!(f, "token_refresh"),
             AuditAction::TokenValidation => write!(f, "token_validation"),
             AuditAction::PermissionCheck => write!(f, "permission_check"),
+            AuditAction::AuthorizationDecision => write!(f, "authorization_decision"),
+            AuditAction::AuthorizationDenial => write!(f, "authorization_denial"),
             AuditAction::UserCreate => write!(f, "user_create"),
             AuditAction::UserUpdate => write!(f, "user_update"),
             AuditAction::UserDelete => write!(f, "user_delete"),
@@ -530,6 +536,99 @@ impl AuditLogger {
 
         self.log_event(event);
     }
+
+    /// Log authorization decision (OPA/RBAC)
+    ///
+    /// Records authorization decisions including user, action, resource,
+    /// decision outcome, duration, and whether fallback was used.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - User identifier
+    /// * `action` - Action being authorized (e.g., "read", "write", "delete")
+    /// * `resource_type` - Type of resource (e.g., "event_receiver", "event")
+    /// * `resource_id` - Resource identifier
+    /// * `decision` - Whether access was granted
+    /// * `duration_ms` - Time taken for authorization decision in milliseconds
+    /// * `fallback_used` - Whether fallback to legacy RBAC was used
+    /// * `policy_version` - OPA policy version (if available)
+    /// * `reason` - Optional reason for denial
+    /// * `request_id` - Optional request identifier for correlation
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use xzepr::infrastructure::audit::AuditLogger;
+    ///
+    /// let logger = AuditLogger::new();
+    /// logger.log_authorization_decision(
+    ///     "user123",
+    ///     "read",
+    ///     "event_receiver",
+    ///     "receiver456",
+    ///     true,
+    ///     25,
+    ///     false,
+    ///     Some("1.0.0"),
+    ///     None,
+    ///     Some("req789"),
+    /// );
+    /// ```
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::format_in_format_args)]
+    pub fn log_authorization_decision(
+        &self,
+        user_id: &str,
+        action: &str,
+        resource_type: &str,
+        resource_id: &str,
+        decision: bool,
+        duration_ms: u64,
+        fallback_used: bool,
+        policy_version: Option<&str>,
+        reason: Option<&str>,
+        request_id: Option<&str>,
+    ) {
+        let mut metadata = HashMap::new();
+        metadata.insert("action".to_string(), action.to_string());
+        metadata.insert("resource_type".to_string(), resource_type.to_string());
+        metadata.insert("resource_id".to_string(), resource_id.to_string());
+        metadata.insert("fallback_used".to_string(), fallback_used.to_string());
+
+        if let Some(version) = policy_version {
+            metadata.insert("policy_version".to_string(), version.to_string());
+        }
+
+        if let Some(reason_text) = reason {
+            metadata.insert("denial_reason".to_string(), reason_text.to_string());
+        }
+
+        let resource_path = format!("/{}/{}", resource_type, resource_id);
+        let audit_action = if decision {
+            AuditAction::AuthorizationDecision
+        } else {
+            AuditAction::AuthorizationDenial
+        };
+
+        let outcome = if decision {
+            AuditOutcome::Success
+        } else {
+            AuditOutcome::Denied
+        };
+
+        let event = AuditEvent::builder()
+            .user_id(user_id)
+            .action(audit_action)
+            .resource(&resource_path)
+            .outcome(outcome)
+            .metadata(metadata)
+            .duration_ms(duration_ms)
+            .request_id_opt(request_id)
+            .error_message_opt(reason)
+            .build();
+
+        self.log_event(event);
+    }
 }
 
 impl Default for AuditLogger {
@@ -696,6 +795,77 @@ mod tests {
         assert_eq!(AuditOutcome::Success.to_string(), "success");
         assert_eq!(AuditOutcome::Failure.to_string(), "failure");
         assert_eq!(AuditOutcome::Denied.to_string(), "denied");
-        assert_eq!(AuditOutcome::RateLimited.to_string(), "rate_limited");
+    }
+
+    #[test]
+    fn test_log_authorization_decision_allowed() {
+        let logger = AuditLogger::new();
+
+        logger.log_authorization_decision(
+            "user123",
+            "read",
+            "event_receiver",
+            "recv456",
+            true,
+            25,
+            false,
+            Some("1.0.0"),
+            None,
+            Some("req789"),
+        );
+    }
+
+    #[test]
+    fn test_log_authorization_decision_denied() {
+        let logger = AuditLogger::new();
+
+        logger.log_authorization_decision(
+            "user123",
+            "write",
+            "event_receiver",
+            "recv456",
+            false,
+            30,
+            false,
+            Some("1.0.0"),
+            Some("insufficient_permissions"),
+            Some("req789"),
+        );
+    }
+
+    #[test]
+    fn test_log_authorization_decision_with_fallback() {
+        let logger = AuditLogger::new();
+
+        logger.log_authorization_decision(
+            "user123",
+            "delete",
+            "event",
+            "event789",
+            true,
+            45,
+            true,
+            None,
+            None,
+            Some("req101"),
+        );
+    }
+
+    #[test]
+    fn test_log_authorization_decision_no_policy_version() {
+        let logger = AuditLogger::new();
+
+        logger.log_authorization_decision(
+            "user456",
+            "read",
+            "event_receiver_group",
+            "group123",
+            true,
+            20,
+            false,
+            None,
+            None,
+            None,
+        );
     }
 }

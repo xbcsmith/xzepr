@@ -44,7 +44,7 @@ use xzepr::{
         event_receiver_repo::{EventReceiverRepository, FindEventReceiverCriteria},
         event_repo::{EventRepository, FindEventCriteria},
     },
-    domain::value_objects::{EventId, EventReceiverGroupId, EventReceiverId},
+    domain::value_objects::{EventId, EventReceiverGroupId, EventReceiverId, UserId},
     infrastructure::messaging::producer::KafkaEventPublisher,
     PostgresApiKeyRepository, PostgresUserRepository, Settings, TopicManager,
 };
@@ -451,6 +451,23 @@ fn mask_password(url: &str) -> String {
     url.to_string()
 }
 
+/// Create a default authenticated user for development/test wrappers
+fn create_dev_user() -> xzepr::api::middleware::AuthenticatedUser {
+    use chrono::Duration;
+    use xzepr::auth::jwt::claims::Claims;
+
+    let claims = Claims::new_access_token(
+        "dev-user".to_string(),
+        vec!["admin".to_string()],
+        vec!["*".to_string()],
+        "xzepr".to_string(),
+        "xzepr-api".to_string(),
+        Duration::hours(24),
+    );
+
+    xzepr::api::middleware::AuthenticatedUser::new(claims)
+}
+
 /// Wrapper for GraphQL handler that extracts schema from AppState
 async fn graphql_handler_wrapper(
     State(state): State<AppState>,
@@ -471,7 +488,8 @@ async fn graphql_handler_wrapper(
     };
 
     // Call the actual handler with schema from state
-    graphql_handler(State(state.graphql_schema), Json(graphql_req)).await
+    let user = create_dev_user();
+    graphql_handler(State(state.graphql_schema), user, Json(graphql_req)).await
 }
 
 /// Wrapper for GraphQL playground
@@ -506,9 +524,12 @@ async fn create_event_wrapper(
     let api_state = to_api_state(&state);
     let json_result = serde_json::from_slice(&body);
     match json_result {
-        Ok(json) => create_event(State(api_state), Json(json))
-            .await
-            .into_response(),
+        Ok(json) => {
+            let user = create_dev_user();
+            create_event(State(api_state), user, Json(json))
+        }
+        .await
+        .into_response(),
         Err(e) => (
             StatusCode::BAD_REQUEST,
             Json(json!({"error": format!("Invalid JSON: {}", e)})),
@@ -534,9 +555,12 @@ async fn create_event_receiver_wrapper(
     let api_state = to_api_state(&state);
     let json_result = serde_json::from_slice(&body);
     match json_result {
-        Ok(json) => create_event_receiver(State(api_state), Json(json))
-            .await
-            .into_response(),
+        Ok(json) => {
+            let user = create_dev_user();
+            create_event_receiver(State(api_state), user, Json(json))
+        }
+        .await
+        .into_response(),
         Err(e) => (
             StatusCode::BAD_REQUEST,
             Json(json!({"error": format!("Invalid JSON: {}", e)})),
@@ -606,9 +630,12 @@ async fn create_event_receiver_group_wrapper(
     let api_state = to_api_state(&state);
     let json_result = serde_json::from_slice(&body);
     match json_result {
-        Ok(json) => create_event_receiver_group(State(api_state), Json(json))
-            .await
-            .into_response(),
+        Ok(json) => {
+            let user = create_dev_user();
+            create_event_receiver_group(State(api_state), user, Json(json))
+        }
+        .await
+        .into_response(),
         Err(e) => (
             StatusCode::BAD_REQUEST,
             Json(json!({"error": format!("Invalid JSON: {}", e)})),
@@ -925,6 +952,44 @@ impl EventRepository for MockEventRepository {
         // Simplified implementation
         self.list(1000, 0).await
     }
+
+    async fn find_by_owner(&self, owner_id: UserId) -> xzepr::error::Result<Vec<Event>> {
+        let events = self.events.lock().unwrap();
+        Ok(events
+            .values()
+            .filter(|e| e.owner_id() == owner_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn find_by_owner_paginated(
+        &self,
+        owner_id: UserId,
+        limit: usize,
+        offset: usize,
+    ) -> xzepr::error::Result<Vec<Event>> {
+        let events = self.events.lock().unwrap();
+        Ok(events
+            .values()
+            .filter(|e| e.owner_id() == owner_id)
+            .skip(offset)
+            .take(limit)
+            .cloned()
+            .collect())
+    }
+
+    async fn is_owner(&self, event_id: EventId, user_id: UserId) -> xzepr::error::Result<bool> {
+        let events = self.events.lock().unwrap();
+        Ok(events
+            .get(&event_id)
+            .map(|e| e.owner_id() == user_id)
+            .unwrap_or(false))
+    }
+
+    async fn get_resource_version(&self, event_id: EventId) -> xzepr::error::Result<Option<i64>> {
+        let events = self.events.lock().unwrap();
+        Ok(events.get(&event_id).map(|e| e.resource_version()))
+    }
 }
 
 /// Mock event receiver repository
@@ -1046,6 +1111,51 @@ impl EventReceiverRepository for MockEventReceiverRepository {
         _criteria: FindEventReceiverCriteria,
     ) -> xzepr::error::Result<Vec<EventReceiver>> {
         self.list(1000, 0).await
+    }
+
+    async fn find_by_owner(&self, owner_id: UserId) -> xzepr::error::Result<Vec<EventReceiver>> {
+        let receivers = self.receivers.lock().unwrap();
+        Ok(receivers
+            .values()
+            .filter(|r| r.owner_id() == owner_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn find_by_owner_paginated(
+        &self,
+        owner_id: UserId,
+        limit: usize,
+        offset: usize,
+    ) -> xzepr::error::Result<Vec<EventReceiver>> {
+        let receivers = self.receivers.lock().unwrap();
+        Ok(receivers
+            .values()
+            .filter(|r| r.owner_id() == owner_id)
+            .skip(offset)
+            .take(limit)
+            .cloned()
+            .collect())
+    }
+
+    async fn is_owner(
+        &self,
+        receiver_id: EventReceiverId,
+        user_id: UserId,
+    ) -> xzepr::error::Result<bool> {
+        let receivers = self.receivers.lock().unwrap();
+        Ok(receivers
+            .get(&receiver_id)
+            .map(|r| r.owner_id() == user_id)
+            .unwrap_or(false))
+    }
+
+    async fn get_resource_version(
+        &self,
+        receiver_id: EventReceiverId,
+    ) -> xzepr::error::Result<Option<i64>> {
+        let receivers = self.receivers.lock().unwrap();
+        Ok(receivers.get(&receiver_id).map(|r| r.resource_version()))
     }
 }
 
@@ -1230,5 +1340,92 @@ impl EventReceiverGroupRepository for MockEventReceiverGroupRepository {
         _criteria: FindEventReceiverGroupCriteria,
     ) -> xzepr::error::Result<Vec<EventReceiverGroup>> {
         self.list(1000, 0).await
+    }
+
+    async fn find_by_owner(
+        &self,
+        owner_id: UserId,
+    ) -> xzepr::error::Result<Vec<EventReceiverGroup>> {
+        let groups = self.groups.lock().unwrap();
+        Ok(groups
+            .values()
+            .filter(|g| g.owner_id() == owner_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn find_by_owner_paginated(
+        &self,
+        owner_id: UserId,
+        limit: usize,
+        offset: usize,
+    ) -> xzepr::error::Result<Vec<EventReceiverGroup>> {
+        let groups = self.groups.lock().unwrap();
+        Ok(groups
+            .values()
+            .filter(|g| g.owner_id() == owner_id)
+            .skip(offset)
+            .take(limit)
+            .cloned()
+            .collect())
+    }
+
+    async fn is_owner(
+        &self,
+        group_id: EventReceiverGroupId,
+        user_id: UserId,
+    ) -> xzepr::error::Result<bool> {
+        let groups = self.groups.lock().unwrap();
+        Ok(groups
+            .get(&group_id)
+            .map(|g| g.owner_id() == user_id)
+            .unwrap_or(false))
+    }
+
+    async fn get_resource_version(
+        &self,
+        group_id: EventReceiverGroupId,
+    ) -> xzepr::error::Result<Option<i64>> {
+        let groups = self.groups.lock().unwrap();
+        Ok(groups.get(&group_id).map(|g| g.resource_version()))
+    }
+
+    async fn is_member(
+        &self,
+        _group_id: EventReceiverGroupId,
+        _user_id: UserId,
+    ) -> xzepr::error::Result<bool> {
+        Ok(false)
+    }
+
+    async fn get_group_members(
+        &self,
+        _group_id: EventReceiverGroupId,
+    ) -> xzepr::error::Result<Vec<UserId>> {
+        Ok(vec![])
+    }
+
+    async fn add_member(
+        &self,
+        _group_id: EventReceiverGroupId,
+        _user_id: UserId,
+        _added_by: UserId,
+    ) -> xzepr::error::Result<()> {
+        Ok(())
+    }
+
+    async fn remove_member(
+        &self,
+        _group_id: EventReceiverGroupId,
+        _user_id: UserId,
+    ) -> xzepr::error::Result<()> {
+        Ok(())
+    }
+
+    async fn find_groups_for_user(
+        &self,
+        _user_id: UserId,
+    ) -> xzepr::error::Result<Vec<EventReceiverGroup>> {
+        Ok(vec![])
     }
 }

@@ -5,7 +5,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::domain::value_objects::{EventId, EventReceiverId};
+use crate::domain::value_objects::{EventId, EventReceiverId, UserId};
 use crate::error::DomainError;
 
 /// Parameters for creating a new event
@@ -20,6 +20,7 @@ pub struct CreateEventParams {
     pub payload: serde_json::Value,
     pub success: bool,
     pub receiver_id: EventReceiverId,
+    pub owner_id: UserId,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,11 +35,44 @@ pub struct Event {
     payload: serde_json::Value,
     success: bool,
     event_receiver_id: EventReceiverId,
+    owner_id: UserId,
+    resource_version: i64,
     created_at: DateTime<Utc>,
 }
 
 impl Event {
     /// Creates a new event from parameters
+    ///
+    /// # Arguments
+    ///
+    /// * `params` - Parameters for creating the event including owner_id
+    ///
+    /// # Returns
+    ///
+    /// Returns a new Event or DomainError if validation fails
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use xzepr::domain::entities::event::{Event, CreateEventParams};
+    /// use xzepr::domain::value_objects::{EventReceiverId, UserId};
+    /// use serde_json::json;
+    ///
+    /// let payload = json!({"message": "test"});
+    /// let event = Event::new(CreateEventParams {
+    ///     name: "test-event".to_string(),
+    ///     version: "1.0.0".to_string(),
+    ///     release: "v1".to_string(),
+    ///     platform_id: "platform".to_string(),
+    ///     package: "pkg".to_string(),
+    ///     description: "desc".to_string(),
+    ///     payload,
+    ///     success: true,
+    ///     receiver_id: EventReceiverId::new(),
+    ///     owner_id: UserId::new(),
+    /// });
+    /// assert!(event.is_ok());
+    /// ```
     pub fn new(params: CreateEventParams) -> Result<Self, DomainError> {
         Self::validate_payload(&params.payload)?;
 
@@ -53,6 +87,8 @@ impl Event {
             payload: params.payload,
             success: params.success,
             event_receiver_id: params.receiver_id,
+            owner_id: params.owner_id,
+            resource_version: 1,
             created_at: Utc::now(),
         })
     }
@@ -113,6 +149,18 @@ impl Event {
         self.created_at
     }
 
+    /// Returns the owner user ID of this event
+    pub fn owner_id(&self) -> UserId {
+        self.owner_id
+    }
+
+    /// Returns the current resource version for cache invalidation
+    ///
+    /// This version is used by the authorization cache to detect stale entries.
+    pub fn resource_version(&self) -> i64 {
+        self.resource_version
+    }
+
     /// Reconstructs an event from database fields
     ///
     /// This method is used by repository implementations to reconstruct
@@ -137,6 +185,8 @@ impl Event {
             payload: fields.payload,
             success: fields.success,
             event_receiver_id: fields.event_receiver_id,
+            owner_id: fields.owner_id,
+            resource_version: fields.resource_version,
             created_at: fields.created_at,
         }
     }
@@ -155,6 +205,8 @@ pub struct DatabaseEventFields {
     pub payload: serde_json::Value,
     pub success: bool,
     pub event_receiver_id: EventReceiverId,
+    pub owner_id: UserId,
+    pub resource_version: i64,
     pub created_at: DateTime<Utc>,
 }
 
@@ -166,6 +218,7 @@ mod tests {
     #[test]
     fn test_create_event() {
         let receiver_id = EventReceiverId::new();
+        let owner_id = UserId::new();
         let payload = json!({
             "message": "Test event",
             "status": "success"
@@ -181,6 +234,7 @@ mod tests {
             payload: payload.clone(),
             success: true,
             receiver_id,
+            owner_id,
         });
 
         assert!(event.is_ok());
@@ -194,11 +248,14 @@ mod tests {
         assert_eq!(event.payload(), &payload);
         assert!(event.success());
         assert_eq!(event.event_receiver_id(), receiver_id);
+        assert_eq!(event.owner_id(), owner_id);
+        assert_eq!(event.resource_version(), 1);
     }
 
     #[test]
     fn test_create_successful_event() {
         let receiver_id = EventReceiverId::new();
+        let owner_id = UserId::new();
         let payload = json!({
             "deployment": "production",
             "version": "2.0.0"
@@ -214,6 +271,7 @@ mod tests {
             payload,
             success: true,
             receiver_id,
+            owner_id,
         })
         .unwrap();
 
@@ -223,6 +281,7 @@ mod tests {
     #[test]
     fn test_create_failed_event() {
         let receiver_id = EventReceiverId::new();
+        let owner_id = UserId::new();
         let payload = json!({
             "error": "Connection timeout",
             "retry_count": 3
@@ -238,6 +297,7 @@ mod tests {
             payload,
             success: false,
             receiver_id,
+            owner_id,
         })
         .unwrap();
 
@@ -247,6 +307,7 @@ mod tests {
     #[test]
     fn test_event_id_is_unique() {
         let receiver_id = EventReceiverId::new();
+        let owner_id = UserId::new();
         let payload = json!({
             "data": "test"
         });
@@ -261,6 +322,7 @@ mod tests {
             payload: payload.clone(),
             success: true,
             receiver_id,
+            owner_id,
         })
         .unwrap();
 
@@ -274,6 +336,7 @@ mod tests {
             payload,
             success: true,
             receiver_id,
+            owner_id,
         })
         .unwrap();
 
@@ -283,6 +346,7 @@ mod tests {
     #[test]
     fn test_validate_payload_must_be_object() {
         let receiver_id = EventReceiverId::new();
+        let owner_id = UserId::new();
         let invalid_payload = json!("not an object");
 
         let result = Event::new(CreateEventParams {
@@ -295,6 +359,7 @@ mod tests {
             payload: invalid_payload,
             success: true,
             receiver_id,
+            owner_id,
         });
 
         assert!(result.is_err());
@@ -310,6 +375,7 @@ mod tests {
     #[test]
     fn test_validate_payload_array_fails() {
         let receiver_id = EventReceiverId::new();
+        let owner_id = UserId::new();
         let invalid_payload = json!([1, 2, 3]);
 
         let result = Event::new(CreateEventParams {
@@ -322,6 +388,7 @@ mod tests {
             payload: invalid_payload,
             success: true,
             receiver_id,
+            owner_id,
         });
 
         assert!(result.is_err());
@@ -330,6 +397,7 @@ mod tests {
     #[test]
     fn test_validate_payload_null_fails() {
         let receiver_id = EventReceiverId::new();
+        let owner_id = UserId::new();
         let invalid_payload = json!(null);
 
         let result = Event::new(CreateEventParams {
@@ -342,6 +410,7 @@ mod tests {
             payload: invalid_payload,
             success: true,
             receiver_id,
+            owner_id,
         });
 
         assert!(result.is_err());
@@ -350,6 +419,7 @@ mod tests {
     #[test]
     fn test_event_created_at_is_set() {
         let receiver_id = EventReceiverId::new();
+        let owner_id = UserId::new();
         let payload = json!({"test": "data"});
 
         let before = Utc::now();
@@ -363,6 +433,7 @@ mod tests {
             payload,
             success: true,
             receiver_id,
+            owner_id,
         })
         .unwrap();
         let after = Utc::now();
@@ -374,6 +445,7 @@ mod tests {
     #[test]
     fn test_event_getters() {
         let receiver_id = EventReceiverId::new();
+        let owner_id = UserId::new();
         let payload = json!({"key": "value"});
 
         let event = Event::new(CreateEventParams {
@@ -386,6 +458,7 @@ mod tests {
             payload: payload.clone(),
             success: true,
             receiver_id,
+            owner_id,
         })
         .unwrap();
 
@@ -403,6 +476,7 @@ mod tests {
     #[test]
     fn test_event_empty_payload_object() {
         let receiver_id = EventReceiverId::new();
+        let owner_id = UserId::new();
         let payload = json!({});
 
         let result = Event::new(CreateEventParams {
@@ -415,6 +489,7 @@ mod tests {
             payload,
             success: true,
             receiver_id,
+            owner_id,
         });
 
         assert!(result.is_ok());
@@ -423,6 +498,7 @@ mod tests {
     #[test]
     fn test_event_complex_payload() {
         let receiver_id = EventReceiverId::new();
+        let owner_id = UserId::new();
         let payload = json!({
             "nested": {
                 "level1": {
@@ -445,6 +521,7 @@ mod tests {
             payload: payload.clone(),
             success: true,
             receiver_id,
+            owner_id,
         });
 
         assert!(result.is_ok());
@@ -455,6 +532,7 @@ mod tests {
     #[test]
     fn test_event_clone() {
         let receiver_id = EventReceiverId::new();
+        let owner_id = UserId::new();
         let payload = json!({"test": "clone"});
 
         let event1 = Event::new(CreateEventParams {
@@ -467,6 +545,7 @@ mod tests {
             payload: payload.clone(),
             success: true,
             receiver_id,
+            owner_id,
         })
         .unwrap();
 
@@ -481,6 +560,7 @@ mod tests {
     #[test]
     fn test_event_serialization() {
         let receiver_id = EventReceiverId::new();
+        let owner_id = UserId::new();
         let payload = json!({"data": "serialize"});
 
         let event = Event::new(CreateEventParams {
@@ -493,6 +573,7 @@ mod tests {
             payload,
             success: true,
             receiver_id,
+            owner_id,
         })
         .unwrap();
 
@@ -507,6 +588,7 @@ mod tests {
     #[test]
     fn test_event_deserialization() {
         let receiver_id = EventReceiverId::new();
+        let owner_id = UserId::new();
         let payload = json!({"data": "deserialize"});
 
         let event = Event::new(CreateEventParams {
@@ -519,6 +601,7 @@ mod tests {
             payload,
             success: true,
             receiver_id,
+            owner_id,
         })
         .unwrap();
 
@@ -529,5 +612,29 @@ mod tests {
         let deserialized_event = deserialized.unwrap();
         assert_eq!(deserialized_event.name(), "deserialize-test");
         assert_eq!(deserialized_event.version(), "2.0.0");
+    }
+
+    #[test]
+    fn test_owner_id_is_preserved() {
+        let receiver_id = EventReceiverId::new();
+        let owner_id = UserId::new();
+        let payload = json!({"test": "data"});
+
+        let event = Event::new(CreateEventParams {
+            name: "test".to_string(),
+            version: "1.0.0".to_string(),
+            release: "release".to_string(),
+            platform_id: "platform".to_string(),
+            package: "package".to_string(),
+            description: "desc".to_string(),
+            payload,
+            success: true,
+            receiver_id,
+            owner_id,
+        })
+        .unwrap();
+
+        assert_eq!(event.owner_id(), owner_id);
+        assert_eq!(event.resource_version(), 1);
     }
 }

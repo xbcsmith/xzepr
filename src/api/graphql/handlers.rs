@@ -13,6 +13,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::api::graphql::Schema;
+use crate::api::middleware::jwt::AuthenticatedUser;
 
 /// GraphQL request structure
 #[derive(Debug, Deserialize)]
@@ -63,10 +64,14 @@ pub struct GraphQLResponse {
 /// ```
 pub async fn graphql_handler(
     State(schema): State<Schema>,
+    user: AuthenticatedUser,
     Json(req): Json<GraphQLRequest>,
 ) -> Response {
     // Build the GraphQL request
     let mut request = async_graphql::Request::new(req.query);
+
+    // Add authenticated user to GraphQL context
+    request = request.data(user);
 
     // Add operation name if provided
     if let Some(operation_name) = req.operation_name {
@@ -218,6 +223,34 @@ mod tests {
         ) -> Result<Vec<EventReceiver>> {
             Ok(vec![])
         }
+
+        async fn find_by_owner(
+            &self,
+            _owner_id: crate::domain::value_objects::UserId,
+        ) -> Result<Vec<EventReceiver>> {
+            Ok(vec![])
+        }
+
+        async fn find_by_owner_paginated(
+            &self,
+            _owner_id: crate::domain::value_objects::UserId,
+            _limit: usize,
+            _offset: usize,
+        ) -> Result<Vec<EventReceiver>> {
+            Ok(vec![])
+        }
+
+        async fn is_owner(
+            &self,
+            _receiver_id: EventReceiverId,
+            _user_id: crate::domain::value_objects::UserId,
+        ) -> Result<bool> {
+            Ok(false)
+        }
+
+        async fn get_resource_version(&self, _receiver_id: EventReceiverId) -> Result<Option<i64>> {
+            Ok(None)
+        }
     }
 
     // Mock group repository for testing
@@ -361,6 +394,79 @@ mod tests {
         {
             Ok(vec![])
         }
+
+        async fn find_by_owner(
+            &self,
+            _owner_id: crate::domain::value_objects::UserId,
+        ) -> Result<Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>>
+        {
+            Ok(vec![])
+        }
+
+        async fn find_by_owner_paginated(
+            &self,
+            _owner_id: crate::domain::value_objects::UserId,
+            _limit: usize,
+            _offset: usize,
+        ) -> Result<Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>>
+        {
+            Ok(vec![])
+        }
+
+        async fn is_owner(
+            &self,
+            _group_id: EventReceiverGroupId,
+            _user_id: crate::domain::value_objects::UserId,
+        ) -> Result<bool> {
+            Ok(false)
+        }
+
+        async fn get_resource_version(
+            &self,
+            _group_id: EventReceiverGroupId,
+        ) -> Result<Option<i64>> {
+            Ok(None)
+        }
+
+        async fn is_member(
+            &self,
+            _group_id: EventReceiverGroupId,
+            _user_id: crate::domain::value_objects::UserId,
+        ) -> Result<bool> {
+            Ok(false)
+        }
+
+        async fn get_group_members(
+            &self,
+            _group_id: EventReceiverGroupId,
+        ) -> Result<Vec<crate::domain::value_objects::UserId>> {
+            Ok(vec![])
+        }
+
+        async fn add_member(
+            &self,
+            _group_id: EventReceiverGroupId,
+            _user_id: crate::domain::value_objects::UserId,
+            _added_by: crate::domain::value_objects::UserId,
+        ) -> Result<()> {
+            Ok(())
+        }
+
+        async fn remove_member(
+            &self,
+            _group_id: EventReceiverGroupId,
+            _user_id: crate::domain::value_objects::UserId,
+        ) -> Result<()> {
+            Ok(())
+        }
+
+        async fn find_groups_for_user(
+            &self,
+            _user_id: crate::domain::value_objects::UserId,
+        ) -> Result<Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>>
+        {
+            Ok(vec![])
+        }
     }
 
     fn create_test_schema() -> Schema {
@@ -371,6 +477,22 @@ mod tests {
         let group_handler = Arc::new(EventReceiverGroupHandler::new(group_repo, receiver_repo));
 
         create_schema(receiver_handler, group_handler)
+    }
+
+    fn create_test_authenticated_user() -> AuthenticatedUser {
+        use crate::auth::jwt::claims::Claims;
+        use chrono::Duration;
+
+        let claims = Claims::new_access_token(
+            "test-user".to_string(),
+            vec!["user".to_string()],
+            vec!["read:events".to_string()],
+            "xzepr".to_string(),
+            "xzepr-api".to_string(),
+            Duration::hours(1),
+        );
+
+        AuthenticatedUser { claims }
     }
 
     #[tokio::test]
@@ -391,7 +513,8 @@ mod tests {
             variables: None,
         };
 
-        let response = graphql_handler(State(schema), Json(request)).await;
+        let user = create_test_authenticated_user();
+        let response = graphql_handler(State(schema), user, Json(request)).await;
 
         // Verify we get a response (status check)
         assert_eq!(response.status(), StatusCode::OK);
@@ -415,7 +538,8 @@ mod tests {
             variables: None,
         };
 
-        let response = graphql_handler(State(schema), Json(request)).await;
+        let user = create_test_authenticated_user();
+        let response = graphql_handler(State(schema), user, Json(request)).await;
 
         assert_eq!(response.status(), StatusCode::OK);
     }
@@ -468,7 +592,8 @@ mod tests {
             variables: Some(variables),
         };
 
-        let response = graphql_handler(State(schema), Json(request)).await;
+        let user = create_test_authenticated_user();
+        let response = graphql_handler(State(schema), user, Json(request)).await;
 
         assert_eq!(response.status(), StatusCode::OK);
     }

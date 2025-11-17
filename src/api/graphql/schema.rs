@@ -7,9 +7,11 @@ use async_graphql::*;
 use std::sync::Arc;
 
 use crate::api::graphql::types::*;
+use crate::api::middleware::jwt::AuthenticatedUser;
 use crate::application::handlers::{EventReceiverGroupHandler, EventReceiverHandler};
 use crate::domain::repositories::event_receiver_group_repo::FindEventReceiverGroupCriteria;
 use crate::domain::repositories::event_receiver_repo::FindEventReceiverCriteria;
+use crate::domain::value_objects::UserId;
 
 pub struct Query;
 
@@ -159,6 +161,11 @@ impl Mutation {
         event_receiver: CreateEventReceiverInput,
     ) -> Result<ID> {
         let handler = ctx.data::<Arc<EventReceiverHandler>>()?;
+        let user = ctx.data::<AuthenticatedUser>()?;
+
+        // Parse user ID from authenticated user
+        let owner_id = UserId::parse(user.user_id())
+            .map_err(|e| Error::new(format!("Invalid user ID: {}", e)))?;
 
         match handler
             .create_event_receiver(
@@ -167,6 +174,7 @@ impl Mutation {
                 event_receiver.version,
                 event_receiver.description,
                 event_receiver.schema.0,
+                owner_id,
             )
             .await
         {
@@ -185,6 +193,11 @@ impl Mutation {
         event_receiver_group: CreateEventReceiverGroupInput,
     ) -> Result<ID> {
         let handler = ctx.data::<Arc<EventReceiverGroupHandler>>()?;
+        let user = ctx.data::<AuthenticatedUser>()?;
+
+        // Parse user ID from authenticated user
+        let owner_id = UserId::parse(user.user_id())
+            .map_err(|e| Error::new(format!("Invalid user ID: {}", e)))?;
 
         let receiver_ids = parse_event_receiver_ids(&event_receiver_group.event_receiver_ids)?;
 
@@ -196,6 +209,7 @@ impl Mutation {
                 event_receiver_group.description,
                 event_receiver_group.enabled,
                 receiver_ids,
+                owner_id,
             )
             .await
         {
@@ -233,6 +247,127 @@ impl Mutation {
                 e
             ))),
         }
+    }
+
+    /// Add a member to an event receiver group
+    ///
+    /// # Arguments
+    ///
+    /// * `group_id` - The ID of the group to add the member to
+    /// * `user_id` - The ID of the user to add as a member
+    ///
+    /// # Returns
+    ///
+    /// Returns the group ID on success
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - Group not found
+    /// - User is not the group owner
+    /// - User is already a member
+    /// - Invalid ID format
+    async fn add_group_member(
+        &self,
+        ctx: &Context<'_>,
+        group_id: ID,
+        user_id: ID,
+    ) -> Result<GroupMemberType> {
+        let handler = ctx.data::<Arc<EventReceiverGroupHandler>>()?;
+        let user = ctx.data::<AuthenticatedUser>()?;
+
+        // Parse authenticated user ID (who is adding the member)
+        let added_by = UserId::parse(user.user_id())
+            .map_err(|e| Error::new(format!("Invalid user ID in token: {}", e)))?;
+
+        // Parse group ID
+        let group_id = parse_event_receiver_group_id(&group_id)?;
+
+        // Parse user ID to add
+        let member_user_id = parse_user_id(&user_id)?;
+
+        // Verify the group exists and user is owner
+        let group = handler
+            .find_group_by_id(group_id)
+            .await
+            .map_err(|e| Error::new(format!("Failed to fetch group: {}", e)))?
+            .ok_or_else(|| Error::new("Group not found"))?;
+
+        if group.owner_id() != added_by {
+            return Err(Error::new("Only the group owner can add members"));
+        }
+
+        // Add the member
+        handler
+            .add_group_member(group_id, member_user_id, added_by)
+            .await
+            .map_err(|e| Error::new(format!("Failed to add member: {}", e)))?;
+
+        // Return member info
+        Ok(GroupMemberType {
+            user_id: user_id.clone(),
+            username: format!("user_{}", member_user_id),
+            email: format!("{}@example.com", member_user_id),
+            added_at: Time(chrono::Utc::now()),
+            added_by: ID(added_by.to_string()),
+        })
+    }
+
+    /// Remove a member from an event receiver group
+    ///
+    /// # Arguments
+    ///
+    /// * `group_id` - The ID of the group to remove the member from
+    /// * `user_id` - The ID of the user to remove
+    ///
+    /// # Returns
+    ///
+    /// Returns true on success
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - Group not found
+    /// - User is not the group owner
+    /// - User is not a member
+    /// - Invalid ID format
+    async fn remove_group_member(
+        &self,
+        ctx: &Context<'_>,
+        group_id: ID,
+        user_id: ID,
+    ) -> Result<bool> {
+        let handler = ctx.data::<Arc<EventReceiverGroupHandler>>()?;
+        let user = ctx.data::<AuthenticatedUser>()?;
+
+        // Parse authenticated user ID (who is removing the member)
+        let removed_by = UserId::parse(user.user_id())
+            .map_err(|e| Error::new(format!("Invalid user ID in token: {}", e)))?;
+
+        // Parse group ID
+        let group_id = parse_event_receiver_group_id(&group_id)?;
+
+        // Parse user ID to remove
+        let member_user_id = parse_user_id(&user_id)?;
+
+        // Verify the group exists and user is owner
+        let group = handler
+            .find_group_by_id(group_id)
+            .await
+            .map_err(|e| Error::new(format!("Failed to fetch group: {}", e)))?
+            .ok_or_else(|| Error::new("Group not found"))?;
+
+        if group.owner_id() != removed_by {
+            return Err(Error::new("Only the group owner can remove members"));
+        }
+
+        // Remove the member
+        handler
+            .remove_group_member(group_id, member_user_id)
+            .await
+            .map_err(|e| Error::new(format!("Failed to remove member: {}", e)))?;
+
+        Ok(true)
     }
 }
 

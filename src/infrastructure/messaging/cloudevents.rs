@@ -207,7 +207,7 @@ impl CloudEventMessage {
 mod tests {
     use super::*;
     use crate::domain::entities::event::CreateEventParams;
-    use crate::domain::value_objects::EventReceiverId;
+    use crate::domain::value_objects::{EventReceiverId, UserId};
 
     #[test]
     fn test_cloudevent_message_from_event() {
@@ -227,6 +227,7 @@ mod tests {
             payload: payload.clone(),
             success: true,
             receiver_id,
+            owner_id: UserId::new(),
         })
         .unwrap();
 
@@ -266,6 +267,7 @@ mod tests {
             payload: serde_json::json!({"status": "deployed"}),
             success: true,
             receiver_id,
+            owner_id: UserId::new(),
         })
         .unwrap();
 
@@ -305,6 +307,7 @@ mod tests {
             }),
             success: true,
             receiver_id,
+            owner_id: UserId::new(),
         })
         .unwrap();
 
@@ -329,6 +332,7 @@ mod tests {
             payload: serde_json::json!({"error": "Something went wrong"}),
             success: false,
             receiver_id,
+            owner_id: UserId::new(),
         })
         .unwrap();
 
@@ -357,6 +361,7 @@ mod tests {
             payload: payload.clone(),
             success: true,
             receiver_id,
+            owner_id: UserId::new(),
         })
         .unwrap();
 
@@ -375,13 +380,14 @@ mod tests {
         let event = Event::new(CreateEventParams {
             name: "test.event".to_string(),
             version: "1.0.0".to_string(),
-            release: "1.0.0".to_string(),
-            platform_id: "test".to_string(),
-            package: "test-pkg".to_string(),
-            description: "Test".to_string(),
+            release: "1.0.0-rc.1".to_string(),
+            platform_id: "kubernetes".to_string(),
+            package: "test-package".to_string(),
+            description: "Test event".to_string(),
             payload: serde_json::json!({}),
             success: true,
             receiver_id,
+            owner_id: UserId::new(),
         })
         .unwrap();
 
@@ -425,6 +431,7 @@ mod tests {
             payload: serde_json::json!({}),
             success: true,
             receiver_id,
+            owner_id: UserId::new(),
         })
         .unwrap();
 
@@ -434,6 +441,7 @@ mod tests {
             "1.0.0".to_string(),
             "Test receiver".to_string(),
             serde_json::json!({"type": "object"}),
+            UserId::new(),
         )
         .unwrap();
 
@@ -460,6 +468,7 @@ mod tests {
             payload: serde_json::json!({}),
             success: true,
             receiver_id,
+            owner_id: UserId::new(),
         })
         .unwrap();
 
@@ -470,6 +479,7 @@ mod tests {
             "Test group".to_string(),
             true,
             vec![receiver_id],
+            UserId::new(),
         )
         .unwrap();
 

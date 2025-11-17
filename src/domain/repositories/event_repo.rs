@@ -69,6 +69,30 @@ pub trait EventRepository: Send + Sync {
 
     /// Finds events that match multiple criteria
     async fn find_by_criteria(&self, criteria: FindEventCriteria) -> Result<Vec<Event>>;
+
+    /// Finds all events created by a specific user
+    async fn find_by_owner(
+        &self,
+        owner_id: crate::domain::value_objects::UserId,
+    ) -> Result<Vec<Event>>;
+
+    /// Finds events by owner with pagination
+    async fn find_by_owner_paginated(
+        &self,
+        owner_id: crate::domain::value_objects::UserId,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<Event>>;
+
+    /// Checks if a user owns a specific event
+    async fn is_owner(
+        &self,
+        event_id: EventId,
+        user_id: crate::domain::value_objects::UserId,
+    ) -> Result<bool>;
+
+    /// Gets the current resource version of an event
+    async fn get_resource_version(&self, event_id: EventId) -> Result<Option<i64>>;
 }
 
 /// Criteria for finding events
