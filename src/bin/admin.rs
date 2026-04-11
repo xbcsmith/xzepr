@@ -96,33 +96,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             password,
             role,
         } => {
-            let user = User::new_local(username, email, password)?;
+            let role = Role::from_str(&role).map_err(|err| -> Box<dyn std::error::Error> {
+                Box::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, err))
+            })?;
 
-            // Parse and add the requested role
-            let role = Role::from_str(&role)?;
+            if let Some(existing_user) = user_repo.find_by_username(&username).await? {
+                let existing_roles: Vec<String> = existing_user
+                    .roles()
+                    .iter()
+                    .map(|r| r.to_string())
+                    .collect();
 
-            // If the requested role is different from the default User role, add it
-            if role != Role::User {
-                // Get mutable reference to roles and add the new role
-                // Note: User struct doesn't expose roles mutably, so we need to use add_role after save
-                user_repo.save(&user).await?;
-                user_repo.add_role(user.id(), role).await?;
-            } else {
-                // Just save with default role
-                user_repo.save(&user).await?;
-            }
+                println!("User '{}' already exists.", username);
+                println!("  ID: {}", existing_user.id());
+                println!("  Email: {}", existing_user.email());
+                println!("  Roles: {}", existing_roles.join(", "));
 
-            println!("✓ User created successfully!");
-            println!("  ID: {}", user.id());
-            println!("  Username: {}", user.username());
-            println!(
-                "  Roles: user{}",
-                if role != Role::User {
-                    format!(", {}", role)
-                } else {
-                    String::new()
+                if role != Role::User && !existing_user.has_role(&role) {
+                    user_repo.add_role(existing_user.id(), role).await?;
+                    println!("  Added missing role: {}", role);
                 }
-            );
+            } else {
+                let user = User::new_local(username, email, password)
+                    .map_err(|err| -> Box<dyn std::error::Error> { Box::new(err) })?;
+
+                user_repo.save(&user).await?;
+
+                if role != Role::User {
+                    user_repo.add_role(user.id(), role).await?;
+                }
+
+                println!("✓ User created successfully!");
+                println!("  ID: {}", user.id());
+                println!("  Username: {}", user.username());
+                println!(
+                    "  Roles: user{}",
+                    if role != Role::User {
+                        format!(", {}", role)
+                    } else {
+                        String::new()
+                    }
+                );
+            }
         }
 
         Commands::ListUsers => {

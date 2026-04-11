@@ -29,11 +29,13 @@ docker pull grafana/k6:latest
 ### Using Package Manager
 
 **macOS:**
+
 ```bash
 brew install k6
 ```
 
 **Linux:**
+
 ```bash
 sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
 echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
@@ -42,6 +44,7 @@ sudo apt-get install k6
 ```
 
 **Windows:**
+
 ```powershell
 choco install k6
 ```
@@ -53,6 +56,7 @@ mkdir -p tests/load/{scenarios,data,results}
 ```
 
 Structure:
+
 ```text
 tests/load/
 ├── scenarios/
@@ -73,112 +77,120 @@ tests/load/
 Create `tests/load/scenarios/baseline.js`:
 
 ```javascript
-import http from 'k6/http';
-import { check, sleep } from 'k6';
-import { Counter, Rate, Trend } from 'k6/metrics';
+import http from "k6/http";
+import { check, sleep } from "k6";
+import { Counter, Rate, Trend } from "k6/metrics";
 
 // Custom metrics
-const errorRate = new Rate('errors');
-const eventCreationTime = new Trend('event_creation_duration');
+const errorRate = new Rate("errors");
+const eventCreationTime = new Trend("event_creation_duration");
 
 // Test configuration
 export let options = {
-    stages: [
-        { duration: '1m', target: 10 },   // Ramp up to 10 users
-        { duration: '3m', target: 10 },   // Stay at 10 users
-        { duration: '1m', target: 0 },    // Ramp down
-    ],
-    thresholds: {
-        http_req_duration: ['p(95)<500', 'p(99)<1000'],
-        http_req_failed: ['rate<0.01'],
-        errors: ['rate<0.05'],
-        event_creation_duration: ['p(95)<300'],
-    },
+  stages: [
+    { duration: "1m", target: 10 }, // Ramp up to 10 users
+    { duration: "3m", target: 10 }, // Stay at 10 users
+    { duration: "1m", target: 0 }, // Ramp down
+  ],
+  thresholds: {
+    http_req_duration: ["p(95)<500", "p(99)<1000"],
+    http_req_failed: ["rate<0.01"],
+    errors: ["rate<0.05"],
+    event_creation_duration: ["p(95)<300"],
+  },
 };
 
 // Environment variables
-const BASE_URL = __ENV.BASE_URL || 'http://localhost:8042';
+const BASE_URL = __ENV.BASE_URL || "https://localhost:8443";
 const API_KEY = __ENV.API_KEY;
+const EVENT_RECEIVER_ID = __ENV.EVENT_RECEIVER_ID;
 
 if (!API_KEY) {
-    throw new Error('API_KEY environment variable is required');
+  throw new Error("API_KEY environment variable is required");
+}
+
+if (!EVENT_RECEIVER_ID) {
+  throw new Error("EVENT_RECEIVER_ID environment variable is required");
 }
 
 // Test data
-const eventNames = ['build', 'deploy', 'test', 'release', 'rollback'];
-const platforms = ['linux-x86_64', 'darwin-arm64', 'windows-x86_64'];
-const packages = ['app-server', 'web-ui', 'api-gateway', 'worker'];
+const eventNames = ["build", "deploy", "test", "release", "rollback"];
+const platforms = ["linux-x86_64", "darwin-arm64", "windows-x86_64"];
+const packages = ["app-server", "web-ui", "api-gateway", "worker"];
 
 function randomElement(array) {
-    return array[Math.floor(Math.random() * array.length)];
+  return array[Math.floor(Math.random() * array.length)];
 }
 
 function generateEvent() {
-    return {
-        name: randomElement(eventNames),
-        version: `1.${Math.floor(Math.random() * 100)}.0`,
-        release: `release-${Math.floor(Math.random() * 1000)}`,
-        platform_id: randomElement(platforms),
-        package: randomElement(packages),
-        success: Math.random() > 0.1, // 90% success rate
-        description: `Test event from k6 load test`,
-    };
+  return {
+    name: randomElement(eventNames),
+    version: `1.${Math.floor(Math.random() * 100)}.0`,
+    release: `release-${Math.floor(Math.random() * 1000)}`,
+    platform_id: randomElement(platforms),
+    package: randomElement(packages),
+    description: `Test event from k6 load test`,
+    payload: {},
+    success: Math.random() > 0.1, // 90% success rate
+    event_receiver_id: EVENT_RECEIVER_ID,
+  };
 }
 
-export default function() {
-    // Test 1: Health check
-    {
-        let res = http.get(`${BASE_URL}/health`);
-        check(res, {
-            'health check status is 200': (r) => r.status === 200,
-        });
-    }
+export default function () {
+  // Test 1: Health check
+  {
+    let res = http.get(`${BASE_URL}/health`);
+    check(res, {
+      "health check status is 200": (r) => r.status === 200,
+    });
+  }
 
-    // Test 2: Create event
-    {
-        let event = generateEvent();
-        let payload = JSON.stringify(event);
+  // Test 2: Create event
+  {
+    let event = generateEvent();
+    let payload = JSON.stringify(event);
 
-        let start = Date.now();
-        let res = http.post(`${BASE_URL}/api/v1/events`, payload, {
-            headers: {
-                'Content-Type': 'application/json',
-                'X-API-Key': API_KEY,
-            },
-        });
-        let duration = Date.now() - start;
+    let start = Date.now();
+    let res = http.post(`${BASE_URL}/api/v1/events`, payload, {
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": API_KEY,
+      },
+      insecureSkipTLSVerify: true,
+    });
+    let duration = Date.now() - start;
 
-        eventCreationTime.add(duration);
+    eventCreationTime.add(duration);
 
-        let success = check(res, {
-            'event created': (r) => r.status === 201,
-            'response has id': (r) => {
-                try {
-                    return JSON.parse(r.body).id !== undefined;
-                } catch {
-                    return false;
-                }
-            },
-        });
-
-        errorRate.add(!success);
-
-        if (!success) {
-            console.error(`Failed to create event: ${res.status} - ${res.body}`);
+    let success = check(res, {
+      "event created": (r) => r.status === 201,
+      "response has id": (r) => {
+        try {
+          return JSON.parse(r.body).id !== undefined;
+        } catch {
+          return false;
         }
+      },
+    });
+
+    errorRate.add(!success);
+
+    if (!success) {
+      console.error(`Failed to create event: ${res.status} - ${res.body}`);
     }
+  }
 
-    // Test 3: Query events (if we have an ID)
-    // Add your query tests here
+  // Test 3: Query events (if we have an ID)
+  // Add your query tests here
 
-    sleep(1);
+  sleep(1);
 }
 
 export function handleSummary(data) {
-    return {
-        'results/baseline-summary.json': JSON.stringify(data, null, 2),
-        stdout: textSummary(data, { indent: ' ', enableColors: true }),
-    };
+  return {
+    "results/baseline-summary.json": JSON.stringify(data, null, 2),
+    stdout: textSummary(data, { indent: " ", enableColors: true }),
+  };
 }
 ```
 
@@ -187,59 +199,64 @@ export function handleSummary(data) {
 Create `tests/load/scenarios/stress.js`:
 
 ```javascript
-import http from 'k6/http';
-import { check, sleep } from 'k6';
-import { Rate } from 'k6/metrics';
+import http from "k6/http";
+import { check, sleep } from "k6";
+import { Rate } from "k6/metrics";
 
-const errorRate = new Rate('errors');
+const errorRate = new Rate("errors");
 
 export let options = {
-    stages: [
-        { duration: '2m', target: 50 },    // Ramp to 50
-        { duration: '2m', target: 100 },   // Ramp to 100
-        { duration: '2m', target: 200 },   // Ramp to 200
-        { duration: '2m', target: 300 },   // Ramp to 300
-        { duration: '2m', target: 400 },   // Ramp to 400
-        { duration: '5m', target: 400 },   // Stay at 400
-        { duration: '2m', target: 0 },     // Ramp down
-    ],
-    thresholds: {
-        http_req_duration: ['p(95)<2000'],  // More lenient for stress test
-        http_req_failed: ['rate<0.05'],
-        errors: ['rate<0.1'],
-    },
+  stages: [
+    { duration: "2m", target: 50 }, // Ramp to 50
+    { duration: "2m", target: 100 }, // Ramp to 100
+    { duration: "2m", target: 200 }, // Ramp to 200
+    { duration: "2m", target: 300 }, // Ramp to 300
+    { duration: "2m", target: 400 }, // Ramp to 400
+    { duration: "5m", target: 400 }, // Stay at 400
+    { duration: "2m", target: 0 }, // Ramp down
+  ],
+  thresholds: {
+    http_req_duration: ["p(95)<2000"], // More lenient for stress test
+    http_req_failed: ["rate<0.05"],
+    errors: ["rate<0.1"],
+  },
 };
 
-const BASE_URL = __ENV.BASE_URL || 'http://localhost:8042';
+const BASE_URL = __ENV.BASE_URL || "https://localhost:8443";
 const API_KEY = __ENV.API_KEY;
+const EVENT_RECEIVER_ID = __ENV.EVENT_RECEIVER_ID;
 
-export default function() {
-    let event = {
-        name: 'stress-test-event',
-        version: '1.0.0',
-        release: 'stress',
-        platform_id: 'linux-x86_64',
-        package: 'stress-package',
-        success: true,
-    };
+export default function () {
+  let event = {
+    name: "stress-test-event",
+    version: "1.0.0",
+    release: "stress",
+    platform_id: "linux-x86_64",
+    package: "stress-package",
+    description: "Stress test event",
+    payload: {},
+    success: true,
+    event_receiver_id: EVENT_RECEIVER_ID,
+  };
 
-    let res = http.post(`${BASE_URL}/api/v1/events`, JSON.stringify(event), {
-        headers: {
-            'Content-Type': 'application/json',
-            'X-API-Key': API_KEY,
-        },
-    });
+  let res = http.post(`${BASE_URL}/api/v1/events`, JSON.stringify(event), {
+    headers: {
+      "Content-Type": "application/json",
+      "X-API-Key": API_KEY,
+    },
+    insecureSkipTLSVerify: true,
+  });
 
-    let success = check(res, {
-        'status is 2xx or 429 or 503': (r) =>
-            (r.status >= 200 && r.status < 300) ||
-            r.status === 429 || // Rate limited (expected under stress)
-            r.status === 503,   // Service unavailable (expected under stress)
-    });
+  let success = check(res, {
+    "status is 2xx or 429 or 503": (r) =>
+      (r.status >= 200 && r.status < 300) ||
+      r.status === 429 || // Rate limited (expected under stress)
+      r.status === 503, // Service unavailable (expected under stress)
+  });
 
-    errorRate.add(!success);
+  errorRate.add(!success);
 
-    sleep(0.5);
+  sleep(0.5);
 }
 ```
 
@@ -248,51 +265,56 @@ export default function() {
 Create `tests/load/scenarios/spike.js`:
 
 ```javascript
-import http from 'k6/http';
-import { check } from 'k6';
-import { Rate } from 'k6/metrics';
+import http from "k6/http";
+import { check } from "k6";
+import { Rate } from "k6/metrics";
 
-const errorRate = new Rate('errors');
+const errorRate = new Rate("errors");
 
 export let options = {
-    stages: [
-        { duration: '10s', target: 10 },   // Normal load
-        { duration: '30s', target: 500 },  // Sudden spike
-        { duration: '3m', target: 500 },   // Sustained spike
-        { duration: '30s', target: 10 },   // Drop back
-        { duration: '2m', target: 10 },    // Recovery
-        { duration: '10s', target: 0 },    // Ramp down
-    ],
-    thresholds: {
-        http_req_duration: ['p(95)<3000'],
-        http_req_failed: ['rate<0.1'],
-    },
+  stages: [
+    { duration: "10s", target: 10 }, // Normal load
+    { duration: "30s", target: 500 }, // Sudden spike
+    { duration: "3m", target: 500 }, // Sustained spike
+    { duration: "30s", target: 10 }, // Drop back
+    { duration: "2m", target: 10 }, // Recovery
+    { duration: "10s", target: 0 }, // Ramp down
+  ],
+  thresholds: {
+    http_req_duration: ["p(95)<3000"],
+    http_req_failed: ["rate<0.1"],
+  },
 };
 
-const BASE_URL = __ENV.BASE_URL || 'http://localhost:8042';
+const BASE_URL = __ENV.BASE_URL || "https://localhost:8443";
 const API_KEY = __ENV.API_KEY;
+const EVENT_RECEIVER_ID = __ENV.EVENT_RECEIVER_ID;
 
-export default function() {
-    let event = {
-        name: 'spike-test',
-        version: '1.0.0',
-        release: 'spike',
-        platform_id: 'linux-x86_64',
-        package: 'spike-package',
-        success: true,
-    };
+export default function () {
+  let event = {
+    name: "spike-test",
+    version: "1.0.0",
+    release: "spike",
+    platform_id: "linux-x86_64",
+    package: "spike-package",
+    description: "Spike test event",
+    payload: {},
+    success: true,
+    event_receiver_id: EVENT_RECEIVER_ID,
+  };
 
-    let res = http.post(`${BASE_URL}/api/v1/events`, JSON.stringify(event), {
-        headers: {
-            'Content-Type': 'application/json',
-            'X-API-Key': API_KEY,
-        },
-        timeout: '10s',
-    });
+  let res = http.post(`${BASE_URL}/api/v1/events`, JSON.stringify(event), {
+    headers: {
+      "Content-Type": "application/json",
+      "X-API-Key": API_KEY,
+    },
+    timeout: "10s",
+    insecureSkipTLSVerify: true,
+  });
 
-    check(res, {
-        'request completed': (r) => r.status !== 0,
-    });
+  check(res, {
+    "request completed": (r) => r.status !== 0,
+  });
 }
 ```
 
@@ -301,59 +323,65 @@ export default function() {
 Create `tests/load/scenarios/soak.js`:
 
 ```javascript
-import http from 'k6/http';
-import { check, sleep } from 'k6';
-import { Rate, Counter } from 'k6/metrics';
+import http from "k6/http";
+import { check, sleep } from "k6";
+import { Rate, Counter } from "k6/metrics";
 
-const errorRate = new Rate('errors');
-const errorCounter = new Counter('error_count');
+const errorRate = new Rate("errors");
+const errorCounter = new Counter("error_count");
 
 export let options = {
-    stages: [
-        { duration: '5m', target: 50 },    // Ramp up
-        { duration: '4h', target: 50 },    // Soak (4 hours)
-        { duration: '5m', target: 0 },     // Ramp down
-    ],
-    thresholds: {
-        http_req_duration: ['p(95)<1000'],
-        http_req_failed: ['rate<0.01'],
-        errors: ['rate<0.02'],
-    },
+  stages: [
+    { duration: "5m", target: 50 }, // Ramp up
+    { duration: "4h", target: 50 }, // Soak (4 hours)
+    { duration: "5m", target: 0 }, // Ramp down
+  ],
+  thresholds: {
+    http_req_duration: ["p(95)<1000"],
+    http_req_failed: ["rate<0.01"],
+    errors: ["rate<0.02"],
+  },
 };
 
-const BASE_URL = __ENV.BASE_URL || 'http://localhost:8042';
+const BASE_URL = __ENV.BASE_URL || "https://localhost:8443";
 const API_KEY = __ENV.API_KEY;
+const EVENT_RECEIVER_ID = __ENV.EVENT_RECEIVER_ID;
 
-export default function() {
-    let event = {
-        name: 'soak-test',
-        version: '1.0.0',
-        release: 'soak',
-        platform_id: 'linux-x86_64',
-        package: 'soak-package',
-        success: true,
-        timestamp: new Date().toISOString(),
-    };
+export default function () {
+  let event = {
+    name: "soak-test",
+    version: "1.0.0",
+    release: "soak",
+    platform_id: "linux-x86_64",
+    package: "soak-package",
+    description: "Soak test event",
+    payload: {
+      timestamp: new Date().toISOString(),
+    },
+    success: true,
+    event_receiver_id: EVENT_RECEIVER_ID,
+  };
 
-    let res = http.post(`${BASE_URL}/api/v1/events`, JSON.stringify(event), {
-        headers: {
-            'Content-Type': 'application/json',
-            'X-API-Key': API_KEY,
-        },
-    });
+  let res = http.post(`${BASE_URL}/api/v1/events`, JSON.stringify(event), {
+    headers: {
+      "Content-Type": "application/json",
+      "X-API-Key": API_KEY,
+    },
+    insecureSkipTLSVerify: true,
+  });
 
-    let success = check(res, {
-        'event created': (r) => r.status === 201,
-    });
+  let success = check(res, {
+    "event created": (r) => r.status === 201,
+  });
 
-    if (!success) {
-        errorCounter.add(1);
-        console.error(`Error at ${new Date().toISOString()}: ${res.status}`);
-    }
+  if (!success) {
+    errorCounter.add(1);
+    console.error(`Error at ${new Date().toISOString()}: ${res.status}`);
+  }
 
-    errorRate.add(!success);
+  errorRate.add(!success);
 
-    sleep(2);
+  sleep(2);
 }
 ```
 
@@ -363,8 +391,9 @@ export default function() {
 
 ```bash
 # Set environment variables
-export BASE_URL="http://localhost:8042"
+export BASE_URL="https://localhost:8443"
 export API_KEY="your-api-key-here"
+export EVENT_RECEIVER_ID="your-event-receiver-id"
 
 # Run test
 k6 run tests/load/scenarios/baseline.js
@@ -374,8 +403,9 @@ k6 run tests/load/scenarios/baseline.js
 
 ```bash
 docker run --rm -i \
-  -e BASE_URL="http://host.docker.internal:8042" \
+  -e BASE_URL="https://host.docker.internal:8443" \
   -e API_KEY="your-api-key-here" \
+  -e EVENT_RECEIVER_ID="your-event-receiver-id" \
   -v $(pwd)/tests/load:/scripts \
   grafana/k6:latest run /scripts/scenarios/baseline.js
 ```
@@ -386,8 +416,9 @@ docker run --rm -i \
 #!/bin/bash
 # tests/load/run-all.sh
 
-export BASE_URL="${BASE_URL:-http://localhost:8042}"
+export BASE_URL="${BASE_URL:-https://localhost:8443}"
 export API_KEY="${API_KEY:?API_KEY is required}"
+export EVENT_RECEIVER_ID="${EVENT_RECEIVER_ID:?EVENT_RECEIVER_ID is required}"
 
 echo "Running baseline test..."
 k6 run tests/load/scenarios/baseline.js
@@ -419,7 +450,7 @@ Start InfluxDB and Grafana:
 
 ```yaml
 # docker-compose.monitoring.yaml
-version: '3.8'
+version: "3.8"
 
 services:
   influxdb:
@@ -463,19 +494,19 @@ Define SLAs in your test options:
 
 ```javascript
 export let options = {
-    thresholds: {
-        // HTTP errors should be less than 1%
-        http_req_failed: ['rate<0.01'],
+  thresholds: {
+    // HTTP errors should be less than 1%
+    http_req_failed: ["rate<0.01"],
 
-        // 95% of requests should be below 500ms
-        http_req_duration: ['p(95)<500'],
+    // 95% of requests should be below 500ms
+    http_req_duration: ["p(95)<500"],
 
-        // 99% of requests should be below 1s
-        'http_req_duration{name:CreateEvent}': ['p(99)<1000'],
+    // 99% of requests should be below 1s
+    "http_req_duration{name:CreateEvent}": ["p(99)<1000"],
 
-        // Requests per second should be above 100
-        http_reqs: ['rate>100'],
-    },
+    // Requests per second should be above 100
+    http_reqs: ["rate>100"],
+  },
 };
 ```
 
@@ -489,7 +520,7 @@ name: Load Test
 
 on:
   schedule:
-    - cron: '0 2 * * *'  # Daily at 2 AM
+    - cron: "0 2 * * *" # Daily at 2 AM
   workflow_dispatch:
 
 jobs:
@@ -501,24 +532,47 @@ jobs:
 
       - name: Start XZepr
         run: |
-          docker-compose up -d
+          docker compose up -d --build
           sleep 30  # Wait for startup
 
       - name: Create API Key
         id: apikey
         run: |
-          API_KEY=$(docker-compose exec -T xzepr \
-            ./admin apikey create --user-id test-user --name ci-test)
+          docker compose run --rm -T \
+            -e XZEPR__DATABASE__URL=postgres://xzepr:password@postgres:5432/xzepr \
+            --entrypoint ./admin \
+            xzepr \
+            create-user \
+            --username loadtest \
+            --email loadtest@xzepr.local \
+            --password loadtest123 \
+            --role admin
+
+          API_KEY=$(docker compose run --rm -T \
+            -e XZEPR__DATABASE__URL=postgres://xzepr:password@postgres:5432/xzepr \
+            --entrypoint ./admin \
+            xzepr \
+            generate-api-key \
+            --username loadtest \
+            --name ci-test | grep "API Key:" | awk '{print $3}')
+
+          EVENT_RECEIVER_ID=$(curl -k -X POST https://localhost:8443/api/v1/receivers \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $(curl -k -X POST https://localhost:8443/api/v1/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"loadtest\",\"password\":\"loadtest123\"}' -s | jq -r '.token')" \
+            -d '{"name":"load-test-receiver","type":"webhook","version":"1.0.0","description":"Load testing receiver","schema":{}}' -s | jq -r '.data')
+
           echo "::add-mask::$API_KEY"
           echo "API_KEY=$API_KEY" >> $GITHUB_OUTPUT
+          echo "EVENT_RECEIVER_ID=$EVENT_RECEIVER_ID" >> $GITHUB_OUTPUT
 
       - name: Run k6 baseline test
         uses: grafana/k6-action@v0.3.0
         with:
           filename: tests/load/scenarios/baseline.js
         env:
-          BASE_URL: http://localhost:8042
+          BASE_URL: https://localhost:8443
           API_KEY: ${{ steps.apikey.outputs.API_KEY }}
+          EVENT_RECEIVER_ID: ${{ steps.apikey.outputs.EVENT_RECEIVER_ID }}
 
       - name: Upload results
         uses: actions/upload-artifact@v3

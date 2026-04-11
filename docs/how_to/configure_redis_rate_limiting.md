@@ -118,7 +118,7 @@ Use curl to test rate limiting:
 ```bash
 # Test anonymous rate limit (10 requests/minute)
 for i in {1..15}; do
-  curl -i http://localhost:8080/api/v1/events
+  curl -i -k https://localhost:8443/api/v1/events
   echo "Request $i"
 done
 ```
@@ -140,9 +140,9 @@ Test the login endpoint with a lower limit:
 ```bash
 # Test login endpoint (5 requests/minute)
 for i in {1..8}; do
-  curl -i -X POST http://localhost:8080/auth/login \
+  curl -i -k -X POST https://localhost:8443/api/v1/auth/login \
     -H "Content-Type: application/json" \
-    -d '{"email":"test@example.com","password":"test"}'
+    -d '{"username":"admin","password":"admin123"}'
   echo "Request $i"
 done
 ```
@@ -164,12 +164,12 @@ Test that rate limits apply across both instances:
 ```bash
 # Send 5 requests to instance 1
 for i in {1..5}; do
-  curl http://localhost:8080/api/v1/events
+  curl -k https://localhost:8443/api/v1/events
 done
 
 # Send 5 more to instance 2 - should start rejecting
 for i in {1..5}; do
-  curl http://localhost:8081/api/v1/events
+  curl -k https://localhost:8444/api/v1/events
 done
 ```
 
@@ -195,7 +195,7 @@ ZRANGE ratelimit:ip:192.168.1.100 0 -1 WITHSCORES
 XZepr exposes rate limit rejection metrics:
 
 ```bash
-curl http://localhost:8080/metrics | grep rate_limit
+curl -k https://localhost:8443/metrics | grep rate_limit
 ```
 
 Look for:
@@ -365,6 +365,6 @@ Set up alerts for:
 
 ## Related Documentation
 
-- [Security Configuration](../reference/security_configuration.md)
+- [Kafka Security Checklist](../reference/kafka_security_checklist.md)
 - [Monitoring and Metrics](../how_to/setup_monitoring.md)
-- [Production Deployment](../how_to/deploy_production.md)
+- [Production Deployment](../how_to/deployment.md)

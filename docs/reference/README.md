@@ -39,23 +39,20 @@ Contents:
 
 **Status:** Available
 
-### Implementation Details
+### GraphQL API
 
-**[Implementation](implementation.md)**
+**[GraphQL API](graphql_api.md)**
 
-Comprehensive technical documentation of the XZepr implementation, including
-architecture, entities, and API design.
+Reference documentation for the GraphQL schema, queries, mutations, and related
+types.
 
 Contents:
 
-- Layered architecture overview
-- Core entities (EventReceiver, Event, EventReceiverGroup)
-- REST API implementation details
-- CDEvents specification support
-- Request/response formats and examples
-- Repository patterns and data access
-- Error handling and validation
-- Performance characteristics
+- Query operations
+- Mutation operations
+- Input and output types
+- Schema usage examples
+- GraphQL-specific request patterns
 
 **Status:** Available
 
@@ -114,39 +111,23 @@ Contents:
 
 **Status:** Available
 
-### Environment Variables
+### Docker Commands
 
-**[Environment Variables](environment_variables.md)**
+**[Docker Commands](docker_commands.md)**
 
-Complete list of environment variables and their effects.
-
-Contents:
-
-- Variable naming conventions
-- Configuration precedence
-- Required vs optional variables
-- Default values
-- Security considerations
-- Examples by use case
-
-**Status:** Coming Soon
-
-### Command Line Interface
-
-**[CLI Reference](cli.md)** _(Coming Soon)_
-
-Complete reference for the admin CLI tool.
+Quick reference for Docker Compose, admin CLI, database, and Redpanda
+operations used with the XZepr stack.
 
 Contents:
 
-- Command syntax
-- Available commands
-- Options and flags
-- Output formats
-- Examples
-- Exit codes
+- Core stack commands
+- Admin CLI commands
+- Database operations
+- Redpanda operations
+- Health and verification commands
+- Cleanup and troubleshooting commands
 
-**Status:** Coming Soon
+**Status:** Available
 
 ## Who Should Use Reference Documentation?
 
@@ -195,7 +176,7 @@ Reference documentation aims to be:
 
 **How to accomplish a task** → See [How-to Guides](../how_to/README.md)
 
-**Understanding concepts** → See [Explanations](../explanations/README.md)
+**Understanding concepts** → See [Architecture Overview](../explanation/architecture.md)
 
 **Quick examples** → Most reference pages include examples, but how-to guides
 provide more context

@@ -31,8 +31,8 @@ docker run -d --name jaeger \
 # Check container status
 docker ps | grep jaeger
 
-# Access Jaeger UI
-open http://localhost:16686
+# Access Jaeger UI in your browser
+# http://localhost:16686
 ```
 
 ### Step 2: Enable OTLP in XZepr
@@ -48,7 +48,7 @@ export XZEPR__ENVIRONMENT=development
 ### Step 3: Start XZepr
 
 ```bash
-cargo run --bin server
+cargo run --bin xzepr
 ```
 
 **Look for these log messages:**
@@ -63,49 +63,62 @@ INFO OTLP exporter configured and active
 
 ```bash
 # Make some requests to generate traces
-curl http://localhost:8080/health
-curl http://localhost:8080/api/events
-curl -X POST http://localhost:8080/api/events \
+curl -k https://localhost:8443/health
+curl -k https://localhost:8443/api/v1/events
+curl -X POST https://localhost:8443/api/v1/events \
   -H "Content-Type: application/json" \
-  -d '{"name": "test.event", "version": "1.0.0"}'
+  -d '{
+    "name": "test.event",
+    "version": "1.0.0",
+    "release": "otlp-test",
+    "platform_id": "local-dev",
+    "package": "xzepr",
+    "description": "OTLP tracing test event",
+    "payload": {},
+    "success": true,
+    "event_receiver_id": "REPLACE_WITH_EVENT_RECEIVER_ID"
+  }' -k
 ```
 
 ### Step 5: View Traces in Jaeger
 
-1. Open Jaeger UI: http://localhost:16686
+1. Open Jaeger UI in your browser: http://localhost:16686
 2. Select service: **xzepr**
 3. Click **Find Traces**
-4. Explore your traces!
+4. Explore your traces
 
 ## Detailed Configuration
 
 ### Environment Variables
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `XZEPR__ENABLE_OTLP` | Yes | `false` | Enable OTLP exporter |
-| `XZEPR__OTLP_ENDPOINT` | Yes* | None | OTLP collector endpoint (gRPC) |
-| `XZEPR__ENVIRONMENT` | No | `development` | Environment name (affects sampling) |
-| `XZEPR__LOG_LEVEL` | No | `info` | Log level filter |
-| `XZEPR__JSON_LOGS` | No | `false` | Use JSON log format |
+| Variable               | Required | Default       | Description                         |
+| ---------------------- | -------- | ------------- | ----------------------------------- |
+| `XZEPR__ENABLE_OTLP`   | Yes      | `false`       | Enable OTLP exporter                |
+| `XZEPR__OTLP_ENDPOINT` | Yes\*    | None          | OTLP collector endpoint (gRPC)      |
+| `XZEPR__ENVIRONMENT`   | No       | `development` | Environment name (affects sampling) |
+| `XZEPR__LOG_LEVEL`     | No       | `info`        | Log level filter                    |
+| `XZEPR__JSON_LOGS`     | No       | `false`       | Use JSON log format                 |
 
-*Required when `XZEPR__ENABLE_OTLP=true`
+\*Required when `XZEPR__ENABLE_OTLP=true`
 
 ### Sampling Configuration
 
 Sampling is automatically configured based on environment:
 
 **Development:**
+
 - Sample rate: 100% (all traces collected)
 - OTLP: Disabled by default
 - Logs: Human-readable format
 
 **Staging:**
+
 - Sample rate: 50% (half of traces collected)
 - OTLP: Enabled by default
 - Logs: JSON format
 
 **Production:**
+
 - Sample rate: 10% (1 in 10 traces collected)
 - OTLP: Enabled by default
 - Logs: JSON format
@@ -124,14 +137,14 @@ Sampling is automatically configured based on environment:
 **docker-compose.yaml:**
 
 ```yaml
-version: '3.8'
+version: "3.8"
 
 services:
   jaeger:
     image: jaegertracing/all-in-one:latest
     ports:
-      - "4317:4317"    # OTLP gRPC
-      - "16686:16686"  # Jaeger UI
+      - "4317:4317" # OTLP gRPC
+      - "16686:16686" # Jaeger UI
     environment:
       - COLLECTOR_OTLP_ENABLED=true
 
@@ -152,7 +165,7 @@ services:
 **Start services:**
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 ### Kubernetes (Staging/Production)
@@ -176,23 +189,23 @@ spec:
         app: jaeger
     spec:
       containers:
-      - name: jaeger
-        image: jaegertracing/all-in-one:1.50
-        ports:
-        - containerPort: 4317
-          name: otlp-grpc
-        - containerPort: 16686
-          name: ui
-        env:
-        - name: COLLECTOR_OTLP_ENABLED
-          value: "true"
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "500m"
-          limits:
-            memory: "1Gi"
-            cpu: "1000m"
+        - name: jaeger
+          image: jaegertracing/all-in-one:1.50
+          ports:
+            - containerPort: 4317
+              name: otlp-grpc
+            - containerPort: 16686
+              name: ui
+          env:
+            - name: COLLECTOR_OTLP_ENABLED
+              value: "true"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
 ---
 apiVersion: v1
 kind: Service
@@ -203,12 +216,12 @@ spec:
   selector:
     app: jaeger
   ports:
-  - port: 4317
-    targetPort: 4317
-    name: otlp-grpc
-  - port: 16686
-    targetPort: 16686
-    name: ui
+    - port: 4317
+      targetPort: 4317
+      name: otlp-grpc
+    - port: 16686
+      targetPort: 16686
+      name: ui
 ---
 apiVersion: v1
 kind: Service
@@ -220,9 +233,9 @@ spec:
   selector:
     app: jaeger
   ports:
-  - port: 80
-    targetPort: 16686
-    name: ui
+    - port: 80
+      targetPort: 16686
+      name: ui
 ```
 
 **xzepr-deployment.yaml:**
@@ -244,28 +257,28 @@ spec:
         app: xzepr
     spec:
       containers:
-      - name: xzepr
-        image: xzepr:latest
-        ports:
-        - containerPort: 8080
-        env:
-        - name: XZEPR__ENABLE_OTLP
-          value: "true"
-        - name: XZEPR__OTLP_ENDPOINT
-          value: "http://jaeger.observability.svc.cluster.local:4317"
-        - name: XZEPR__ENVIRONMENT
-          value: "production"
-        - name: XZEPR__LOG_LEVEL
-          value: "info"
-        - name: XZEPR__JSON_LOGS
-          value: "true"
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "250m"
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
+        - name: xzepr
+          image: xzepr:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: XZEPR__ENABLE_OTLP
+              value: "true"
+            - name: XZEPR__OTLP_ENDPOINT
+              value: "http://jaeger.observability.svc.cluster.local:4317"
+            - name: XZEPR__ENVIRONMENT
+              value: "production"
+            - name: XZEPR__LOG_LEVEL
+              value: "info"
+            - name: XZEPR__JSON_LOGS
+              value: "true"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
 ```
 
 **Deploy:**
@@ -330,11 +343,12 @@ INFO OTLP exporter configured and active
 
 ```bash
 # Local
-open http://localhost:16686
+# Open http://localhost:16686 in your browser
 
 # Kubernetes (port-forward)
 kubectl port-forward -n observability svc/jaeger 16686:16686
-open http://localhost:16686
+
+# Then open http://localhost:16686 in your browser
 ```
 
 **Verify traces:**
@@ -352,7 +366,7 @@ open http://localhost:16686
 - `service.version`: (application version)
 - `deployment.environment`: production/staging/development
 - `http.method`: GET/POST/etc
-- `http.route`: /api/events
+- `http.route`: /api/v1/events
 - `http.status_code`: 200/404/etc
 
 **Check span hierarchy:**
@@ -644,6 +658,7 @@ OTLP export is already async and non-blocking.
 **Check export latency:**
 
 Look for these metrics in Jaeger:
+
 - Span export duration
 - Failed export count
 - Buffered span count

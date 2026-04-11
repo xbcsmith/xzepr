@@ -39,23 +39,23 @@ Topics covered:
 
 ### Authentication and Security
 
-**[Setting Up Authentication](authentication.md)** _(Coming Soon)_
+**[JWT Authentication Setup](jwt_authentication_setup.md)**
 
-Configure authentication providers and security settings.
+Configure JWT-based authentication for XZEPR.
 
 Topics covered:
 
-- Local username/password authentication
-- Keycloak OIDC integration
-- API key generation and management
-- Role-based access control
-- Security best practices
+- JWT configuration
+- Token generation and validation
+- Authentication middleware setup
+- Security considerations
+- Verification steps
 
 **Level:** Intermediate
 
 ### Deployment
 
-**[Deploying with Docker](deployment.md)** _(Coming Soon)_
+**[Deploying with Docker](deployment.md)**
 
 Deploy XZEPR using Docker and Docker Compose.
 
@@ -71,33 +71,33 @@ Topics covered:
 
 ### Database Management
 
-**[Database Management](database.md)** _(Coming Soon)_
+**[Setup Monitoring](setup_monitoring.md)**
 
-Manage database migrations, backups, and maintenance.
+Configure monitoring and observability for XZEPR.
 
 Topics covered:
 
-- Running migrations
-- Creating new migrations
-- Database backups
-- Performance tuning
-- Troubleshooting database issues
+- Prometheus setup
+- Grafana integration
+- Metrics verification
+- Monitoring stack configuration
+- Troubleshooting monitoring issues
 
 **Level:** Intermediate
 
 ### Development Workflow
 
-**[Development Setup](development_setup.md)** _(Coming Soon)_
+**[Use GraphQL Playground](use_graphql_playground.md)**
 
-Set up your development environment for contributing to XZEPR.
+Access and use the GraphQL Playground for interactive API exploration.
 
 Topics covered:
 
-- Installing dependencies
-- Running tests
-- Code formatting and linting
-- Hot reload development
-- Debugging techniques
+- Opening the playground
+- Running queries and mutations
+- Testing authentication
+- Exploring the schema
+- Troubleshooting common issues
 
 **Level:** Intermediate
 

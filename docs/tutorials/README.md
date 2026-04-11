@@ -63,19 +63,6 @@ Complete Docker-based demonstration of XZepr. This comprehensive tutorial covers
 
 **Time:** 60 minutes | **Level:** Beginner to Intermediate
 
-### Building Your First Event Tracker
-
-**[First Event Tracker](first_event_tracker.md)** _(Coming Soon)_
-
-Build a simple application that tracks events. You'll learn:
-
-- How to authenticate with the API
-- Creating and querying events
-- Using real-time event streaming
-- Basic error handling
-
-**Time:** 45 minutes | **Level:** Beginner
-
 ## Who Should Use Tutorials?
 
 Tutorials are perfect if you:
@@ -99,7 +86,7 @@ Before starting these tutorials, you should have:
 Once you've completed the tutorials, you can:
 
 - Explore [How-to Guides](../how_to/README.md) for specific tasks
-- Read [Explanations](../explanations/README.md) to deepen your understanding
+- Read [Explanations](../explanation/architecture.md) to deepen your understanding
 - Reference [API Documentation](../reference/README.md) for details
 
 ## Feedback

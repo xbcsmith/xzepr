@@ -91,6 +91,17 @@ docker compose up -d
 
 # Verify health
 curl -k https://localhost:8443/health
+
+# Create the default admin user with the bundled admin CLI
+docker compose run --rm -T \
+  -e XZEPR__DATABASE__URL=postgres://xzepr:password@postgres:5432/xzepr \
+  --entrypoint ./admin \
+  xzepr \
+  create-user \
+  --username admin \
+  --email admin@xzepr.local \
+  --password admin123 \
+  --role admin
 ```
 
 ### Create Your First Event

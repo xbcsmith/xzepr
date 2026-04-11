@@ -19,7 +19,7 @@ use:
 Create an event receiver with schema validation:
 
 ```bash
-curl --location --request POST 'http://localhost:8443/api/v1/receivers' \
+curl --location --request POST 'https://localhost:8443/api/v1/receivers' \
 --header 'Content-Type: application/json' \
 --data-raw '{
   "name": "foobar",
@@ -34,7 +34,7 @@ curl --location --request POST 'http://localhost:8443/api/v1/receivers' \
       }
     }
   }
-}'
+}' -k
 ```
 
 The results should look like this:
@@ -57,7 +57,7 @@ object is accepted as the payload.
 Create an event:
 
 ```bash
-curl --location --request POST 'http://localhost:8443/api/v1/events' \
+curl --location --request POST 'https://localhost:8443/api/v1/events' \
 --header 'Content-Type: application/json' \
 --data-raw '{
   "name": "magnificent",
@@ -71,7 +71,7 @@ curl --location --request POST 'http://localhost:8443/api/v1/events' \
   },
   "success": true,
   "event_receiver_id": "<PASTE EVENT RECEIVER ID FROM FIRST CURL COMMAND>"
-}'
+}' -k
 ```
 
 The results of the command should look like this:
@@ -89,7 +89,7 @@ event receiver group will produce a message on the topic.
 Create an event receiver group:
 
 ```bash
-curl --location --request POST 'http://localhost:8443/api/v1/groups' \
+curl --location --request POST 'https://localhost:8443/api/v1/groups' \
 --header 'Content-Type: application/json' \
 --data-raw '{
   "name": "the_clash",
@@ -100,7 +100,7 @@ curl --location --request POST 'http://localhost:8443/api/v1/groups' \
   "event_receiver_ids": [
     "PASTE EVENT RECEIVER ID FROM FIRST CURL COMMAND"
   ]
-}'
+}' -k
 ```
 
 Note: You can extract the event receiver id from the previous command by pipe
@@ -113,7 +113,7 @@ the output to `| jq .data`
 Create an event receiver with an empty schema for free-form payloads:
 
 ```bash
-curl --location --request POST 'http://localhost:8443/api/v1/receivers' \
+curl --location --request POST 'https://localhost:8443/api/v1/receivers' \
 --header 'Content-Type: application/json' \
 --data-raw '{
   "name": "flexible-receiver",
@@ -121,7 +121,7 @@ curl --location --request POST 'http://localhost:8443/api/v1/receivers' \
   "version": "1.0.0",
   "description": "Accepts any valid JSON payload",
   "schema": {}
-}'
+}' -k
 ```
 
 This receiver will accept events with any payload structure, making it ideal for
@@ -136,22 +136,21 @@ follows:
 
 ```bash
 curl --header 'Content-Type: application/json' --location \
-  --request GET 'http://localhost:8443/api/v1/events/01HPW0GV9PY8HT2Q0XW1QMRBY9'
+  --request GET 'https://localhost:8443/api/v1/events/01HPW0GV9PY8HT2Q0XW1QMRBY9' -k
 ```
 
 Query the information for an event receiver:
 
 ```bash
 curl --header 'Content-Type: application/json' --location \
-  --request GET 'http://localhost:8443/api/v1/receivers/01HPW0DY340VMM3DNMX8JCQDGN'
+  --request GET 'https://localhost:8443/api/v1/receivers/01HPW0DY340VMM3DNMX8JCQDGN' -k
 ```
 
 And query the information for an event receiver group:
 
 ```bash
 curl --header 'Content-Type: application/json' --location \
-  --request GET 'http://localhost:8443/api/v1/groups/01HPW0JXG82Q0FBEC9M8P2Q6J8
-'
+  --request GET 'https://localhost:8443/api/v1/groups/01HPW0JXG82Q0FBEC9M8P2Q6J8' -k
 ```
 
 ---

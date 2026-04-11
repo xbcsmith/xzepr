@@ -166,41 +166,41 @@ spec:
   template:
     spec:
       containers:
-      - name: xzepr
-        env:
-        - name: KAFKA_SECURITY_PROTOCOL
-          valueFrom:
-            secretKeyRef:
-              name: kafka-credentials
-              key: KAFKA_SECURITY_PROTOCOL
-        - name: KAFKA_SASL_MECHANISM
-          valueFrom:
-            secretKeyRef:
-              name: kafka-credentials
-              key: KAFKA_SASL_MECHANISM
-        - name: KAFKA_SASL_USERNAME
-          valueFrom:
-            secretKeyRef:
-              name: kafka-credentials
-              key: KAFKA_SASL_USERNAME
-        - name: KAFKA_SASL_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: kafka-credentials
-              key: KAFKA_SASL_PASSWORD
-        - name: KAFKA_SSL_CA_LOCATION
-          valueFrom:
-            secretKeyRef:
-              name: kafka-credentials
-              key: KAFKA_SSL_CA_LOCATION
-        volumeMounts:
-        - name: kafka-certs
-          mountPath: /etc/kafka/certs
-          readOnly: true
+        - name: xzepr
+          env:
+            - name: KAFKA_SECURITY_PROTOCOL
+              valueFrom:
+                secretKeyRef:
+                  name: kafka-credentials
+                  key: KAFKA_SECURITY_PROTOCOL
+            - name: KAFKA_SASL_MECHANISM
+              valueFrom:
+                secretKeyRef:
+                  name: kafka-credentials
+                  key: KAFKA_SASL_MECHANISM
+            - name: KAFKA_SASL_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: kafka-credentials
+                  key: KAFKA_SASL_USERNAME
+            - name: KAFKA_SASL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: kafka-credentials
+                  key: KAFKA_SASL_PASSWORD
+            - name: KAFKA_SSL_CA_LOCATION
+              valueFrom:
+                secretKeyRef:
+                  name: kafka-credentials
+                  key: KAFKA_SSL_CA_LOCATION
+          volumeMounts:
+            - name: kafka-certs
+              mountPath: /etc/kafka/certs
+              readOnly: true
       volumes:
-      - name: kafka-certs
-        secret:
-          secretName: kafka-ca-cert
+        - name: kafka-certs
+          secret:
+            secretName: kafka-ca-cert
 ```
 
 **Docker Compose**:
@@ -335,11 +335,18 @@ kubectl logs -l app=xzepr | grep -i "kafka.*authentication.*fail"
 
 ```bash
 # Send test event
-curl -X POST http://xzepr:8080/api/events \
+curl -X POST http://xzepr:8080/api/v1/events \
   -H "Content-Type: application/json" \
   -d '{
-    "event_type": "test.migration",
-    "payload": {"status": "testing"}
+    "name": "test.migration",
+    "version": "1.0.0",
+    "release": "migration-test",
+    "platform_id": "kubernetes",
+    "package": "xzepr",
+    "description": "Kafka authentication migration test event",
+    "payload": {"status": "testing"},
+    "success": true,
+    "event_receiver_id": "REPLACE_WITH_EVENT_RECEIVER_ID"
   }'
 
 # Verify event in Kafka
@@ -457,6 +464,7 @@ kafka-configs --bootstrap-server kafka:9092 \
 **Symptoms**: Logs show "Authentication failed" errors
 
 **Causes**:
+
 - Incorrect username or password
 - SASL mechanism mismatch
 - User not created in Kafka
@@ -484,6 +492,7 @@ kafka-configs --bootstrap-server kafka:9092 \
 **Symptoms**: Logs show "SSL certificate validation failed"
 
 **Causes**:
+
 - CA certificate not found
 - CA certificate expired
 - CA certificate incorrect
@@ -510,6 +519,7 @@ openssl verify -CAfile /etc/kafka/certs/ca-cert.pem /etc/kafka/certs/server-cert
 **Symptoms**: Logs show "Not authorized to access topics"
 
 **Causes**:
+
 - ACLs not configured
 - ACLs configured for wrong principal
 - Insufficient permissions
@@ -536,6 +546,7 @@ kafka-acls --bootstrap-server kafka:9092 \
 **Symptoms**: Logs show "Connection timeout" or "Unable to connect"
 
 **Causes**:
+
 - Network connectivity issues
 - Firewall blocking port
 - Wrong broker address
@@ -562,6 +573,7 @@ iptables -L -n | grep 9093
 **Symptoms**: XZepr uses unauthenticated connection despite configuration
 
 **Causes**:
+
 - Environment variables not injected
 - Secret not mounted
 - Wrong secret name
@@ -672,24 +684,28 @@ After migration is complete, verify:
 After successful migration:
 
 1. **Documentation**
+
    - Update runbooks with new authentication procedures
    - Document credential rotation schedule
    - Update disaster recovery procedures
    - Update troubleshooting guides
 
 2. **Monitoring**
+
    - Create authentication metrics dashboard
    - Set up alerting for authentication failures
    - Configure certificate expiration alerts
    - Monitor ACL violations
 
 3. **Security**
+
    - Schedule first credential rotation
    - Review and tighten ACLs
    - Conduct security audit
    - Update security documentation
 
 4. **Training**
+
    - Train operators on new procedures
    - Document common issues and resolutions
    - Create incident response procedures

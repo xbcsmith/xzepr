@@ -17,7 +17,7 @@ This guide shows you how to verify that XZepr is correctly publishing events to 
 Open a terminal and start consuming from the XZepr events topic:
 
 ```bash
-rpk topic consume xzepr.dev.events --brokers localhost:9092
+docker exec redpanda-0 rpk topic consume xzepr.dev.events
 ```
 
 Leave this running to see events as they arrive.
@@ -27,7 +27,7 @@ Leave this running to see events as they arrive.
 In another terminal, create an event receiver:
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/event-receivers \
+curl -X POST https://localhost:8443/api/v1/receivers \
   -H "Content-Type: application/json" \
   -d '{
     "name": "test-receiver",
@@ -40,7 +40,7 @@ curl -X POST http://localhost:8080/api/v1/event-receivers \
         "message": {"type": "string"}
       }
     }
-  }'
+  }' -k
 ```
 
 **Expected Result**: You should see a system event in the consumer terminal with type `xzepr.event.receiver.created`.
@@ -87,7 +87,7 @@ curl -X POST http://localhost:8080/api/v1/event-receivers \
 Using the receiver ID from step 2 (extract from response), post an event:
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/events \
+curl -X POST https://localhost:8443/api/v1/events \
   -H "Content-Type: application/json" \
   -d '{
     "name": "test.event",
@@ -101,7 +101,7 @@ curl -X POST http://localhost:8080/api/v1/events \
     },
     "success": true,
     "event_receiver_id": "01HJ1K2M3N4P5Q6R7S8T9V0W1X"
-  }'
+  }' -k
 ```
 
 **Expected Result**: You should see the event in the consumer terminal.
@@ -143,7 +143,7 @@ curl -X POST http://localhost:8080/api/v1/events \
 Create a group with the receiver:
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/event-receiver-groups \
+curl -X POST https://localhost:8443/api/v1/groups \
   -H "Content-Type: application/json" \
   -d '{
     "name": "test-group",
@@ -152,7 +152,7 @@ curl -X POST http://localhost:8080/api/v1/event-receiver-groups \
     "description": "Test group for verification",
     "enabled": true,
     "event_receiver_ids": ["01HJ1K2M3N4P5Q6R7S8T9V0W1X"]
-  }'
+  }' -k
 ```
 
 **Expected Result**: You should see a system event with type `xzepr.event.receiver.group.created`.
@@ -164,7 +164,7 @@ XZepr logs provide visibility into event publication:
 ### Successful Publication
 
 ```bash
-docker logs xzepr-app 2>&1 | grep "published"
+docker compose logs xzepr 2>&1 | grep "published"
 ```
 
 **Expected Output**:
@@ -180,7 +180,7 @@ INFO Group creation event published to Kafka successfully group_id=01HJ1K2M3N4P5
 If Kafka is unavailable:
 
 ```bash
-docker logs xzepr-app 2>&1 | grep -i kafka
+docker compose logs xzepr 2>&1 | grep -i kafka
 ```
 
 **Expected Output** (when Kafka down):
@@ -207,7 +207,7 @@ ERROR Failed to publish event to Kafka (event was saved to database) event_id=..
 1. Check Redpanda is running:
 
    ```bash
-   docker ps | grep redpanda
+   docker compose ps redpanda-0
    ```
 
 2. Check topic exists:
@@ -219,12 +219,12 @@ ERROR Failed to publish event to Kafka (event was saved to database) event_id=..
 3. Check XZepr logs for errors:
 
    ```bash
-   docker logs xzepr-app 2>&1 | grep -i "kafka\|publisher"
+   docker compose logs xzepr 2>&1 | grep -i "kafka\|publisher"
    ```
 
 4. Verify network connectivity:
    ```bash
-   docker exec xzepr-app nc -zv redpanda 9092
+   docker compose exec xzepr nc -zv redpanda-0 9092
    ```
 
 ### Events in Database but Not Kafka
@@ -236,20 +236,20 @@ ERROR Failed to publish event to Kafka (event was saved to database) event_id=..
 1. XZepr logs show publisher initialization:
 
    ```bash
-   docker logs xzepr-app 2>&1 | grep "Kafka event publisher initialized"
+   docker compose logs xzepr 2>&1 | grep "Kafka event publisher initialized"
    ```
 
 2. If not initialized, check Kafka broker configuration in `config/default.yaml`:
 
    ```yaml
    kafka:
-     brokers: "redpanda:9092" # Use correct hostname
+     brokers: "redpanda-0:9092" # Use correct hostname
      default_topic: "xzepr.dev.events"
    ```
 
 3. Restart XZepr after configuration changes:
    ```bash
-   docker-compose restart xzepr-app
+   docker compose restart xzepr
    ```
 
 ### Wrong Topic
@@ -279,7 +279,7 @@ kafka:
 Count total messages in topic:
 
 ```bash
-rpk topic describe xzepr.dev.events --brokers localhost:9092
+docker exec redpanda-0 rpk topic describe xzepr.dev.events
 ```
 
 ### Consume Specific Offset Range
@@ -287,7 +287,7 @@ rpk topic describe xzepr.dev.events --brokers localhost:9092
 View messages from specific offset:
 
 ```bash
-rpk topic consume xzepr.dev.events --offset start --brokers localhost:9092
+docker exec redpanda-0 rpk topic consume xzepr.dev.events --offset start
 ```
 
 ### Filter by Event Type
@@ -295,7 +295,7 @@ rpk topic consume xzepr.dev.events --offset start --brokers localhost:9092
 Use `jq` to filter system events (CloudEvents format):
 
 ```bash
-rpk topic consume xzepr.dev.events --brokers localhost:9092 --format json | \
+docker exec redpanda-0 rpk topic consume xzepr.dev.events --format json | \
   jq 'select(.value.type | startswith("xzepr.event.receiver"))'
 ```
 
@@ -304,7 +304,7 @@ rpk topic consume xzepr.dev.events --brokers localhost:9092 --format json | \
 Verify events are in correct order by timestamp:
 
 ```bash
-rpk topic consume xzepr.dev.events --brokers localhost:9092 --format json | \
+docker exec redpanda-0 rpk topic consume xzepr.dev.events --format json | \
   jq '.value.data.created_at' | sort
 ```
 

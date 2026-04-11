@@ -103,7 +103,7 @@ build failures.
 ```text
 ✅ CORRECT:
    docs/explanation/distributed_tracing_architecture.md
-   docs/how_to/setup_monitoring.md
+   docs/how-to/setup_monitoring.md
    docs/reference/api_specification.md
    README.md (ONLY exception)
 
@@ -111,7 +111,7 @@ build failures.
    docs/explanation/Distributed-Tracing-Architecture.md
    docs/explanation/DistributedTracingArchitecture.md
    docs/explanation/ARCHITECTURE.md
-   docs/how_to/setup-monitoring.md
+   docs/how-to/setup-monitoring.md
    docs/how_to/Setup Monitoring.md
 ```
 
@@ -730,7 +730,7 @@ feat(auth): add JWT token refresh feature that allows users to... (CPIPE-1234)  
 
 **Example**: `docs/tutorials/getting_started.md`
 
-### Category 2: How-To Guides (`docs/how_to/`)
+### Category 2: How-To Guides (`docs/how-to/`)
 
 **Purpose**: Task-oriented, problem-solving recipes
 
@@ -740,7 +740,7 @@ feat(auth): add JWT token refresh feature that allows users to... (CPIPE-1234)  
 - Configuration guides
 - Troubleshooting procedures
 
-**Example**: `docs/how_to/setup_monitoring.md`
+**Example**: `docs/how-to/setup_monitoring.md`
 
 ### Category 3: Explanations (`docs/explanation/`) ← DEFAULT FOR YOUR SUMMARIES
 
@@ -774,7 +774,7 @@ Is it a step-by-step tutorial?
 ├─ YES → docs/tutorials/
 └─ NO
    ├─ Is it solving a specific task?
-   │  ├─ YES → docs/how_to/
+   │  ├─ YES → docs/how-to/
    │  └─ NO
    │     ├─ Is it explaining concepts/architecture?
    │     │  ├─ YES → docs/explanation/  ← MOST COMMON FOR AI AGENTS
