@@ -122,7 +122,7 @@ use xzepr::domain::repositories::{
     event_receiver_repo::{EventReceiverRepository, FindEventReceiverCriteria},
     event_repo::{EventRepository, FindEventCriteria},
 };
-use xzepr::domain::value_objects::{EventId, EventReceiverGroupId, EventReceiverId};
+use xzepr::domain::value_objects::{EventId, EventReceiverGroupId, EventReceiverId, UserId};
 use xzepr::error::Result;
 
 /// Mock event repository that stores events in memory
@@ -278,6 +278,44 @@ impl EventRepository for MockEventRepository {
         let events = self.events.lock().unwrap();
         Ok(events.values().cloned().collect())
     }
+
+    async fn find_by_owner(&self, owner_id: UserId) -> Result<Vec<Event>> {
+        let events = self.events.lock().unwrap();
+        Ok(events
+            .values()
+            .filter(|e| e.owner_id() == owner_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn find_by_owner_paginated(
+        &self,
+        owner_id: UserId,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<Event>> {
+        let events = self.events.lock().unwrap();
+        Ok(events
+            .values()
+            .filter(|e| e.owner_id() == owner_id)
+            .skip(offset)
+            .take(limit)
+            .cloned()
+            .collect())
+    }
+
+    async fn is_owner(&self, event_id: EventId, user_id: UserId) -> Result<bool> {
+        let events = self.events.lock().unwrap();
+        Ok(events
+            .get(&event_id)
+            .map(|e| e.owner_id() == user_id)
+            .unwrap_or(false))
+    }
+
+    async fn get_resource_version(&self, event_id: EventId) -> Result<Option<i64>> {
+        let events = self.events.lock().unwrap();
+        Ok(events.get(&event_id).map(|e| e.resource_version()))
+    }
 }
 
 /// Mock event receiver repository that stores receivers in memory
@@ -413,6 +451,44 @@ impl EventReceiverRepository for MockEventReceiverRepository {
         // Simplified implementation
         let receivers = self.receivers.lock().unwrap();
         Ok(receivers.values().cloned().collect())
+    }
+
+    async fn find_by_owner(&self, owner_id: UserId) -> Result<Vec<EventReceiver>> {
+        let receivers = self.receivers.lock().unwrap();
+        Ok(receivers
+            .values()
+            .filter(|r| r.owner_id() == owner_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn find_by_owner_paginated(
+        &self,
+        owner_id: UserId,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<EventReceiver>> {
+        let receivers = self.receivers.lock().unwrap();
+        Ok(receivers
+            .values()
+            .filter(|r| r.owner_id() == owner_id)
+            .skip(offset)
+            .take(limit)
+            .cloned()
+            .collect())
+    }
+
+    async fn is_owner(&self, receiver_id: EventReceiverId, user_id: UserId) -> Result<bool> {
+        let receivers = self.receivers.lock().unwrap();
+        Ok(receivers
+            .get(&receiver_id)
+            .map(|r| r.owner_id() == user_id)
+            .unwrap_or(false))
+    }
+
+    async fn get_resource_version(&self, receiver_id: EventReceiverId) -> Result<Option<i64>> {
+        let receivers = self.receivers.lock().unwrap();
+        Ok(receivers.get(&receiver_id).map(|r| r.resource_version()))
     }
 }
 
@@ -560,6 +636,69 @@ impl EventReceiverGroupRepository for MockEventReceiverGroupRepository {
         _receiver_id: EventReceiverId,
     ) -> Result<()> {
         Ok(())
+    }
+
+    async fn find_by_owner(&self, owner_id: UserId) -> Result<Vec<EventReceiverGroup>> {
+        let groups = self.groups.lock().unwrap();
+        Ok(groups
+            .values()
+            .filter(|g| g.owner_id() == owner_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn find_by_owner_paginated(
+        &self,
+        owner_id: UserId,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<EventReceiverGroup>> {
+        let groups = self.groups.lock().unwrap();
+        Ok(groups
+            .values()
+            .filter(|g| g.owner_id() == owner_id)
+            .skip(offset)
+            .take(limit)
+            .cloned()
+            .collect())
+    }
+
+    async fn is_owner(&self, group_id: EventReceiverGroupId, user_id: UserId) -> Result<bool> {
+        let groups = self.groups.lock().unwrap();
+        Ok(groups
+            .get(&group_id)
+            .map(|g| g.owner_id() == user_id)
+            .unwrap_or(false))
+    }
+
+    async fn get_resource_version(&self, group_id: EventReceiverGroupId) -> Result<Option<i64>> {
+        let groups = self.groups.lock().unwrap();
+        Ok(groups.get(&group_id).map(|g| g.resource_version()))
+    }
+
+    async fn is_member(&self, _group_id: EventReceiverGroupId, _user_id: UserId) -> Result<bool> {
+        Ok(false)
+    }
+
+    async fn get_group_members(&self, _group_id: EventReceiverGroupId) -> Result<Vec<UserId>> {
+        Ok(vec![])
+    }
+
+    async fn add_member(
+        &self,
+        _group_id: EventReceiverGroupId,
+        _user_id: UserId,
+        _added_by: UserId,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    async fn remove_member(&self, _group_id: EventReceiverGroupId, _user_id: UserId) -> Result<()> {
+        Ok(())
+    }
+
+    async fn find_groups_for_user(&self, _user_id: UserId) -> Result<Vec<EventReceiverGroup>> {
+        Ok(vec![])
     }
 
     async fn get_group_event_receivers(

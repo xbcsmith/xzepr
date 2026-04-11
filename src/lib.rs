@@ -9,6 +9,7 @@ pub mod auth;
 pub mod domain;
 pub mod error;
 pub mod infrastructure;
+pub mod opa;
 
 // Re-exports for convenience
 pub use auth::api_key::ApiKeyService;

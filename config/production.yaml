@@ -49,6 +49,14 @@ tls:
 
 kafka:
   brokers: "redpanda-0:9092"
+
+opa:
+  enabled: true
+  url: "http://opa:8181"
+  timeout_seconds: 5
+  policy_path: "/v1/data/xzepr/rbac/allow"
+  bundle_url: "http://bundle-server:8080/bundles/xzepr-rbac.tar.gz"
+  cache_ttl_seconds: 300
   topic: "xzepr-events"
   producer_timeout_ms: 5000
 

@@ -456,6 +456,34 @@ mod tests {
         ) -> Result<Vec<Event>> {
             Ok(vec![])
         }
+
+        async fn find_by_owner(
+            &self,
+            _owner_id: crate::domain::value_objects::UserId,
+        ) -> Result<Vec<Event>> {
+            Ok(vec![])
+        }
+
+        async fn find_by_owner_paginated(
+            &self,
+            _owner_id: crate::domain::value_objects::UserId,
+            _limit: usize,
+            _offset: usize,
+        ) -> Result<Vec<Event>> {
+            Ok(vec![])
+        }
+
+        async fn is_owner(
+            &self,
+            _event_id: EventId,
+            _user_id: crate::domain::value_objects::UserId,
+        ) -> Result<bool> {
+            Ok(false)
+        }
+
+        async fn get_resource_version(&self, _event_id: EventId) -> Result<Option<i64>> {
+            Ok(Some(1))
+        }
     }
 
     struct MockEventReceiverRepository {
@@ -532,6 +560,34 @@ mod tests {
         ) -> Result<Vec<EventReceiver>> {
             Ok(vec![])
         }
+
+        async fn find_by_owner(
+            &self,
+            _owner_id: crate::domain::value_objects::UserId,
+        ) -> Result<Vec<EventReceiver>> {
+            Ok(vec![])
+        }
+
+        async fn find_by_owner_paginated(
+            &self,
+            _owner_id: crate::domain::value_objects::UserId,
+            _limit: usize,
+            _offset: usize,
+        ) -> Result<Vec<EventReceiver>> {
+            Ok(vec![])
+        }
+
+        async fn is_owner(
+            &self,
+            _receiver_id: EventReceiverId,
+            _user_id: crate::domain::value_objects::UserId,
+        ) -> Result<bool> {
+            Ok(false)
+        }
+
+        async fn get_resource_version(&self, _receiver_id: EventReceiverId) -> Result<Option<i64>> {
+            Ok(Some(1))
+        }
     }
 
     fn create_test_receiver() -> EventReceiver {
@@ -548,6 +604,7 @@ mod tests {
             "1.0.0".to_string(),
             "A test receiver".to_string(),
             schema,
+            crate::domain::value_objects::UserId::new(),
         )
         .unwrap()
     }
@@ -575,6 +632,7 @@ mod tests {
                 payload,
                 success: true,
                 receiver_id,
+                owner_id: crate::domain::value_objects::UserId::new(),
             })
             .await;
 
@@ -601,6 +659,7 @@ mod tests {
                 description: "Test event".to_string(),
                 payload,
                 success: true,
+                owner_id: crate::domain::value_objects::UserId::new(),
                 receiver_id: EventReceiverId::new(),
             })
             .await;

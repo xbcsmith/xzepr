@@ -11,7 +11,7 @@
 //! Run with: cargo run --example cloudevents_format
 
 use xzepr::domain::entities::event::{CreateEventParams, Event};
-use xzepr::domain::value_objects::EventReceiverId;
+use xzepr::domain::value_objects::{EventReceiverId, UserId};
 use xzepr::infrastructure::messaging::cloudevents::CloudEventMessage;
 
 fn main() {
@@ -22,6 +22,7 @@ fn main() {
     println!("{}\n", "-".repeat(80));
 
     let receiver_id = EventReceiverId::new();
+    let owner_id = UserId::new();
     let user_event = Event::new(CreateEventParams {
         name: "deployment.success".to_string(),
         version: "2.1.0".to_string(),
@@ -29,6 +30,7 @@ fn main() {
         platform_id: "kubernetes".to_string(),
         package: "myapp".to_string(),
         description: "Application deployed successfully to production".to_string(),
+        owner_id,
         payload: serde_json::json!({
             "cluster": "prod-us-west",
             "namespace": "production",
@@ -46,7 +48,7 @@ fn main() {
     println!("{}\n", json);
 
     // Example 2: System event for receiver creation
-    println!("2. System Event (Receiver Created):");
+    println!("2. System Event (from internal service):");
     println!("{}\n", "-".repeat(80));
 
     let system_receiver_id = EventReceiverId::new();
@@ -57,6 +59,7 @@ fn main() {
         platform_id: "xzepr".to_string(),
         package: "xzepr.system".to_string(),
         description: "Event receiver 'production-webhook' created".to_string(),
+        owner_id,
         payload: serde_json::json!({
             "receiver_id": system_receiver_id.to_string(),
             "name": "production-webhook",
@@ -83,10 +86,11 @@ fn main() {
     let failed_event = Event::new(CreateEventParams {
         name: "deployment.failed".to_string(),
         version: "2.1.0".to_string(),
-        release: "2.1.0-rc.2".to_string(),
+        release: "2.1.0-rc.1".to_string(),
         platform_id: "kubernetes".to_string(),
         package: "myapp".to_string(),
         description: "Application deployment failed".to_string(),
+        owner_id,
         payload: serde_json::json!({
             "cluster": "prod-us-west",
             "namespace": "production",

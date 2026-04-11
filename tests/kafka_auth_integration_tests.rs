@@ -549,7 +549,7 @@ async fn test_end_to_end_event_publishing_with_auth() {
     // - rdkafka compiled with libsasl2 support
 
     use xzepr::domain::entities::event::{CreateEventParams, Event};
-    use xzepr::domain::value_objects::EventReceiverId;
+    use xzepr::domain::value_objects::{EventReceiverId, UserId};
 
     let auth_config = create_scram_sha256_config();
     let publisher =
@@ -558,6 +558,7 @@ async fn test_end_to_end_event_publishing_with_auth() {
 
     // Create a test event
     let receiver_id = EventReceiverId::new();
+    let owner_id = UserId::new();
     let event = Event::new(CreateEventParams {
         name: "test.auth.event".to_string(),
         version: "1.0.0".to_string(),
@@ -565,6 +566,7 @@ async fn test_end_to_end_event_publishing_with_auth() {
         platform_id: "test".to_string(),
         package: "test-pkg".to_string(),
         description: "Test event with auth".to_string(),
+        owner_id,
         payload: serde_json::json!({"test": "data"}),
         success: true,
         receiver_id,

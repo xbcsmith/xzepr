@@ -36,6 +36,9 @@ practice.
 - [Deploying with Docker](how_to/deployment.md) - Deploy XZEPR in containers
 - [Setup Monitoring](how_to/setup_monitoring.md) - Configure observability and
   monitoring
+- [Database Management](how_to/database.md) - Manage migrations and backups
+- [OPA Bundle Server Setup](how-to/opa_bundle_server_setup.md) - Deploy and configure OPA bundle server
+- [OPA Policy Development](how-to/opa_policy_development.md) - Develop and test OPA authorization policies
 
 Use these guides when you need to accomplish a specific task or solve a
 particular problem.
@@ -52,6 +55,13 @@ particular problem.
   Understanding monitoring and tracing design
 - [CloudEvents Compatibility](explanation/cloudevents_compatibility.md) - Event
   format compatibility and design decisions
+- [Authentication and Authorization](explanations/auth_concepts.md) - How RBAC
+  and multi-provider auth works
+- [Event Streaming Model](explanations/event_streaming.md) - Understanding
+  real-time event processing
+- [Design Decisions](explanations/design_decisions.md) - Why things are built
+  the way they are
+- [OPA Authorization Architecture](explanation/opa_authorization_architecture.md) - OPA-based authorization system design
 
 Read these to understand the concepts and reasoning behind XZEPR's design.
 
@@ -67,6 +77,11 @@ Read these to understand the concepts and reasoning behind XZEPR's design.
 - [Docker Commands](reference/docker_commands.md) - Common container and admin
   CLI commands
 - [GraphQL API](reference/graphql_api.md) - GraphQL schema and query reference
+- [Makefile Commands](reference/makefile.md) - All available Make targets
+- [Environment Variables](reference/environment_variables.md) - Configuration
+  via environment
+- [Group Membership API](reference/group_membership_api.md) - Group membership endpoints reference
+- [OpenAPI Authorization Extension](reference/openapi_authorization_extension.yaml) - OpenAPI 3.0 specification
 
 Consult these when you need to look up specific information or details.
 
@@ -89,6 +104,12 @@ Consult these when you need to look up specific information or details.
 
 **Look up a configuration option** → Browse
 [Configuration Reference](reference/configuration.md)
+
+**Set up OPA authorization** → Follow [OPA Bundle Server Setup](how-to/opa_bundle_server_setup.md)
+
+**Develop authorization policies** → Read [OPA Policy Development](how-to/opa_policy_development.md)
+
+**Understand authorization architecture** → See [OPA Authorization Architecture](explanation/opa_authorization_architecture.md)
 
 ## Getting Help
 

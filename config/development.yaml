@@ -11,7 +11,7 @@ database:
 
 auth:
   jwt_secret: "dev-secret-not-for-production-use"
-  jwt_expiration_hours: 168  # 7 days for convenience
+  jwt_expiration_hours: 168 # 7 days for convenience
   enable_local_auth: true
   enable_oidc: true
   keycloak:
@@ -26,3 +26,10 @@ tls:
 
 kafka:
   brokers: "localhost:19092"
+
+opa:
+  enabled: true
+  url: "http://localhost:8181"
+  timeout_seconds: 5
+  policy_path: "/v1/data/xzepr/rbac/allow"
+  cache_ttl_seconds: 300

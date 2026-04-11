@@ -9,7 +9,7 @@ use crate::domain::repositories::event_receiver_group_repo::{
     EventReceiverGroupRepository, FindEventReceiverGroupCriteria,
 };
 use crate::domain::repositories::event_receiver_repo::EventReceiverRepository;
-use crate::domain::value_objects::{EventReceiverGroupId, EventReceiverId};
+use crate::domain::value_objects::{EventReceiverGroupId, EventReceiverId, UserId};
 use crate::error::{DomainError, Result};
 use crate::infrastructure::messaging::cloudevents::CloudEventMessage;
 use crate::infrastructure::messaging::producer::KafkaEventPublisher;
@@ -63,6 +63,7 @@ impl EventReceiverGroupHandler {
     }
 
     /// Creates a new event receiver group
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_event_receiver_group(
         &self,
         name: String,
@@ -71,6 +72,7 @@ impl EventReceiverGroupHandler {
         description: String,
         enabled: bool,
         event_receiver_ids: Vec<EventReceiverId>,
+        owner_id: crate::domain::value_objects::UserId,
     ) -> Result<EventReceiverGroupId> {
         info!(
             name = %name,
@@ -119,6 +121,7 @@ impl EventReceiverGroupHandler {
             description,
             enabled,
             event_receiver_ids,
+            owner_id,
         )?;
 
         let group_id = event_receiver_group.id();
@@ -201,6 +204,7 @@ impl EventReceiverGroupHandler {
             payload,
             success: true,
             receiver_id,
+            owner_id: group.owner_id(),
         })
         .expect("Failed to create system event for group creation")
     }
@@ -585,6 +589,190 @@ impl EventReceiverGroupHandler {
         let group = self.get_event_receiver_group_or_error(group_id).await?;
         Ok(group.event_receiver_ids().to_vec())
     }
+
+    /// Finds a group by its ID
+    ///
+    /// # Arguments
+    ///
+    /// * `group_id` - The ID of the group to find
+    ///
+    /// # Returns
+    ///
+    /// Returns the group if found, or None if not found
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use xzepr::application::handlers::EventReceiverGroupHandler;
+    /// use xzepr::domain::value_objects::EventReceiverGroupId;
+    ///
+    /// # async fn example(handler: EventReceiverGroupHandler) -> xzepr::error::Result<()> {
+    /// let group_id = EventReceiverGroupId::new();
+    /// let group = handler.find_group_by_id(group_id).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn find_group_by_id(
+        &self,
+        group_id: EventReceiverGroupId,
+    ) -> Result<Option<EventReceiverGroup>> {
+        self.group_repository.find_by_id(group_id).await
+    }
+
+    /// Adds a member to an event receiver group
+    ///
+    /// # Arguments
+    ///
+    /// * `group_id` - The ID of the group
+    /// * `user_id` - The ID of the user to add as a member
+    /// * `added_by` - The ID of the user adding the member (typically the group owner)
+    ///
+    /// # Returns
+    ///
+    /// Returns Ok(()) on success
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - The group does not exist
+    /// - The user is already a member
+    /// - Database operation fails
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use xzepr::application::handlers::EventReceiverGroupHandler;
+    /// use xzepr::domain::value_objects::{EventReceiverGroupId, UserId};
+    ///
+    /// # async fn example(handler: EventReceiverGroupHandler) -> xzepr::error::Result<()> {
+    /// let group_id = EventReceiverGroupId::new();
+    /// let user_id = UserId::new();
+    /// let owner_id = UserId::new();
+    /// handler.add_group_member(group_id, user_id, owner_id).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn add_group_member(
+        &self,
+        group_id: EventReceiverGroupId,
+        user_id: UserId,
+        added_by: UserId,
+    ) -> Result<()> {
+        self.group_repository
+            .add_member(group_id, user_id, added_by)
+            .await
+    }
+
+    /// Removes a member from an event receiver group
+    ///
+    /// # Arguments
+    ///
+    /// * `group_id` - The ID of the group
+    /// * `user_id` - The ID of the user to remove from the group
+    ///
+    /// # Returns
+    ///
+    /// Returns Ok(()) on success
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - The group does not exist
+    /// - The user is not a member
+    /// - Database operation fails
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use xzepr::application::handlers::EventReceiverGroupHandler;
+    /// use xzepr::domain::value_objects::{EventReceiverGroupId, UserId};
+    ///
+    /// # async fn example(handler: EventReceiverGroupHandler) -> xzepr::error::Result<()> {
+    /// let group_id = EventReceiverGroupId::new();
+    /// let user_id = UserId::new();
+    /// handler.remove_group_member(group_id, user_id).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn remove_group_member(
+        &self,
+        group_id: EventReceiverGroupId,
+        user_id: UserId,
+    ) -> Result<()> {
+        self.group_repository.remove_member(group_id, user_id).await
+    }
+
+    /// Gets all members of an event receiver group
+    ///
+    /// # Arguments
+    ///
+    /// * `group_id` - The ID of the group
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of user IDs who are members of the group
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - The group does not exist
+    /// - Database operation fails
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use xzepr::application::handlers::EventReceiverGroupHandler;
+    /// use xzepr::domain::value_objects::EventReceiverGroupId;
+    ///
+    /// # async fn example(handler: EventReceiverGroupHandler) -> xzepr::error::Result<()> {
+    /// let group_id = EventReceiverGroupId::new();
+    /// let members = handler.get_group_members(group_id).await?;
+    /// println!("Group has {} members", members.len());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn get_group_members(&self, group_id: EventReceiverGroupId) -> Result<Vec<UserId>> {
+        self.group_repository.get_group_members(group_id).await
+    }
+
+    /// Checks if a user is a member of an event receiver group
+    ///
+    /// # Arguments
+    ///
+    /// * `group_id` - The ID of the group
+    /// * `user_id` - The ID of the user to check
+    ///
+    /// # Returns
+    ///
+    /// Returns true if the user is a member, false otherwise
+    ///
+    /// # Errors
+    ///
+    /// Returns error if database operation fails
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use xzepr::application::handlers::EventReceiverGroupHandler;
+    /// use xzepr::domain::value_objects::{EventReceiverGroupId, UserId};
+    ///
+    /// # async fn example(handler: EventReceiverGroupHandler) -> xzepr::error::Result<()> {
+    /// let group_id = EventReceiverGroupId::new();
+    /// let user_id = UserId::new();
+    /// let is_member = handler.is_group_member(group_id, user_id).await?;
+    /// if is_member {
+    ///     println!("User is a member of the group");
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn is_group_member(
+        &self,
+        group_id: EventReceiverGroupId,
+        user_id: UserId,
+    ) -> Result<bool> {
+        self.group_repository.is_member(group_id, user_id).await
+    }
 }
 
 #[cfg(test)]
@@ -663,6 +851,34 @@ mod tests {
             _criteria: crate::domain::repositories::event_receiver_repo::FindEventReceiverCriteria,
         ) -> Result<Vec<EventReceiver>> {
             Ok(vec![])
+        }
+
+        async fn find_by_owner(
+            &self,
+            _owner_id: crate::domain::value_objects::UserId,
+        ) -> Result<Vec<EventReceiver>> {
+            Ok(vec![])
+        }
+
+        async fn find_by_owner_paginated(
+            &self,
+            _owner_id: crate::domain::value_objects::UserId,
+            _limit: usize,
+            _offset: usize,
+        ) -> Result<Vec<EventReceiver>> {
+            Ok(vec![])
+        }
+
+        async fn is_owner(
+            &self,
+            _receiver_id: EventReceiverId,
+            _user_id: crate::domain::value_objects::UserId,
+        ) -> Result<bool> {
+            Ok(false)
+        }
+
+        async fn get_resource_version(&self, _receiver_id: EventReceiverId) -> Result<Option<i64>> {
+            Ok(Some(1))
         }
     }
 
@@ -782,6 +998,76 @@ mod tests {
         ) -> Result<Vec<EventReceiverId>> {
             Ok(vec![])
         }
+
+        async fn find_by_owner(
+            &self,
+            _owner_id: crate::domain::value_objects::UserId,
+        ) -> Result<Vec<EventReceiverGroup>> {
+            Ok(vec![])
+        }
+
+        async fn find_by_owner_paginated(
+            &self,
+            _owner_id: crate::domain::value_objects::UserId,
+            _limit: usize,
+            _offset: usize,
+        ) -> Result<Vec<EventReceiverGroup>> {
+            Ok(vec![])
+        }
+
+        async fn is_owner(
+            &self,
+            _group_id: EventReceiverGroupId,
+            _user_id: crate::domain::value_objects::UserId,
+        ) -> Result<bool> {
+            Ok(false)
+        }
+
+        async fn get_resource_version(
+            &self,
+            _group_id: EventReceiverGroupId,
+        ) -> Result<Option<i64>> {
+            Ok(Some(1))
+        }
+
+        async fn is_member(
+            &self,
+            _group_id: EventReceiverGroupId,
+            _user_id: crate::domain::value_objects::UserId,
+        ) -> Result<bool> {
+            Ok(false)
+        }
+
+        async fn get_group_members(
+            &self,
+            _group_id: EventReceiverGroupId,
+        ) -> Result<Vec<crate::domain::value_objects::UserId>> {
+            Ok(vec![])
+        }
+
+        async fn add_member(
+            &self,
+            _group_id: EventReceiverGroupId,
+            _user_id: crate::domain::value_objects::UserId,
+            _added_by: crate::domain::value_objects::UserId,
+        ) -> Result<()> {
+            Ok(())
+        }
+
+        async fn remove_member(
+            &self,
+            _group_id: EventReceiverGroupId,
+            _user_id: crate::domain::value_objects::UserId,
+        ) -> Result<()> {
+            Ok(())
+        }
+
+        async fn find_groups_for_user(
+            &self,
+            _user_id: crate::domain::value_objects::UserId,
+        ) -> Result<Vec<EventReceiverGroup>> {
+            Ok(vec![])
+        }
     }
 
     #[tokio::test]
@@ -797,6 +1083,7 @@ mod tests {
             "1.0.0".to_string(),
             "A test receiver".to_string(),
             json!({"type": "object"}),
+            crate::domain::value_objects::UserId::new(),
         )
         .unwrap();
         let receiver_id = receiver.id();
@@ -810,6 +1097,7 @@ mod tests {
                 "A test group".to_string(),
                 true,
                 vec![receiver_id],
+                crate::domain::value_objects::UserId::new(),
             )
             .await;
 
@@ -841,6 +1129,7 @@ mod tests {
                 "A test group".to_string(),
                 true,
                 vec![nonexistent_receiver_id],
+                crate::domain::value_objects::UserId::new(),
             )
             .await;
 
@@ -860,6 +1149,7 @@ mod tests {
             "1.0.0".to_string(),
             "A test receiver".to_string(),
             json!({"type": "object"}),
+            crate::domain::value_objects::UserId::new(),
         )
         .unwrap();
         let receiver_id = receiver.id();
@@ -874,6 +1164,7 @@ mod tests {
                 "A test group".to_string(),
                 false,
                 vec![receiver_id],
+                crate::domain::value_objects::UserId::new(),
             )
             .await
             .unwrap();

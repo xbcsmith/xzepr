@@ -1,0 +1,511 @@
+openapi: 3.0.3
+info:
+  title: XZepr Authorization API Extension
+  description: |
+    OpenAPI specification extension for XZepr authorization and group membership endpoints.
+    This extends the base XZepr API with OPA-based authorization features.
+  version: 1.0.0
+  contact:
+    name: XZepr API Support
+    url: https://github.com/xbcsmith/xzepr
+    email: support@xzepr.io
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://api.xzepr.io/api/v1
+    description: Production server
+  - url: https://staging-api.xzepr.io/api/v1
+    description: Staging server
+  - url: http://localhost:8080/api/v1
+    description: Local development server
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Group Membership
+    description: Manage group membership for event receiver groups
+  - name: Authorization
+    description: Authorization and policy management
+
+paths:
+  /groups/{group_id}/members:
+    get:
+      tags:
+        - Group Membership
+      summary: List group members
+      description: Retrieves all members of an event receiver group with pagination support
+      operationId: listGroupMembers
+      parameters:
+        - name: group_id
+          in: path
+          required: true
+          description: The unique identifier of the event receiver group
+          schema:
+            type: string
+            format: uuid
+          example: 770e8400-e29b-41d4-a716-446655440000
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          example: 1
+        - name: page_size
+          in: query
+          required: false
+          description: Number of members per page
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          example: 50
+      responses:
+        '200':
+          description: Successfully retrieved group members
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupMembersResponse'
+              examples:
+                success:
+                  value:
+                    group_id: 770e8400-e29b-41d4-a716-446655440000
+                    members:
+                      - user_id: 550e8400-e29b-41d4-a716-446655440000
+                        username: john.doe
+                        email: john.doe@example.com
+                        added_at: '2024-01-15T10:30:00Z'
+                        added_by: 660e8400-e29b-41d4-a716-446655440000
+                      - user_id: 660e8400-e29b-41d4-a716-446655440000
+                        username: jane.smith
+                        email: jane.smith@example.com
+                        added_at: '2024-01-10T08:15:00Z'
+                        added_by: 660e8400-e29b-41d4-a716-446655440000
+                    pagination:
+                      current_page: 1
+                      page_size: 50
+                      total_members: 2
+                      total_pages: 1
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_page:
+                  value:
+                    error:
+                      code: INVALID_REQUEST
+                      message: Invalid page parameter
+                      details:
+                        field: page
+                        reason: must be greater than 0
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Group not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                not_found:
+                  value:
+                    error:
+                      code: RESOURCE_NOT_FOUND
+                      message: Event receiver group not found
+                      details:
+                        group_id: 770e8400-e29b-41d4-a716-446655440000
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      tags:
+        - Group Membership
+      summary: Add group member
+      description: Adds a user to an event receiver group. Requires group owner or manage_members permission.
+      operationId: addGroupMember
+      parameters:
+        - name: group_id
+          in: path
+          required: true
+          description: The unique identifier of the event receiver group
+          schema:
+            type: string
+            format: uuid
+          example: 770e8400-e29b-41d4-a716-446655440000
+      requestBody:
+        required: true
+        description: User to add to the group
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddMemberRequest'
+            examples:
+              add_user:
+                value:
+                  user_id: 550e8400-e29b-41d4-a716-446655440000
+      responses:
+        '200':
+          description: User successfully added to group
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupMemberResponse'
+              examples:
+                success:
+                  value:
+                    user_id: 550e8400-e29b-41d4-a716-446655440000
+                    username: john.doe
+                    email: john.doe@example.com
+                    added_at: '2024-01-15T10:30:00Z'
+                    added_by: 660e8400-e29b-41d4-a716-446655440000
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_user_id:
+                  value:
+                    error:
+                      code: INVALID_REQUEST
+                      message: Invalid user_id format
+                      details:
+                        field: user_id
+                        reason: must be a valid UUID
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Group or user not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                group_not_found:
+                  value:
+                    error:
+                      code: RESOURCE_NOT_FOUND
+                      message: Event receiver group not found
+                      details:
+                        group_id: 770e8400-e29b-41d4-a716-446655440000
+                user_not_found:
+                  value:
+                    error:
+                      code: RESOURCE_NOT_FOUND
+                      message: User not found
+                      details:
+                        user_id: 550e8400-e29b-41d4-a716-446655440000
+        '409':
+          description: User is already a member of the group
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                already_member:
+                  value:
+                    error:
+                      code: OPERATION_NOT_ALLOWED
+                      message: User is already a member of this group
+                      details:
+                        user_id: 550e8400-e29b-41d4-a716-446655440000
+                        group_id: 770e8400-e29b-41d4-a716-446655440000
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /groups/{group_id}/members/{user_id}:
+    delete:
+      tags:
+        - Group Membership
+      summary: Remove group member
+      description: Removes a user from an event receiver group. Requires group owner or manage_members permission. Cannot remove the group owner.
+      operationId: removeGroupMember
+      parameters:
+        - name: group_id
+          in: path
+          required: true
+          description: The unique identifier of the event receiver group
+          schema:
+            type: string
+            format: uuid
+          example: 770e8400-e29b-41d4-a716-446655440000
+        - name: user_id
+          in: path
+          required: true
+          description: The unique identifier of the user to remove
+          schema:
+            type: string
+            format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+      responses:
+        '204':
+          description: User successfully removed from group
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Group not found, user not found, or user is not a member
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                not_member:
+                  value:
+                    error:
+                      code: RESOURCE_NOT_FOUND
+                      message: User is not a member of this group
+                      details:
+                        user_id: 550e8400-e29b-41d4-a716-446655440000
+                        group_id: 770e8400-e29b-41d4-a716-446655440000
+        '409':
+          description: Cannot remove the group owner
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                owner_removal:
+                  value:
+                    error:
+                      code: OPERATION_NOT_ALLOWED
+                      message: Cannot remove the group owner from the group
+                      details:
+                        user_id: 550e8400-e29b-41d4-a716-446655440000
+                        group_id: 770e8400-e29b-41d4-a716-446655440000
+                        reason: user_is_owner
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token obtained from authentication endpoint.
+        Include in Authorization header as: Bearer <token>
+
+  schemas:
+    AddMemberRequest:
+      type: object
+      required:
+        - user_id
+      properties:
+        user_id:
+          type: string
+          format: uuid
+          description: The unique identifier of the user to add to the group
+          example: 550e8400-e29b-41d4-a716-446655440000
+
+    GroupMemberResponse:
+      type: object
+      required:
+        - user_id
+        - username
+        - email
+        - added_at
+        - added_by
+      properties:
+        user_id:
+          type: string
+          format: uuid
+          description: The unique identifier of the user
+          example: 550e8400-e29b-41d4-a716-446655440000
+        username:
+          type: string
+          description: The username of the member
+          example: john.doe
+        email:
+          type: string
+          format: email
+          description: The email address of the member
+          example: john.doe@example.com
+        added_at:
+          type: string
+          format: date-time
+          description: When the user was added to the group
+          example: '2024-01-15T10:30:00Z'
+        added_by:
+          type: string
+          format: uuid
+          description: The ID of the user who added this member
+          example: 660e8400-e29b-41d4-a716-446655440000
+
+    GroupMembersResponse:
+      type: object
+      required:
+        - group_id
+        - members
+        - pagination
+      properties:
+        group_id:
+          type: string
+          format: uuid
+          description: The unique identifier of the group
+          example: 770e8400-e29b-41d4-a716-446655440000
+        members:
+          type: array
+          description: List of group members
+          items:
+            $ref: '#/components/schemas/GroupMemberResponse'
+        pagination:
+          $ref: '#/components/schemas/PaginationInfo'
+
+    PaginationInfo:
+      type: object
+      required:
+        - current_page
+        - page_size
+        - total_members
+        - total_pages
+      properties:
+        current_page:
+          type: integer
+          minimum: 1
+          description: Current page number
+          example: 1
+        page_size:
+          type: integer
+          minimum: 1
+          description: Number of members per page
+          example: 50
+        total_members:
+          type: integer
+          minimum: 0
+          description: Total number of members in the group
+          example: 2
+        total_pages:
+          type: integer
+          minimum: 0
+          description: Total number of pages
+          example: 1
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              enum:
+                - INVALID_REQUEST
+                - AUTHENTICATION_REQUIRED
+                - AUTHORIZATION_DENIED
+                - RESOURCE_NOT_FOUND
+                - OPERATION_NOT_ALLOWED
+                - RATE_LIMIT_EXCEEDED
+                - INTERNAL_ERROR
+              example: AUTHORIZATION_DENIED
+            message:
+              type: string
+              description: Human-readable error message
+              example: User does not have permission to add members to this group
+            details:
+              type: object
+              description: Additional context about the error
+              additionalProperties: true
+              example:
+                user_id: 880e8400-e29b-41d4-a716-446655440000
+                group_id: 770e8400-e29b-41d4-a716-446655440000
+                required_permission: group:manage_members
+
+  responses:
+    Unauthorized:
+      description: Authentication required or invalid token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            missing_token:
+              value:
+                error:
+                  code: AUTHENTICATION_REQUIRED
+                  message: Valid authentication token is required
+            invalid_token:
+              value:
+                error:
+                  code: AUTHENTICATION_REQUIRED
+                  message: Invalid or expired authentication token
+
+    Forbidden:
+      description: User lacks required permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            permission_denied:
+              value:
+                error:
+                  code: AUTHORIZATION_DENIED
+                  message: User does not have permission to perform this action
+                  details:
+                    user_id: 880e8400-e29b-41d4-a716-446655440000
+                    required_permission: group:manage_members
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            server_error:
+              value:
+                error:
+                  code: INTERNAL_ERROR
+                  message: An internal error occurred while processing the request
+                  details:
+                    request_id: 8a3f1e9c-4d2b-4a1e-9f3c-7b8d5e6f9a1b
+
+  examples:
+    AddMemberSuccess:
+      summary: Successfully add a member
+      value:
+        user_id: 550e8400-e29b-41d4-a716-446655440000
+        username: john.doe
+        email: john.doe@example.com
+        added_at: '2024-01-15T10:30:00Z'
+        added_by: 660e8400-e29b-41d4-a716-446655440000
+
+    ListMembersSuccess:
+      summary: Successfully list members
+      value:
+        group_id: 770e8400-e29b-41d4-a716-446655440000
+        members:
+          - user_id: 550e8400-e29b-41d4-a716-446655440000
+            username: john.doe
+            email: john.doe@example.com
+            added_at: '2024-01-15T10:30:00Z'
+            added_by: 660e8400-e29b-41d4-a716-446655440000
+        pagination:
+          current_page: 1
+          page_size: 50
+          total_members: 1
+          total_pages: 1

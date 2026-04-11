@@ -20,6 +20,8 @@ pub struct Settings {
     pub auth: AuthConfig,
     pub tls: TlsConfig,
     pub kafka: KafkaConfig,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub opa: Option<crate::opa::types::OpaConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -143,7 +145,12 @@ impl Settings {
             .set_default("kafka.brokers", "localhost:9092")?
             .set_default("kafka.default_topic", "xzepr.dev.events")?
             .set_default("kafka.default_topic_partitions", 3)?
-            .set_default("kafka.default_topic_replication_factor", 1)?;
+            .set_default("kafka.default_topic_replication_factor", 1)?
+            .set_default("opa.enabled", false)?
+            .set_default("opa.url", "http://localhost:8181")?
+            .set_default("opa.timeout_seconds", 5)?
+            .set_default("opa.policy_path", "/v1/data/xzepr/rbac/allow")?
+            .set_default("opa.cache_ttl_seconds", 300)?;
 
         // Add configuration file if it exists
         builder = builder.add_source(File::with_name("config/default").required(false));
