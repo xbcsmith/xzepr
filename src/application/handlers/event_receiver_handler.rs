@@ -8,7 +8,8 @@ use crate::domain::entities::event_receiver::EventReceiver;
 use crate::domain::repositories::event_receiver_repo::{
     EventReceiverRepository, FindEventReceiverCriteria,
 };
-use crate::domain::value_objects::EventReceiverId;
+#[allow(unused_imports)]
+use crate::domain::value_objects::{EventReceiverId, UserId};
 use crate::error::{DomainError, Result};
 use crate::infrastructure::messaging::cloudevents::CloudEventMessage;
 use crate::infrastructure::messaging::producer::KafkaEventPublisher;
@@ -51,6 +52,7 @@ impl EventReceiverHandler {
         version: String,
         description: String,
         schema: serde_json::Value,
+        owner_id: crate::domain::value_objects::UserId,
     ) -> Result<EventReceiverId> {
         info!(
             name = %name,
@@ -77,7 +79,8 @@ impl EventReceiverHandler {
         }
 
         // Create the domain entity
-        let event_receiver = EventReceiver::new(name, receiver_type, version, description, schema)?;
+        let event_receiver =
+            EventReceiver::new(name, receiver_type, version, description, schema, owner_id)?;
 
         let receiver_id = event_receiver.id();
 
@@ -139,6 +142,7 @@ impl EventReceiverHandler {
             payload,
             success: true,
             receiver_id: receiver.id(),
+            owner_id: receiver.owner_id(),
         })
         .expect("Failed to create system event for receiver creation")
     }
@@ -447,6 +451,35 @@ mod tests {
         ) -> Result<Vec<EventReceiver>> {
             Ok(vec![])
         }
+
+        async fn find_by_owner(
+            &self,
+            _owner_id: crate::domain::value_objects::UserId,
+        ) -> Result<Vec<EventReceiver>> {
+            Ok(vec![])
+        }
+
+        async fn find_by_owner_paginated(
+            &self,
+            _owner_id: crate::domain::value_objects::UserId,
+            _limit: usize,
+            _offset: usize,
+        ) -> Result<Vec<EventReceiver>> {
+            Ok(vec![])
+        }
+
+        async fn is_owner(
+            &self,
+            _receiver_id: EventReceiverId,
+            _user_id: crate::domain::value_objects::UserId,
+        ) -> Result<bool> {
+            Ok(false)
+        }
+
+        async fn get_resource_version(&self, receiver_id: EventReceiverId) -> Result<Option<i64>> {
+            let receivers = self.receivers.lock().unwrap();
+            Ok(receivers.get(&receiver_id).map(|r| r.resource_version()))
+        }
     }
 
     #[tokio::test]
@@ -468,6 +501,7 @@ mod tests {
                 "1.0.0".to_string(),
                 "A test receiver".to_string(),
                 schema,
+                UserId::new(),
             )
             .await;
 
@@ -500,6 +534,7 @@ mod tests {
                 "1.0.0".to_string(),
                 "A test receiver".to_string(),
                 schema.clone(),
+                UserId::new(),
             )
             .await;
         assert!(result1.is_ok());
@@ -512,6 +547,7 @@ mod tests {
                 "2.0.0".to_string(), // Different version, but same name and type
                 "Another test receiver".to_string(),
                 schema,
+                UserId::new(),
             )
             .await;
         assert!(result2.is_err());

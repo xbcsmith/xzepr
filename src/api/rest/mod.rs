@@ -6,11 +6,15 @@
 pub mod auth;
 pub mod dtos;
 pub mod events;
+pub mod group_membership;
 pub mod routes;
 
 pub use auth::{AuthState, LoginRequest, LoginResponse, RefreshRequest};
 pub use dtos::*;
 pub use events::AppState;
+pub use group_membership::{
+    add_group_member, list_group_members, remove_group_member, GroupMembershipState,
+};
 pub use routes::{build_protected_router, build_router};
 
 /// Re-export common types for convenience

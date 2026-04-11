@@ -3,7 +3,7 @@
 
 // src/domain/entities/event_receiver_group.rs
 
-use crate::domain::value_objects::{EventReceiverGroupId, EventReceiverId};
+use crate::domain::value_objects::{EventReceiverGroupId, EventReceiverId, UserId};
 use crate::error::DomainError;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -19,6 +19,8 @@ pub struct EventReceiverGroupData {
     pub description: String,
     pub enabled: bool,
     pub event_receiver_ids: Vec<EventReceiverId>,
+    pub owner_id: UserId,
+    pub resource_version: i64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -33,12 +35,48 @@ pub struct EventReceiverGroup {
     description: String,
     enabled: bool,
     event_receiver_ids: Vec<EventReceiverId>,
+    owner_id: UserId,
+    resource_version: i64,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
 }
 
 impl EventReceiverGroup {
     /// Creates a new event receiver group with validation
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the event receiver group
+    /// * `group_type` - The type of the group
+    /// * `version` - The version of the group
+    /// * `description` - A description of the group
+    /// * `enabled` - Whether the group is enabled
+    /// * `event_receiver_ids` - List of event receiver IDs in this group
+    /// * `owner_id` - The user ID of the owner who created this group
+    ///
+    /// # Returns
+    ///
+    /// Returns a new EventReceiverGroup or DomainError if validation fails
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use xzepr::domain::entities::event_receiver_group::EventReceiverGroup;
+    /// use xzepr::domain::value_objects::{UserId, EventReceiverId};
+    ///
+    /// let owner_id = UserId::new();
+    /// let receiver_ids = vec![EventReceiverId::new()];
+    /// let group = EventReceiverGroup::new(
+    ///     "My Group".to_string(),
+    ///     "webhook_group".to_string(),
+    ///     "1.0.0".to_string(),
+    ///     "Test group".to_string(),
+    ///     true,
+    ///     receiver_ids,
+    ///     owner_id,
+    /// );
+    /// assert!(group.is_ok());
+    /// ```
     pub fn new(
         name: String,
         group_type: String,
@@ -46,6 +84,7 @@ impl EventReceiverGroup {
         description: String,
         enabled: bool,
         event_receiver_ids: Vec<EventReceiverId>,
+        owner_id: UserId,
     ) -> Result<Self, DomainError> {
         Self::validate_name(&name)?;
         Self::validate_type(&group_type)?;
@@ -63,6 +102,8 @@ impl EventReceiverGroup {
             description,
             enabled,
             event_receiver_ids,
+            owner_id,
+            resource_version: 1,
             created_at: now,
             updated_at: now,
         })
@@ -84,12 +125,29 @@ impl EventReceiverGroup {
             description: data.description,
             enabled: data.enabled,
             event_receiver_ids: data.event_receiver_ids,
+            owner_id: data.owner_id,
+            resource_version: data.resource_version,
             created_at: data.created_at,
             updated_at: data.updated_at,
         })
     }
 
     /// Updates the event receiver group with new data
+    ///
+    /// Increments the resource_version on any update to support cache invalidation.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Optional new name
+    /// * `group_type` - Optional new type
+    /// * `version` - Optional new version
+    /// * `description` - Optional new description
+    /// * `enabled` - Optional new enabled state
+    /// * `event_receiver_ids` - Optional new list of receiver IDs
+    ///
+    /// # Returns
+    ///
+    /// Returns Ok(()) if validation passes, otherwise DomainError
     pub fn update(
         &mut self,
         name: Option<String>,
@@ -129,6 +187,7 @@ impl EventReceiverGroup {
         }
 
         self.updated_at = Utc::now();
+        self.resource_version += 1;
 
         Ok(())
     }
@@ -137,12 +196,14 @@ impl EventReceiverGroup {
     pub fn enable(&mut self) {
         self.enabled = true;
         self.updated_at = Utc::now();
+        self.resource_version += 1;
     }
 
     /// Disables the event receiver group
     pub fn disable(&mut self) {
         self.enabled = false;
         self.updated_at = Utc::now();
+        self.resource_version += 1;
     }
 
     /// Adds an event receiver to the group
@@ -155,6 +216,7 @@ impl EventReceiverGroup {
 
         self.event_receiver_ids.push(receiver_id);
         self.updated_at = Utc::now();
+        self.resource_version += 1;
 
         Ok(())
     }
@@ -174,6 +236,7 @@ impl EventReceiverGroup {
         }
 
         self.updated_at = Utc::now();
+        self.resource_version += 1;
 
         Ok(())
     }
@@ -314,6 +377,19 @@ impl EventReceiverGroup {
     pub fn updated_at(&self) -> DateTime<Utc> {
         self.updated_at
     }
+
+    /// Returns the owner user ID of this event receiver group
+    pub fn owner_id(&self) -> UserId {
+        self.owner_id
+    }
+
+    /// Returns the current resource version for cache invalidation
+    ///
+    /// This version is incremented on every update and used by the
+    /// authorization cache to detect stale entries.
+    pub fn resource_version(&self) -> i64 {
+        self.resource_version
+    }
 }
 
 #[cfg(test)]
@@ -323,6 +399,7 @@ mod tests {
     #[test]
     fn test_create_event_receiver_group() {
         let receiver_ids = vec![EventReceiverId::new(), EventReceiverId::new()];
+        let owner_id = UserId::new();
 
         let group = EventReceiverGroup::new(
             "Test Group".to_string(),
@@ -331,6 +408,7 @@ mod tests {
             "A test event receiver group".to_string(),
             true,
             receiver_ids.clone(),
+            owner_id,
         );
 
         assert!(group.is_ok());
@@ -341,11 +419,14 @@ mod tests {
         assert!(group.enabled());
         assert_eq!(group.event_receiver_ids().len(), 2);
         assert_eq!(group.receiver_count(), 2);
+        assert_eq!(group.owner_id(), owner_id);
+        assert_eq!(group.resource_version(), 1);
     }
 
     #[test]
     fn test_validate_empty_name() {
         let receiver_ids = vec![EventReceiverId::new()];
+        let owner_id = UserId::new();
         let result = EventReceiverGroup::new(
             "".to_string(),
             "webhook_group".to_string(),
@@ -353,6 +434,7 @@ mod tests {
             "A test event receiver group".to_string(),
             true,
             receiver_ids,
+            owner_id,
         );
 
         assert!(result.is_err());
@@ -365,6 +447,7 @@ mod tests {
     fn test_validate_duplicate_receiver_ids() {
         let receiver_id = EventReceiverId::new();
         let receiver_ids = vec![receiver_id, receiver_id]; // Duplicate IDs
+        let owner_id = UserId::new();
 
         let result = EventReceiverGroup::new(
             "Test Group".to_string(),
@@ -373,6 +456,7 @@ mod tests {
             "A test event receiver group".to_string(),
             true,
             receiver_ids,
+            owner_id,
         );
 
         assert!(result.is_err());
@@ -384,6 +468,7 @@ mod tests {
     #[test]
     fn test_enable_disable_group() {
         let receiver_ids = vec![EventReceiverId::new()];
+        let owner_id = UserId::new();
         let mut group = EventReceiverGroup::new(
             "Test Group".to_string(),
             "webhook_group".to_string(),
@@ -391,21 +476,26 @@ mod tests {
             "A test event receiver group".to_string(),
             false,
             receiver_ids,
+            owner_id,
         )
         .unwrap();
 
         assert!(!group.enabled());
+        let initial_version = group.resource_version();
 
         group.enable();
         assert!(group.enabled());
+        assert_eq!(group.resource_version(), initial_version + 1);
 
         group.disable();
         assert!(!group.enabled());
+        assert_eq!(group.resource_version(), initial_version + 2);
     }
 
     #[test]
     fn test_add_remove_event_receiver() {
         let receiver_ids = vec![EventReceiverId::new()];
+        let owner_id = UserId::new();
         let mut group = EventReceiverGroup::new(
             "Test Group".to_string(),
             "webhook_group".to_string(),
@@ -413,6 +503,7 @@ mod tests {
             "A test event receiver group".to_string(),
             true,
             receiver_ids,
+            owner_id,
         )
         .unwrap();
 
@@ -439,6 +530,7 @@ mod tests {
     #[test]
     fn test_update_group() {
         let receiver_ids = vec![EventReceiverId::new()];
+        let owner_id = UserId::new();
         let mut group = EventReceiverGroup::new(
             "Test Group".to_string(),
             "webhook_group".to_string(),
@@ -446,6 +538,7 @@ mod tests {
             "A test event receiver group".to_string(),
             true,
             receiver_ids,
+            owner_id,
         )
         .unwrap();
 
@@ -487,6 +580,7 @@ mod tests {
     #[test]
     fn test_too_many_receivers() {
         let receiver_ids: Vec<EventReceiverId> = (0..101).map(|_| EventReceiverId::new()).collect();
+        let owner_id = UserId::new();
 
         let result = EventReceiverGroup::new(
             "Test Group".to_string(),
@@ -495,11 +589,72 @@ mod tests {
             "A test event receiver group".to_string(),
             true,
             receiver_ids,
+            owner_id,
         );
 
         assert!(result.is_err());
         if let Err(DomainError::ValidationError { field, .. }) = result {
             assert_eq!(field, "event_receiver_ids");
         }
+    }
+
+    #[test]
+    fn test_resource_version_increments_on_update() {
+        let receiver_ids = vec![EventReceiverId::new()];
+        let owner_id = UserId::new();
+        let mut group = EventReceiverGroup::new(
+            "Test Group".to_string(),
+            "webhook_group".to_string(),
+            "1.0.0".to_string(),
+            "A test event receiver group".to_string(),
+            true,
+            receiver_ids,
+            owner_id,
+        )
+        .unwrap();
+
+        assert_eq!(group.resource_version(), 1);
+
+        // Update name (should increment version)
+        group
+            .update(
+                Some("Updated Name".to_string()),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(group.resource_version(), 2);
+
+        // Add receiver (should increment version)
+        group.add_event_receiver(EventReceiverId::new()).unwrap();
+        assert_eq!(group.resource_version(), 3);
+    }
+
+    #[test]
+    fn test_owner_id_is_preserved() {
+        let receiver_ids = vec![EventReceiverId::new()];
+        let owner_id = UserId::new();
+        let group = EventReceiverGroup::new(
+            "Test Group".to_string(),
+            "webhook_group".to_string(),
+            "1.0.0".to_string(),
+            "A test event receiver group".to_string(),
+            true,
+            receiver_ids,
+            owner_id,
+        )
+        .unwrap();
+
+        assert_eq!(group.owner_id(), owner_id);
+
+        // Owner ID should not change on updates
+        let mut group_copy = group.clone();
+        group_copy
+            .update(Some("New Name".to_string()), None, None, None, None, None)
+            .unwrap();
+        assert_eq!(group_copy.owner_id(), owner_id);
     }
 }

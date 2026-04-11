@@ -15,9 +15,11 @@
 pub mod cors;
 pub mod jwt;
 pub mod metrics;
+pub mod opa;
 pub mod rate_limit;
 pub mod rbac;
 pub mod rbac_helpers;
+pub mod resource_context;
 pub mod security_headers;
 pub mod tracing_middleware;
 pub mod validation;
@@ -35,6 +37,9 @@ pub use metrics::{
     extract_path_for_metrics, metrics_middleware, metrics_middleware_simple, record_error_metric,
     MetricsError, MetricsMiddlewareState,
 };
+pub use opa::{
+    opa_authorize_middleware, AuthorizationDecision, AuthorizationError, OpaMiddlewareState,
+};
 pub use rate_limit::{
     rate_limit_middleware, InMemoryRateLimitStore, RateLimitConfig, RateLimitStore,
     RateLimiterState,
@@ -45,6 +50,10 @@ pub use rbac::{
 };
 pub use rbac_helpers::{
     extract_resource_id, get_resource_permissions, is_public_route, route_to_permission,
+};
+pub use resource_context::{
+    EventContextBuilder, EventReceiverContextBuilder, EventReceiverGroupContextBuilder,
+    ResourceContextBuilder,
 };
 pub use security_headers::{
     security_headers_middleware, security_headers_middleware_with_config, FrameOptions,

@@ -1,16 +1,16 @@
-# RBAC 
+# RBAC
 
-build RBAC with OPA, define roles, resources, and actions, then write Rego policies to link roles to permissions and evaluate user requests against these policies. You can integrate OPA with an API gateway to intercept requests, parse them to extract user and action information, and then send a query to OPA for authorization before allowing the request to proceed. 
+build RBAC with OPA, define roles, resources, and actions, then write Rego policies to link roles to permissions and evaluate user requests against these policies. You can integrate OPA with an API gateway to intercept requests, parse them to extract user and action information, and then send a query to OPA for authorization before allowing the request to proceed.
 Step 1: Define roles, resources, and actions
 
     Define Roles: Determine the different roles in your system, such as "reader," "editor," and "administrator".
     Define Resources: Identify the resources users will interact with (e.g., "document," "server," "data").
-    Define Actions: Specify the actions that can be performed on resources, such as "read," "write," or "delete". 
+    Define Actions: Specify the actions that can be performed on resources, such as "read," "write," or "delete".
 
 Step 2: Map permissions to roles
 
     Establish which actions are allowed for each role. For example, an "editor" can "read" and "write," while a "reader" can only "read".
-    This mapping can be stored in a database or directly within your policy data. 
+    This mapping can be stored in a database or directly within your policy data.
 
 Step 3: Write Rego policies
 
@@ -34,7 +34,7 @@ Step 3: Write Rego policies
       required_permission[role]
     }
 
-     
+
 
 Step 4: Integrate with your application
 

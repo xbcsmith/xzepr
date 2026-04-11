@@ -10,7 +10,7 @@ use serde_json::Value as JsonValue;
 use crate::domain::entities::{
     event_receiver::EventReceiver, event_receiver_group::EventReceiverGroup,
 };
-use crate::domain::value_objects::{EventReceiverGroupId, EventReceiverId};
+use crate::domain::value_objects::{EventReceiverGroupId, EventReceiverId, UserId};
 
 /// Wrapper for JSON values to implement custom scalar
 #[derive(Debug, Clone, PartialEq)]
@@ -267,6 +267,20 @@ pub fn parse_event_receiver_ids(ids: &[ID]) -> Result<Vec<EventReceiverId>, Erro
         .collect::<Result<Vec<_>, _>>()
 }
 
+pub fn parse_user_id(id: &ID) -> Result<UserId, Error> {
+    UserId::parse(&id.0).map_err(|e| Error::new(format!("Invalid UserId: {}", e)))
+}
+
+/// GraphQL type for a group member
+#[derive(Debug, Clone, SimpleObject)]
+pub struct GroupMemberType {
+    pub user_id: ID,
+    pub username: String,
+    pub email: String,
+    pub added_at: Time,
+    pub added_by: ID,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,6 +302,7 @@ mod tests {
             "1.0.0".to_string(),
             "A test receiver".to_string(),
             schema.clone(),
+            UserId::new(),
         )
         .unwrap();
 

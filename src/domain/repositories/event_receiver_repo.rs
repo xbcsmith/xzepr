@@ -53,6 +53,30 @@ pub trait EventReceiverRepository: Send + Sync {
         &self,
         criteria: FindEventReceiverCriteria,
     ) -> Result<Vec<EventReceiver>>;
+
+    /// Finds all event receivers owned by a specific user
+    async fn find_by_owner(
+        &self,
+        owner_id: crate::domain::value_objects::UserId,
+    ) -> Result<Vec<EventReceiver>>;
+
+    /// Finds event receivers by owner with pagination
+    async fn find_by_owner_paginated(
+        &self,
+        owner_id: crate::domain::value_objects::UserId,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<EventReceiver>>;
+
+    /// Checks if a user owns a specific event receiver
+    async fn is_owner(
+        &self,
+        receiver_id: EventReceiverId,
+        user_id: crate::domain::value_objects::UserId,
+    ) -> Result<bool>;
+
+    /// Gets the current resource version of an event receiver
+    async fn get_resource_version(&self, receiver_id: EventReceiverId) -> Result<Option<i64>>;
 }
 
 /// Criteria for finding event receivers
