@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2025 Brett Smith <xbcsmith@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-// Generated from xzepr-architecture-plan.md
-// Section: Multiple sections
-// Original line: 0
-
-// src/infrastructure/database/postgres.rs
 use crate::auth::api_key::{ApiKey, ApiKeyRepository, UserRepository};
 use crate::auth::rbac::roles::Role;
 use crate::domain::entities::user::{AuthProvider, User};
@@ -13,8 +8,6 @@ use crate::domain::value_objects::{ApiKeyId, UserId};
 use crate::error::AuthError;
 use sqlx::{PgPool, Row};
 use std::str::FromStr;
-
-// EventRow struct removed - using regular queries instead of macros for demo
 
 pub struct PostgresUserRepository {
     pool: PgPool,

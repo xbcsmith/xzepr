@@ -4,9 +4,23 @@
 // src/domain/repositories/event_receiver_group_repo.rs
 
 use crate::domain::entities::event_receiver_group::EventReceiverGroup;
-use crate::domain::value_objects::{EventReceiverGroupId, EventReceiverId};
+use crate::domain::value_objects::{EventReceiverGroupId, EventReceiverId, UserId};
 use crate::error::Result;
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+
+/// Persisted metadata for a user's membership in an event receiver group.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupMembershipRecord {
+    /// Group containing the member.
+    pub group_id: EventReceiverGroupId,
+    /// User who is a member of the group.
+    pub user_id: UserId,
+    /// User who added this membership.
+    pub added_by: UserId,
+    /// Timestamp when the membership was created.
+    pub added_at: DateTime<Utc>,
+}
 
 /// Repository trait for event receiver group persistence operations
 #[async_trait]
@@ -127,31 +141,42 @@ pub trait EventReceiverGroupRepository: Send + Sync {
     ) -> Result<bool>;
 
     /// Gets all member user IDs for a specific group
-    async fn get_group_members(
+    async fn get_group_members(&self, group_id: EventReceiverGroupId) -> Result<Vec<UserId>>;
+
+    /// Gets persisted membership metadata for one group member.
+    async fn get_group_member_record(
         &self,
-        group_id: EventReceiverGroupId,
-    ) -> Result<Vec<crate::domain::value_objects::UserId>>;
+        _group_id: EventReceiverGroupId,
+        _user_id: UserId,
+    ) -> Result<Option<GroupMembershipRecord>> {
+        Err(crate::error::Error::Internal {
+            message: "Group membership record lookup is not implemented".to_string(),
+        })
+    }
+
+    /// Gets persisted membership metadata for all group members.
+    async fn get_group_member_records(
+        &self,
+        _group_id: EventReceiverGroupId,
+    ) -> Result<Vec<GroupMembershipRecord>> {
+        Err(crate::error::Error::Internal {
+            message: "Group membership record listing is not implemented".to_string(),
+        })
+    }
 
     /// Adds a member to a group
     async fn add_member(
         &self,
         group_id: EventReceiverGroupId,
-        user_id: crate::domain::value_objects::UserId,
-        added_by: crate::domain::value_objects::UserId,
+        user_id: UserId,
+        added_by: UserId,
     ) -> Result<()>;
 
     /// Removes a member from a group
-    async fn remove_member(
-        &self,
-        group_id: EventReceiverGroupId,
-        user_id: crate::domain::value_objects::UserId,
-    ) -> Result<()>;
+    async fn remove_member(&self, group_id: EventReceiverGroupId, user_id: UserId) -> Result<()>;
 
     /// Finds all groups that a user is a member of
-    async fn find_groups_for_user(
-        &self,
-        user_id: crate::domain::value_objects::UserId,
-    ) -> Result<Vec<EventReceiverGroup>>;
+    async fn find_groups_for_user(&self, user_id: UserId) -> Result<Vec<EventReceiverGroup>>;
 }
 
 /// Criteria for finding event receiver groups

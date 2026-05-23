@@ -271,12 +271,19 @@ mod tests {
 
         async fn create_or_update_oidc_user(
             &self,
-            _subject: String,
-            _username: String,
-            _email: Option<String>,
+            subject: String,
+            username: String,
+            email: Option<String>,
             _name: Option<String>,
         ) -> Result<User, DomainError> {
-            unimplemented!()
+            let user = User::new_oidc(
+                username,
+                email.unwrap_or_else(|| "user@example.com".to_string()),
+                subject.clone(),
+            );
+            let mut users = self.users.write().unwrap();
+            users.insert(subject, user.clone());
+            Ok(user)
         }
 
         async fn list(&self, _limit: i64, _offset: i64) -> Result<Vec<User>, DomainError> {

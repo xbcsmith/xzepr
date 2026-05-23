@@ -24,10 +24,6 @@ pub mod security_headers;
 pub mod tracing_middleware;
 pub mod validation;
 
-// TODO: Implement these modules
-// pub mod logging;
-// pub mod request_id;
-
 pub use cors::{cors_layer, development_cors_layer, production_cors_layer, CorsConfig};
 pub use jwt::{
     jwt_auth_middleware, optional_jwt_auth_middleware, require_permissions, require_roles,

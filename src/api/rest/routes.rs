@@ -29,6 +29,7 @@ use crate::api::rest::events::{
 pub fn build_router(state: AppState) -> Router {
     // Create GraphQL schema
     let schema = create_schema(
+        std::sync::Arc::new(state.event_handler.clone()),
         std::sync::Arc::new(state.event_receiver_handler.clone()),
         std::sync::Arc::new(state.event_receiver_group_handler.clone()),
     );
@@ -89,6 +90,7 @@ pub fn build_router(state: AppState) -> Router {
 pub fn build_protected_router(state: AppState, jwt_state: JwtMiddlewareState) -> Router {
     // Create GraphQL schema
     let schema = create_schema(
+        std::sync::Arc::new(state.event_handler.clone()),
         std::sync::Arc::new(state.event_receiver_handler.clone()),
         std::sync::Arc::new(state.event_receiver_group_handler.clone()),
     );

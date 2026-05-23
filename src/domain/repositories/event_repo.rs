@@ -4,7 +4,7 @@
 // src/domain/repositories/event_repo.rs
 
 use crate::domain::entities::event::Event;
-use crate::domain::value_objects::{EventId, EventReceiverId};
+use crate::domain::value_objects::{EventId, EventReceiverId, UserId};
 use crate::error::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -106,6 +106,7 @@ pub struct FindEventCriteria {
     pub package: Option<String>,
     pub success: Option<bool>,
     pub event_receiver_id: Option<EventReceiverId>,
+    pub owner_id: Option<UserId>,
     pub start_time: Option<DateTime<Utc>>,
     pub end_time: Option<DateTime<Utc>>,
     pub limit: Option<usize>,
@@ -166,6 +167,12 @@ impl FindEventCriteria {
         self
     }
 
+    /// Sets the owner ID filter
+    pub fn with_owner_id(mut self, owner_id: UserId) -> Self {
+        self.owner_id = Some(owner_id);
+        self
+    }
+
     /// Sets the start time filter
     pub fn with_start_time(mut self, start_time: DateTime<Utc>) -> Self {
         self.start_time = Some(start_time);
@@ -200,6 +207,7 @@ impl FindEventCriteria {
             && self.package.is_none()
             && self.success.is_none()
             && self.event_receiver_id.is_none()
+            && self.owner_id.is_none()
             && self.start_time.is_none()
             && self.end_time.is_none()
     }
@@ -212,15 +220,18 @@ mod tests {
     #[test]
     fn test_criteria_builder() {
         let receiver_id = EventReceiverId::new();
+        let owner_id = UserId::new();
         let criteria = FindEventCriteria::new()
             .with_name("test".to_string())
             .with_success(true)
             .with_event_receiver_id(receiver_id)
+            .with_owner_id(owner_id)
             .with_limit(10)
             .with_offset(0);
 
         assert_eq!(criteria.name, Some("test".to_string()));
         assert_eq!(criteria.success, Some(true));
+        assert_eq!(criteria.owner_id, Some(owner_id));
         assert_eq!(criteria.event_receiver_id, Some(receiver_id));
         assert_eq!(criteria.limit, Some(10));
         assert_eq!(criteria.offset, Some(0));
@@ -231,5 +242,11 @@ mod tests {
     fn test_empty_criteria() {
         let criteria = FindEventCriteria::new();
         assert!(criteria.is_empty());
+    }
+
+    #[test]
+    fn test_owner_criteria_is_not_empty() {
+        let criteria = FindEventCriteria::new().with_owner_id(UserId::new());
+        assert!(!criteria.is_empty());
     }
 }

@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2025 Brett Smith <xbcsmith@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-// Generated mod file
-
 pub mod api_key_id;
 pub mod event_id;
 pub mod event_receiver_group_id;

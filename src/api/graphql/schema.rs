@@ -8,9 +8,11 @@ use std::sync::Arc;
 
 use crate::api::graphql::types::*;
 use crate::api::middleware::jwt::AuthenticatedUser;
-use crate::application::handlers::{EventReceiverGroupHandler, EventReceiverHandler};
+use crate::application::handlers::{EventHandler, EventReceiverGroupHandler, EventReceiverHandler};
+use crate::domain::entities::event::CreateEventParams;
 use crate::domain::repositories::event_receiver_group_repo::FindEventReceiverGroupCriteria;
 use crate::domain::repositories::event_receiver_repo::FindEventReceiverCriteria;
+use crate::domain::repositories::event_repo::FindEventCriteria;
 use crate::domain::value_objects::UserId;
 
 pub struct Query;
@@ -18,9 +20,18 @@ pub struct Query;
 #[Object]
 impl Query {
     /// Get events by ID
-    async fn events_by_id(&self, _ctx: &Context<'_>, _id: ID) -> Result<Vec<EventType>> {
-        // TODO: Implement event queries once Event entity is complete
-        Ok(vec![])
+    async fn events_by_id(&self, ctx: &Context<'_>, id: ID) -> Result<Vec<EventType>> {
+        let handler = ctx.data::<Arc<EventHandler>>()?;
+        let user = ctx.data::<AuthenticatedUser>()?;
+        let owner_id = UserId::parse(user.user_id())
+            .map_err(|e| Error::new(format!("Invalid user ID: {}", e)))?;
+        let event_id = parse_event_id(&id)?;
+
+        match handler.get_event_for_user(event_id, owner_id).await {
+            Ok(Some(event)) => Ok(vec![event.into()]),
+            Ok(None) => Ok(vec![]),
+            Err(e) => Err(Error::new(format!("Failed to get event: {}", e))),
+        }
     }
 
     /// Get event receivers by ID
@@ -59,9 +70,43 @@ impl Query {
     }
 
     /// Find events with criteria
-    async fn events(&self, _ctx: &Context<'_>, _event: FindEventInput) -> Result<Vec<EventType>> {
-        // TODO: Implement event queries once Event entity is complete
-        Ok(vec![])
+    async fn events(&self, ctx: &Context<'_>, event: FindEventInput) -> Result<Vec<EventType>> {
+        let handler = ctx.data::<Arc<EventHandler>>()?;
+        let user = ctx.data::<AuthenticatedUser>()?;
+        let owner_id = UserId::parse(user.user_id())
+            .map_err(|e| Error::new(format!("Invalid user ID: {}", e)))?;
+
+        let mut criteria = FindEventCriteria::new();
+
+        if let Some(id) = event.id {
+            criteria = criteria.with_id(parse_event_id(&id)?);
+        }
+        if let Some(name) = event.name {
+            criteria = criteria.with_name(name);
+        }
+        if let Some(version) = event.version {
+            criteria = criteria.with_version(version);
+        }
+        if let Some(release) = event.release {
+            criteria = criteria.with_release(release);
+        }
+        if let Some(platform_id) = event.platform_id {
+            criteria = criteria.with_platform_id(platform_id);
+        }
+        if let Some(package) = event.package {
+            criteria = criteria.with_package(package);
+        }
+        if let Some(success) = event.success {
+            criteria = criteria.with_success(success);
+        }
+        if let Some(receiver_id) = event.event_receiver_id {
+            criteria = criteria.with_event_receiver_id(parse_event_receiver_id(&receiver_id)?);
+        }
+
+        match handler.find_events_for_user(criteria, owner_id).await {
+            Ok(events) => Ok(events.into_iter().map(EventType::from).collect()),
+            Err(e) => Err(Error::new(format!("Failed to find events: {}", e))),
+        }
     }
 
     /// Find event receivers with criteria
@@ -149,9 +194,31 @@ pub struct Mutation;
 #[Object]
 impl Mutation {
     /// Create a new event
-    async fn create_event(&self, _ctx: &Context<'_>, _event: CreateEventInput) -> Result<ID> {
-        // TODO: Implement event creation once Event entity is complete
-        Err(Error::new("Event creation not implemented yet"))
+    async fn create_event(&self, ctx: &Context<'_>, event: CreateEventInput) -> Result<ID> {
+        let handler = ctx.data::<Arc<EventHandler>>()?;
+        let user = ctx.data::<AuthenticatedUser>()?;
+        let owner_id = UserId::parse(user.user_id())
+            .map_err(|e| Error::new(format!("Invalid user ID: {}", e)))?;
+        let receiver_id = parse_event_receiver_id(&event.event_receiver_id)?;
+
+        match handler
+            .create_event(CreateEventParams {
+                name: event.name,
+                version: event.version,
+                release: event.release,
+                platform_id: event.platform_id,
+                package: event.package,
+                description: event.description,
+                payload: event.payload.0,
+                success: event.success,
+                receiver_id,
+                owner_id,
+            })
+            .await
+        {
+            Ok(event_id) => Ok(ID(event_id.to_string())),
+            Err(e) => Err(Error::new(format!("Failed to create event: {}", e))),
+        }
     }
 
     /// Create a new event receiver
@@ -297,19 +364,17 @@ impl Mutation {
             return Err(Error::new("Only the group owner can add members"));
         }
 
-        // Add the member
-        handler
-            .add_group_member(group_id, member_user_id, added_by)
+        let details = handler
+            .add_group_member_details(group_id, member_user_id, added_by)
             .await
             .map_err(|e| Error::new(format!("Failed to add member: {}", e)))?;
 
-        // Return member info
         Ok(GroupMemberType {
-            user_id: user_id.clone(),
-            username: format!("user_{}", member_user_id),
-            email: format!("{}@example.com", member_user_id),
-            added_at: Time(chrono::Utc::now()),
-            added_by: ID(added_by.to_string()),
+            user_id: ID(details.user_id.to_string()),
+            username: details.username,
+            email: details.email,
+            added_at: Time(details.added_at),
+            added_by: ID(details.added_by.to_string()),
         })
     }
 
@@ -375,10 +440,12 @@ pub type Schema = async_graphql::Schema<Query, Mutation, EmptySubscription>;
 
 /// Creates a new GraphQL schema with the provided handlers
 pub fn create_schema(
+    event_handler: Arc<EventHandler>,
     event_receiver_handler: Arc<EventReceiverHandler>,
     event_receiver_group_handler: Arc<EventReceiverGroupHandler>,
 ) -> Schema {
     Schema::build(Query, Mutation, EmptySubscription)
+        .data(event_handler)
         .data(event_receiver_handler)
         .data(event_receiver_group_handler)
         .finish()

@@ -43,6 +43,14 @@ pub fn route_to_permission(method: &Method, path: &str) -> Option<Permission> {
         return None;
     }
 
+    if path.contains("/groups") && path.contains("/members") {
+        return match method {
+            &Method::GET => Some(Permission::GroupRead),
+            &Method::POST | &Method::DELETE => Some(Permission::GroupUpdate),
+            _ => None,
+        };
+    }
+
     // Determine resource type from path
     let resource = if path.contains("/events") {
         "event"

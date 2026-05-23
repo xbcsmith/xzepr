@@ -8,9 +8,9 @@ use chrono::{DateTime, Utc};
 use serde_json::Value as JsonValue;
 
 use crate::domain::entities::{
-    event_receiver::EventReceiver, event_receiver_group::EventReceiverGroup,
+    event::Event, event_receiver::EventReceiver, event_receiver_group::EventReceiverGroup,
 };
-use crate::domain::value_objects::{EventReceiverGroupId, EventReceiverId, UserId};
+use crate::domain::value_objects::{EventId, EventReceiverGroupId, EventReceiverId, UserId};
 
 /// Wrapper for JSON values to implement custom scalar
 #[derive(Debug, Clone, PartialEq)]
@@ -251,7 +251,29 @@ pub struct EventType {
     pub created_at: Time,
 }
 
+impl From<Event> for EventType {
+    fn from(event: Event) -> Self {
+        Self {
+            id: ID(event.id().to_string()),
+            name: event.name().to_string(),
+            version: event.version().to_string(),
+            release: event.release().to_string(),
+            platform_id: event.platform_id().to_string(),
+            package: event.package().to_string(),
+            description: event.description().to_string(),
+            payload: JSON(event.payload().clone()),
+            event_receiver_id: ID(event.event_receiver_id().to_string()),
+            success: event.success(),
+            created_at: Time(event.created_at()),
+        }
+    }
+}
+
 /// Helper functions for ID parsing
+pub fn parse_event_id(id: &ID) -> Result<EventId, Error> {
+    EventId::parse(&id.0).map_err(|e| Error::new(format!("Invalid EventId: {}", e)))
+}
+
 pub fn parse_event_receiver_id(id: &ID) -> Result<EventReceiverId, Error> {
     EventReceiverId::parse(&id.0).map_err(|e| Error::new(format!("Invalid EventReceiverId: {}", e)))
 }
@@ -284,6 +306,7 @@ pub struct GroupMemberType {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::entities::event::{CreateEventParams, Event};
     use crate::domain::entities::event_receiver::EventReceiver;
     use serde_json::json;
 
@@ -313,6 +336,50 @@ mod tests {
         assert_eq!(graphql_type.version, "1.0.0");
         assert_eq!(graphql_type.description, "A test receiver");
         assert_eq!(graphql_type.schema.0, schema);
+    }
+
+    #[test]
+    fn test_event_type_conversion() {
+        let receiver_id = EventReceiverId::new();
+        let owner_id = UserId::new();
+        let payload = json!({"message": "created"});
+        let event = Event::new(CreateEventParams {
+            name: "test-event".to_string(),
+            version: "1.0.0".to_string(),
+            release: "prod".to_string(),
+            platform_id: "linux".to_string(),
+            package: "xzepr".to_string(),
+            description: "A test event".to_string(),
+            payload: payload.clone(),
+            success: true,
+            receiver_id,
+            owner_id,
+        })
+        .unwrap();
+
+        let graphql_type: EventType = event.into();
+
+        assert_eq!(graphql_type.name, "test-event");
+        assert_eq!(graphql_type.version, "1.0.0");
+        assert_eq!(graphql_type.payload.0, payload);
+        assert_eq!(graphql_type.event_receiver_id, ID(receiver_id.to_string()));
+        assert!(graphql_type.success);
+    }
+
+    #[test]
+    fn test_event_id_parsing() {
+        let event_id = EventId::new();
+        let id = ID(event_id.to_string());
+
+        let parsed = parse_event_id(&id).unwrap();
+        assert_eq!(parsed, event_id);
+    }
+
+    #[test]
+    fn test_invalid_event_id_parsing() {
+        let invalid_id = ID("invalid-ulid".to_string());
+        let result = parse_event_id(&invalid_id);
+        assert!(result.is_err());
     }
 
     #[test]

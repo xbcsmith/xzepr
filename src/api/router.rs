@@ -37,6 +37,9 @@ use crate::api::rest::events::{
     health_check, list_event_receivers, update_event_receiver, update_event_receiver_group,
     AppState,
 };
+use crate::api::rest::group_membership::{
+    add_group_member, list_group_members, remove_group_member, GroupMembershipState,
+};
 use crate::domain::repositories::user_repo::UserRepository;
 use crate::infrastructure::{PrometheusMetrics, SecurityConfig, SecurityMonitor};
 
@@ -120,9 +123,13 @@ where
     tracing::info!("Building canonical production router");
 
     let schema = create_schema(
+        Arc::new(state.event_handler.clone()),
         Arc::new(state.event_receiver_handler.clone()),
         Arc::new(state.event_receiver_group_handler.clone()),
     );
+    let group_membership_state = GroupMembershipState {
+        group_handler: state.event_receiver_group_handler.clone(),
+    };
 
     let rate_limiter = build_rate_limiter(&config).await;
     let cors_layer = build_cors_layer(&config);
@@ -188,6 +195,21 @@ where
             jwt_auth_middleware,
         ));
 
+    let protected_group_membership_routes = Router::new()
+        .route("/api/v1/groups/:id/members", get(list_group_members))
+        .route("/api/v1/groups/:id/members", post(add_group_member))
+        .route("/api/v1/groups/:id/members", delete(remove_group_member))
+        .with_state(group_membership_state)
+        .layer(middleware::from_fn_with_state(
+            rate_limiter.clone(),
+            crate::api::middleware::rate_limit::rate_limit_middleware,
+        ))
+        .layer(middleware::from_fn(rbac_enforcement_middleware))
+        .layer(middleware::from_fn_with_state(
+            jwt_state.clone(),
+            jwt_auth_middleware,
+        ));
+
     let protected_api_routes = Router::new()
         .route("/api/v1/events", post(create_event))
         .route("/api/v1/events/:id", get(get_event))
@@ -216,6 +238,7 @@ where
         .merge(protected_auth_routes)
         .merge(public_graphql_routes)
         .merge(protected_graphql_routes)
+        .merge(protected_group_membership_routes)
         .merge(protected_api_routes)
         .layer(DefaultBodyLimit::max(
             config.security.validation.max_body_size,

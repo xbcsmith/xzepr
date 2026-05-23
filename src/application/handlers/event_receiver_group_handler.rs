@@ -6,9 +6,10 @@
 use crate::domain::entities::event::Event;
 use crate::domain::entities::event_receiver_group::EventReceiverGroup;
 use crate::domain::repositories::event_receiver_group_repo::{
-    EventReceiverGroupRepository, FindEventReceiverGroupCriteria,
+    EventReceiverGroupRepository, FindEventReceiverGroupCriteria, GroupMembershipRecord,
 };
 use crate::domain::repositories::event_receiver_repo::EventReceiverRepository;
+use crate::domain::repositories::user_repo::UserRepository;
 use crate::domain::value_objects::{EventReceiverGroupId, EventReceiverId, UserId};
 use crate::error::{DomainError, Result};
 use crate::infrastructure::messaging::cloudevents::CloudEventMessage;
@@ -28,11 +29,28 @@ pub struct UpdateEventReceiverGroupParams {
     pub event_receiver_ids: Option<Vec<EventReceiverId>>,
 }
 
+/// Details for a user membership in an event receiver group.
+#[derive(Debug, Clone)]
+pub struct GroupMemberDetails {
+    /// User ID for the group member.
+    pub user_id: UserId,
+    /// Username loaded from the user repository.
+    pub username: String,
+    /// Email loaded from the user repository.
+    pub email: String,
+    /// Timestamp when the member was added.
+    pub added_at: chrono::DateTime<chrono::Utc>,
+    /// User who added this member.
+    pub added_by: UserId,
+}
+
 /// Application service for handling event receiver group operations
 #[derive(Clone)]
 pub struct EventReceiverGroupHandler {
     group_repository: Arc<dyn EventReceiverGroupRepository>,
     receiver_repository: Arc<dyn EventReceiverRepository>,
+    user_repository: Option<Arc<dyn UserRepository>>,
+    event_repository: Option<Arc<dyn crate::domain::repositories::event_repo::EventRepository>>,
     event_publisher: Option<Arc<KafkaEventPublisher>>,
 }
 
@@ -45,6 +63,8 @@ impl EventReceiverGroupHandler {
         Self {
             group_repository,
             receiver_repository,
+            user_repository: None,
+            event_repository: None,
             event_publisher: None,
         }
     }
@@ -58,8 +78,25 @@ impl EventReceiverGroupHandler {
         Self {
             group_repository,
             receiver_repository,
+            user_repository: None,
+            event_repository: None,
             event_publisher: Some(event_publisher),
         }
+    }
+
+    /// Adds a user repository for member detail enrichment.
+    pub fn with_user_repository(mut self, user_repository: Arc<dyn UserRepository>) -> Self {
+        self.user_repository = Some(user_repository);
+        self
+    }
+
+    /// Adds an event repository for delete integrity checks.
+    pub fn with_event_repository(
+        mut self,
+        event_repository: Arc<dyn crate::domain::repositories::event_repo::EventRepository>,
+    ) -> Self {
+        self.event_repository = Some(event_repository);
+        self
     }
 
     /// Creates a new event receiver group
@@ -607,13 +644,22 @@ impl EventReceiverGroupHandler {
     pub async fn delete_event_receiver_group(&self, id: EventReceiverGroupId) -> Result<()> {
         info!(group_id = %id, "Deleting event receiver group");
 
-        // Check if the group exists
-        if self.group_repository.find_by_id(id).await?.is_none() {
-            return Err(DomainError::GroupNotFound.into());
-        }
+        let group = self
+            .group_repository
+            .find_by_id(id)
+            .await?
+            .ok_or_else(|| crate::error::Error::from(DomainError::GroupNotFound))?;
 
-        // TODO: Check if group is being referenced by any events
-        // This should be done by checking with event repository
+        if let Some(event_repository) = &self.event_repository {
+            for receiver_id in group.event_receiver_ids() {
+                if event_repository.count_by_receiver_id(*receiver_id).await? > 0 {
+                    return Err(DomainError::BusinessRuleViolation {
+                        rule: "Cannot delete group because its receivers have events".to_string(),
+                    }
+                    .into());
+                }
+            }
+        }
 
         self.group_repository.delete(id).await?;
 
@@ -719,6 +765,18 @@ impl EventReceiverGroupHandler {
             .await
     }
 
+    /// Adds a member and returns enriched member details.
+    pub async fn add_group_member_details(
+        &self,
+        group_id: EventReceiverGroupId,
+        user_id: UserId,
+        added_by: UserId,
+    ) -> Result<GroupMemberDetails> {
+        self.ensure_user_exists(user_id).await?;
+        self.add_group_member(group_id, user_id, added_by).await?;
+        self.get_group_member_details(group_id, user_id).await
+    }
+
     /// Removes a member from an event receiver group
     ///
     /// # Arguments
@@ -789,6 +847,88 @@ impl EventReceiverGroupHandler {
     /// ```
     pub async fn get_group_members(&self, group_id: EventReceiverGroupId) -> Result<Vec<UserId>> {
         self.group_repository.get_group_members(group_id).await
+    }
+
+    /// Gets enriched details for all members in a group.
+    pub async fn get_group_member_details_list(
+        &self,
+        group_id: EventReceiverGroupId,
+    ) -> Result<Vec<GroupMemberDetails>> {
+        let records = self
+            .group_repository
+            .get_group_member_records(group_id)
+            .await?;
+        let mut details = Vec::with_capacity(records.len());
+
+        for record in records {
+            details.push(self.details_from_record(record).await?);
+        }
+
+        Ok(details)
+    }
+
+    /// Gets enriched details for one member in a group.
+    pub async fn get_group_member_details(
+        &self,
+        group_id: EventReceiverGroupId,
+        user_id: UserId,
+    ) -> Result<GroupMemberDetails> {
+        let record = self
+            .group_repository
+            .get_group_member_record(group_id, user_id)
+            .await?
+            .ok_or_else(|| crate::error::Error::NotFound {
+                resource: format!("Group member {} in group {}", user_id, group_id),
+            })?;
+
+        self.details_from_record(record).await
+    }
+
+    async fn ensure_user_exists(&self, user_id: UserId) -> Result<()> {
+        let user_repository =
+            self.user_repository
+                .as_ref()
+                .ok_or_else(|| crate::error::Error::Internal {
+                    message: "User repository is required for group membership details".to_string(),
+                })?;
+
+        user_repository
+            .find_by_id(&user_id)
+            .await
+            .map_err(crate::error::Error::Domain)?
+            .ok_or_else(|| crate::error::Error::NotFound {
+                resource: format!("User {}", user_id),
+            })?;
+
+        Ok(())
+    }
+
+    async fn details_from_record(
+        &self,
+        record: GroupMembershipRecord,
+    ) -> Result<GroupMemberDetails> {
+        let user_repository =
+            self.user_repository
+                .as_ref()
+                .ok_or_else(|| crate::error::Error::Internal {
+                    message: "User repository is required for group membership details".to_string(),
+                })?;
+
+        let user = user_repository
+            .find_by_id(&record.user_id)
+            .await
+            .map_err(crate::error::Error::Domain)?
+            .ok_or_else(|| crate::error::Error::Internal {
+                message: format!("Membership references missing user {}", record.user_id),
+            })?;
+
+        Ok(GroupMemberDetails {
+            user_id: record.user_id,
+            username: user.username().to_string(),
+            email: user.email().to_string(),
+            added_at: record.added_at,
+            added_by: record.added_by,
+        })
     }
 
     /// Checks if a user is a member of an event receiver group

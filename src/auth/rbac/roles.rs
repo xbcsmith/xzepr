@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2025 Brett Smith <xbcsmith@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-// Generated from xzepr-architecture-plan.md
-// Section: Multiple sections
-// Original line: 0
-
-// src/auth/rbac/roles.rs
 use super::permissions::Permission;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;

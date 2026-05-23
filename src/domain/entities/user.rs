@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2025 Brett Smith <xbcsmith@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-// Generated from xzepr-architecture-plan.md
-// Section: Multiple sections
-// Original line: 0
-
-// src/domain/entities/user.rs
 use crate::auth::rbac::{permissions::Permission, roles::Role};
 use crate::domain::value_objects::UserId;
 use crate::error::{AuthError, DomainError};

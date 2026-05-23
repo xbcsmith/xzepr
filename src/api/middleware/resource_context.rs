@@ -53,7 +53,6 @@ pub struct EventReceiverContextBuilder {
     /// Repository for querying event receivers
     receiver_repo: Arc<dyn EventReceiverRepository>,
     /// Repository for querying event receiver groups
-    #[allow(dead_code)]
     group_repo: Arc<dyn EventReceiverGroupRepository>,
 }
 
@@ -92,12 +91,13 @@ impl ResourceContextBuilder for EventReceiverContextBuilder {
 
         let owner_id = Some(receiver.owner_id().to_string());
         let resource_version = receiver.resource_version();
-
-        // TODO: Implement group membership lookup
-        // EventReceiver doesn't have a direct group_id field
-        // Need to query which groups contain this receiver
-        let group_id = None;
-        let group_members = Vec::new();
+        let groups = self
+            .group_repo
+            .find_by_event_receiver_id(receiver_id)
+            .await
+            .map_err(|e| format!("Failed to load receiver groups: {}", e))?;
+        let group_id = groups.first().map(|group| group.id().to_string());
+        let group_members = collect_group_members(self.group_repo.as_ref(), &groups).await?;
 
         Ok(ResourceContext {
             resource_type: "event_receiver".to_string(),
@@ -117,7 +117,6 @@ pub struct EventContextBuilder {
     /// Repository for querying event receivers
     receiver_repo: Arc<dyn EventReceiverRepository>,
     /// Repository for querying event receiver groups
-    #[allow(dead_code)]
     group_repo: Arc<dyn EventReceiverGroupRepository>,
 }
 
@@ -167,12 +166,13 @@ impl ResourceContextBuilder for EventContextBuilder {
 
         let owner_id = Some(receiver.owner_id().to_string());
         let resource_version = event.resource_version();
-
-        // TODO: Implement group membership lookup
-        // EventReceiver doesn't have a direct group_id field
-        // Need to query which groups contain this receiver
-        let group_id = None;
-        let group_members = Vec::new();
+        let groups = self
+            .group_repo
+            .find_by_event_receiver_id(receiver_id)
+            .await
+            .map_err(|e| format!("Failed to load event receiver groups: {}", e))?;
+        let group_id = groups.first().map(|group| group.id().to_string());
+        let group_members = collect_group_members(self.group_repo.as_ref(), &groups).await?;
 
         Ok(ResourceContext {
             resource_type: "event".to_string(),
@@ -220,9 +220,14 @@ impl ResourceContextBuilder for EventReceiverGroupContextBuilder {
 
         let owner_id = Some(group.owner_id().to_string());
         let resource_version = group.resource_version();
-
-        // TODO: Query group members from membership table
-        let group_members = Vec::new();
+        let group_members = self
+            .group_repo
+            .get_group_members(group_id)
+            .await
+            .map_err(|e| format!("Failed to load group members: {}", e))?
+            .into_iter()
+            .map(|member_id| member_id.to_string())
+            .collect();
 
         Ok(ResourceContext {
             resource_type: "event_receiver_group".to_string(),
@@ -235,9 +240,25 @@ impl ResourceContextBuilder for EventReceiverGroupContextBuilder {
     }
 }
 
-// TODO: Add tests once mock repositories are available
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     // Tests will be added in Phase 3 testing task
-// }
+async fn collect_group_members(
+    group_repo: &dyn EventReceiverGroupRepository,
+    groups: &[crate::domain::entities::event_receiver_group::EventReceiverGroup],
+) -> Result<Vec<String>, String> {
+    let mut members = Vec::new();
+
+    for group in groups {
+        let group_members = group_repo
+            .get_group_members(group.id())
+            .await
+            .map_err(|e| format!("Failed to load group members: {}", e))?;
+        members.extend(
+            group_members
+                .into_iter()
+                .map(|member_id| member_id.to_string()),
+        );
+    }
+
+    members.sort();
+    members.dedup();
+    Ok(members)
+}

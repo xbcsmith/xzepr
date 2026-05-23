@@ -8,7 +8,7 @@ use sqlx::PgPool;
 
 use crate::domain::entities::event_receiver_group::{EventReceiverGroup, EventReceiverGroupData};
 use crate::domain::repositories::event_receiver_group_repo::{
-    EventReceiverGroupRepository, FindEventReceiverGroupCriteria,
+    EventReceiverGroupRepository, FindEventReceiverGroupCriteria, GroupMembershipRecord,
 };
 use crate::domain::value_objects::{EventReceiverGroupId, EventReceiverId, UserId};
 use crate::error::Result;
@@ -16,6 +16,29 @@ use crate::error::Result;
 /// PostgreSQL implementation of EventReceiverGroupRepository
 pub struct PostgresEventReceiverGroupRepository {
     pool: PgPool,
+}
+
+fn membership_record_from_row(row: &sqlx::postgres::PgRow) -> Result<GroupMembershipRecord> {
+    use sqlx::Row;
+
+    Ok(GroupMembershipRecord {
+        group_id: EventReceiverGroupId::parse(&row.get::<String, _>("group_id")).map_err(|e| {
+            crate::error::Error::BadRequest {
+                message: format!("Invalid group ID: {}", e),
+            }
+        })?,
+        user_id: UserId::parse(&row.get::<String, _>("user_id")).map_err(|e| {
+            crate::error::Error::BadRequest {
+                message: format!("Invalid user ID: {}", e),
+            }
+        })?,
+        added_by: UserId::parse(&row.get::<String, _>("added_by")).map_err(|e| {
+            crate::error::Error::BadRequest {
+                message: format!("Invalid added_by user ID: {}", e),
+            }
+        })?,
+        added_at: row.get("added_at"),
+    })
 }
 
 impl PostgresEventReceiverGroupRepository {
@@ -832,6 +855,47 @@ impl EventReceiverGroupRepository for PostgresEventReceiverGroupRepository {
             .collect()
     }
 
+    async fn get_group_member_record(
+        &self,
+        group_id: EventReceiverGroupId,
+        user_id: UserId,
+    ) -> Result<Option<GroupMembershipRecord>> {
+        let row = sqlx::query(
+            r#"
+            SELECT group_id, user_id, added_by, added_at
+            FROM event_receiver_group_members
+            WHERE group_id = $1 AND user_id = $2
+            "#,
+        )
+        .bind(group_id.to_string())
+        .bind(user_id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(crate::error::Error::Database)?;
+
+        row.map(|row| membership_record_from_row(&row)).transpose()
+    }
+
+    async fn get_group_member_records(
+        &self,
+        group_id: EventReceiverGroupId,
+    ) -> Result<Vec<GroupMembershipRecord>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT group_id, user_id, added_by, added_at
+            FROM event_receiver_group_members
+            WHERE group_id = $1
+            ORDER BY added_at
+            "#,
+        )
+        .bind(group_id.to_string())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(crate::error::Error::Database)?;
+
+        rows.iter().map(membership_record_from_row).collect()
+    }
+
     async fn add_member(
         &self,
         group_id: EventReceiverGroupId,
@@ -900,13 +964,5 @@ impl EventReceiverGroupRepository for PostgresEventReceiverGroupRepository {
         }
 
         Ok(groups)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_repository_creation() {
-        // This is a placeholder test - actual database tests would require test database setup
     }
 }

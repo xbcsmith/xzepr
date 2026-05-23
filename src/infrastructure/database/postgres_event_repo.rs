@@ -601,7 +601,8 @@ impl EventRepository for PostgresEventRepository {
     async fn find_by_criteria(&self, criteria: FindEventCriteria) -> Result<Vec<Event>> {
         let mut query = String::from(
             "SELECT id, event_receiver_id, name, version, release, \
-             platform_id, package, description, payload, success, created_at \
+             platform_id, package, description, payload, success, created_at, \
+             owner_id, resource_version \
              FROM events WHERE 1=1",
         );
         let mut param_count = 1;
@@ -644,6 +645,11 @@ impl EventRepository for PostgresEventRepository {
 
         if criteria.event_receiver_id.is_some() {
             query.push_str(&format!(" AND event_receiver_id = ${}", param_count));
+            param_count += 1;
+        }
+
+        if criteria.owner_id.is_some() {
+            query.push_str(&format!(" AND owner_id = ${}", param_count));
             param_count += 1;
         }
 
@@ -696,6 +702,9 @@ impl EventRepository for PostgresEventRepository {
         }
         if let Some(receiver_id) = criteria.event_receiver_id {
             sql_query = sql_query.bind(receiver_id);
+        }
+        if let Some(owner_id) = criteria.owner_id {
+            sql_query = sql_query.bind(owner_id.to_string());
         }
         if let Some(start_time) = criteria.start_time {
             sql_query = sql_query.bind(start_time);
@@ -810,36 +819,5 @@ impl EventRepository for PostgresEventRepository {
         .await?;
 
         Ok(result)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    // Integration tests require a running PostgreSQL instance
-    // These are placeholder tests - full integration tests should use testcontainers
-
-    #[tokio::test]
-    #[ignore = "requires database"]
-    async fn test_save_and_find_by_id() {
-        // This test requires a test database
-        // Use testcontainers or a dedicated test DB
-    }
-
-    #[tokio::test]
-    #[ignore = "requires database"]
-    async fn test_find_by_criteria() {
-        // This test requires a test database
-    }
-
-    #[tokio::test]
-    #[ignore = "requires database"]
-    async fn test_pagination() {
-        // This test requires a test database
-    }
-
-    #[tokio::test]
-    #[ignore = "requires database"]
-    async fn test_time_range_query() {
-        // This test requires a test database
     }
 }

@@ -1,12 +1,6 @@
 // SPDX-FileCopyrightText: 2025 Brett Smith <xbcsmith@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-// Generated from xzepr-architecture-plan.md
-// Section: Multiple sections
-// Original line: 0
-
-// src/infrastructure/config.rs
-
 use serde::Deserialize;
 
 use config::{Config, ConfigError, Environment, File};

@@ -52,22 +52,29 @@ async fn main() -> Result<()> {
     let event_publisher = create_event_publisher(&settings);
 
     let event_handler = if let Some(ref publisher) = event_publisher {
-        EventHandler::with_publisher(event_repo, receiver_repo.clone(), publisher.clone())
+        EventHandler::with_publisher(event_repo.clone(), receiver_repo.clone(), publisher.clone())
     } else {
-        EventHandler::new(event_repo, receiver_repo.clone())
+        EventHandler::new(event_repo.clone(), receiver_repo.clone())
     };
 
     let receiver_handler = if let Some(ref publisher) = event_publisher {
         EventReceiverHandler::with_publisher(receiver_repo.clone(), publisher.clone())
     } else {
         EventReceiverHandler::new(receiver_repo.clone())
-    };
+    }
+    .with_integrity_repositories(event_repo.clone(), group_repo.clone());
 
     let group_handler = if let Some(ref publisher) = event_publisher {
-        EventReceiverGroupHandler::with_publisher(group_repo, receiver_repo, publisher.clone())
+        EventReceiverGroupHandler::with_publisher(
+            group_repo.clone(),
+            receiver_repo.clone(),
+            publisher.clone(),
+        )
     } else {
-        EventReceiverGroupHandler::new(group_repo, receiver_repo)
-    };
+        EventReceiverGroupHandler::new(group_repo.clone(), receiver_repo.clone())
+    }
+    .with_user_repository(user_repo.clone())
+    .with_event_repository(event_repo.clone());
 
     let api_state = xzepr::api::rest::events::AppState {
         event_handler,

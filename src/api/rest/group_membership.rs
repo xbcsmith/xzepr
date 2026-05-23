@@ -14,6 +14,7 @@ use crate::api::middleware::jwt::AuthenticatedUser;
 use crate::api::rest::dtos::{
     AddMemberRequest, ErrorResponse, GroupMemberResponse, GroupMembersResponse, RemoveMemberRequest,
 };
+use crate::application::handlers::event_receiver_group_handler::GroupMemberDetails;
 use crate::application::handlers::EventReceiverGroupHandler;
 use crate::domain::value_objects::{EventReceiverGroupId, UserId};
 
@@ -21,6 +22,16 @@ use crate::domain::value_objects::{EventReceiverGroupId, UserId};
 #[derive(Clone)]
 pub struct GroupMembershipState {
     pub group_handler: EventReceiverGroupHandler,
+}
+
+fn group_member_response(details: GroupMemberDetails) -> GroupMemberResponse {
+    GroupMemberResponse {
+        user_id: details.user_id.to_string(),
+        username: details.username,
+        email: details.email,
+        added_at: details.added_at,
+        added_by: details.added_by.to_string(),
+    }
 }
 
 /// Adds a member to an event receiver group
@@ -146,31 +157,32 @@ pub async fn add_group_member(
     // Add the member
     match state
         .group_handler
-        .add_group_member(group_id, user_id, added_by)
+        .add_group_member_details(group_id, user_id, added_by)
         .await
     {
-        Ok(_) => {
+        Ok(details) => {
             info!(
                 "Successfully added user {} to group {} by {}",
                 user_id, group_id, added_by
             );
 
-            // Return success response with member info
-            // Note: In a real implementation, we would fetch user details
-            // from a user service or repository. For now, we return basic info.
-            Ok(Json(GroupMemberResponse {
-                user_id: user_id.to_string(),
-                username: format!("user_{}", user_id), // Placeholder
-                email: format!("{}@example.com", user_id), // Placeholder
-                added_at: chrono::Utc::now(),
-                added_by: added_by.to_string(),
-            }))
+            Ok(Json(group_member_response(details)))
         }
         Err(e) => {
             error!("Failed to add member to group: {}", e);
 
             // Check for specific error types
             let error_msg = e.to_string();
+            if error_msg.contains("User ") && error_msg.contains("not found") {
+                return Err((
+                    StatusCode::NOT_FOUND,
+                    Json(ErrorResponse::new(
+                        "NotFound".to_string(),
+                        "User not found".to_string(),
+                    )),
+                ));
+            }
+
             if error_msg.contains("already a member") || error_msg.contains("duplicate") {
                 return Err((
                     StatusCode::CONFLICT,
@@ -469,22 +481,21 @@ pub async fn list_group_members(
     }
 
     // Get all members
-    match state.group_handler.get_group_members(group_id).await {
-        Ok(member_ids) => {
-            info!("Found {} members in group {}", member_ids.len(), group_id);
+    match state
+        .group_handler
+        .get_group_member_details_list(group_id)
+        .await
+    {
+        Ok(member_details) => {
+            info!(
+                "Found {} members in group {}",
+                member_details.len(),
+                group_id
+            );
 
-            // Convert user IDs to member responses
-            // Note: In a real implementation, we would fetch full user details
-            // from a user service or repository. For now, we return basic info.
-            let members: Vec<GroupMemberResponse> = member_ids
-                .iter()
-                .map(|uid| GroupMemberResponse {
-                    user_id: uid.to_string(),
-                    username: format!("user_{}", uid), // Placeholder
-                    email: format!("{}@example.com", uid), // Placeholder
-                    added_at: chrono::Utc::now(),      // Placeholder
-                    added_by: group.owner_id().to_string(), // Placeholder
-                })
+            let members = member_details
+                .into_iter()
+                .map(group_member_response)
                 .collect();
 
             Ok(Json(GroupMembersResponse {
@@ -510,382 +521,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_group_membership_state_clone() {
-        // This test ensures GroupMembershipState can be cloned,
-        // which is required for Axum state
-        use crate::application::handlers::EventReceiverGroupHandler;
-        use std::sync::Arc;
-
-        // Create mock repositories
-        use crate::domain::repositories::event_receiver_group_repo::EventReceiverGroupRepository;
-        use crate::domain::repositories::event_receiver_repo::EventReceiverRepository;
-        use crate::domain::value_objects::EventReceiverId;
-
-        // Note: This is a compile-time test to ensure Clone is implemented
-        // In practice, we'd use actual mock repositories for testing
-        struct MockGroupRepo;
-        struct MockReceiverRepo;
-
-        #[async_trait::async_trait]
-        impl EventReceiverGroupRepository for MockGroupRepo {
-            async fn save(
-                &self,
-                _group: &crate::domain::entities::event_receiver_group::EventReceiverGroup,
-            ) -> crate::error::Result<()> {
-                unimplemented!()
-            }
-
-            async fn find_by_id(
-                &self,
-                _id: EventReceiverGroupId,
-            ) -> crate::error::Result<
-                Option<crate::domain::entities::event_receiver_group::EventReceiverGroup>,
-            > {
-                unimplemented!()
-            }
-
-            async fn find_by_name(
-                &self,
-                _name: &str,
-            ) -> crate::error::Result<
-                Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>,
-            > {
-                unimplemented!()
-            }
-
-            async fn find_by_type(
-                &self,
-                _group_type: &str,
-            ) -> crate::error::Result<
-                Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>,
-            > {
-                unimplemented!()
-            }
-
-            async fn find_by_type_and_version(
-                &self,
-                _group_type: &str,
-                _version: &str,
-            ) -> crate::error::Result<
-                Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>,
-            > {
-                unimplemented!()
-            }
-
-            async fn find_enabled(
-                &self,
-            ) -> crate::error::Result<
-                Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>,
-            > {
-                unimplemented!()
-            }
-
-            async fn find_disabled(
-                &self,
-            ) -> crate::error::Result<
-                Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>,
-            > {
-                unimplemented!()
-            }
-
-            async fn find_by_event_receiver_id(
-                &self,
-                _receiver_id: EventReceiverId,
-            ) -> crate::error::Result<
-                Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>,
-            > {
-                unimplemented!()
-            }
-
-            async fn list(
-                &self,
-                _limit: usize,
-                _offset: usize,
-            ) -> crate::error::Result<
-                Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>,
-            > {
-                unimplemented!()
-            }
-
-            async fn count(&self) -> crate::error::Result<usize> {
-                unimplemented!()
-            }
-
-            async fn count_enabled(&self) -> crate::error::Result<usize> {
-                unimplemented!()
-            }
-
-            async fn count_disabled(&self) -> crate::error::Result<usize> {
-                unimplemented!()
-            }
-
-            async fn update(
-                &self,
-                _group: &crate::domain::entities::event_receiver_group::EventReceiverGroup,
-            ) -> crate::error::Result<()> {
-                unimplemented!()
-            }
-
-            async fn delete(&self, _id: EventReceiverGroupId) -> crate::error::Result<()> {
-                unimplemented!()
-            }
-
-            async fn enable(&self, _id: EventReceiverGroupId) -> crate::error::Result<()> {
-                unimplemented!()
-            }
-
-            async fn disable(&self, _id: EventReceiverGroupId) -> crate::error::Result<()> {
-                unimplemented!()
-            }
-
-            async fn exists_by_name_and_type(
-                &self,
-                _name: &str,
-                _group_type: &str,
-            ) -> crate::error::Result<bool> {
-                unimplemented!()
-            }
-
-            async fn find_by_criteria(
-                &self,
-                _criteria: crate::domain::repositories::event_receiver_group_repo::FindEventReceiverGroupCriteria,
-            ) -> crate::error::Result<
-                Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>,
-            > {
-                unimplemented!()
-            }
-
-            async fn add_event_receiver_to_group(
-                &self,
-                _group_id: EventReceiverGroupId,
-                _receiver_id: EventReceiverId,
-            ) -> crate::error::Result<()> {
-                unimplemented!()
-            }
-
-            async fn remove_event_receiver_from_group(
-                &self,
-                _group_id: EventReceiverGroupId,
-                _receiver_id: EventReceiverId,
-            ) -> crate::error::Result<()> {
-                unimplemented!()
-            }
-
-            async fn get_group_event_receivers(
-                &self,
-                _group_id: EventReceiverGroupId,
-            ) -> crate::error::Result<Vec<EventReceiverId>> {
-                unimplemented!()
-            }
-
-            async fn find_by_owner(
-                &self,
-                _owner_id: crate::domain::value_objects::UserId,
-            ) -> crate::error::Result<
-                Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>,
-            > {
-                unimplemented!()
-            }
-
-            async fn find_by_owner_paginated(
-                &self,
-                _owner_id: crate::domain::value_objects::UserId,
-                _limit: usize,
-                _offset: usize,
-            ) -> crate::error::Result<
-                Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>,
-            > {
-                unimplemented!()
-            }
-
-            async fn is_owner(
-                &self,
-                _group_id: EventReceiverGroupId,
-                _user_id: crate::domain::value_objects::UserId,
-            ) -> crate::error::Result<bool> {
-                unimplemented!()
-            }
-
-            async fn get_resource_version(
-                &self,
-                _group_id: EventReceiverGroupId,
-            ) -> crate::error::Result<Option<i64>> {
-                unimplemented!()
-            }
-
-            async fn is_member(
-                &self,
-                _group_id: EventReceiverGroupId,
-                _user_id: crate::domain::value_objects::UserId,
-            ) -> crate::error::Result<bool> {
-                unimplemented!()
-            }
-
-            async fn get_group_members(
-                &self,
-                _group_id: EventReceiverGroupId,
-            ) -> crate::error::Result<Vec<crate::domain::value_objects::UserId>> {
-                unimplemented!()
-            }
-
-            async fn add_member(
-                &self,
-                _group_id: EventReceiverGroupId,
-                _user_id: crate::domain::value_objects::UserId,
-                _added_by: crate::domain::value_objects::UserId,
-            ) -> crate::error::Result<()> {
-                unimplemented!()
-            }
-
-            async fn remove_member(
-                &self,
-                _group_id: EventReceiverGroupId,
-                _user_id: crate::domain::value_objects::UserId,
-            ) -> crate::error::Result<()> {
-                unimplemented!()
-            }
-
-            async fn find_groups_for_user(
-                &self,
-                _user_id: crate::domain::value_objects::UserId,
-            ) -> crate::error::Result<
-                Vec<crate::domain::entities::event_receiver_group::EventReceiverGroup>,
-            > {
-                unimplemented!()
-            }
-        }
-
-        #[async_trait::async_trait]
-        impl EventReceiverRepository for MockReceiverRepo {
-            async fn save(
-                &self,
-                _receiver: &crate::domain::entities::event_receiver::EventReceiver,
-            ) -> crate::error::Result<()> {
-                unimplemented!()
-            }
-
-            async fn find_by_id(
-                &self,
-                _id: EventReceiverId,
-            ) -> crate::error::Result<Option<crate::domain::entities::event_receiver::EventReceiver>>
-            {
-                unimplemented!()
-            }
-
-            async fn find_by_name(
-                &self,
-                _name: &str,
-            ) -> crate::error::Result<Vec<crate::domain::entities::event_receiver::EventReceiver>>
-            {
-                unimplemented!()
-            }
-
-            async fn find_by_type(
-                &self,
-                _receiver_type: &str,
-            ) -> crate::error::Result<Vec<crate::domain::entities::event_receiver::EventReceiver>>
-            {
-                unimplemented!()
-            }
-
-            async fn find_by_type_and_version(
-                &self,
-                _receiver_type: &str,
-                _version: &str,
-            ) -> crate::error::Result<Vec<crate::domain::entities::event_receiver::EventReceiver>>
-            {
-                unimplemented!()
-            }
-
-            async fn list(
-                &self,
-                _limit: usize,
-                _offset: usize,
-            ) -> crate::error::Result<Vec<crate::domain::entities::event_receiver::EventReceiver>>
-            {
-                unimplemented!()
-            }
-
-            async fn count(&self) -> crate::error::Result<usize> {
-                unimplemented!()
-            }
-
-            async fn update(
-                &self,
-                _receiver: &crate::domain::entities::event_receiver::EventReceiver,
-            ) -> crate::error::Result<()> {
-                unimplemented!()
-            }
-
-            async fn delete(&self, _id: EventReceiverId) -> crate::error::Result<()> {
-                unimplemented!()
-            }
-
-            async fn exists_by_name_and_type(
-                &self,
-                _name: &str,
-                _receiver_type: &str,
-            ) -> crate::error::Result<bool> {
-                unimplemented!()
-            }
-
-            async fn find_by_fingerprint(
-                &self,
-                _fingerprint: &str,
-            ) -> crate::error::Result<Option<crate::domain::entities::event_receiver::EventReceiver>>
-            {
-                unimplemented!()
-            }
-
-            async fn find_by_owner(
-                &self,
-                _owner_id: crate::domain::value_objects::UserId,
-            ) -> crate::error::Result<Vec<crate::domain::entities::event_receiver::EventReceiver>>
-            {
-                unimplemented!()
-            }
-
-            async fn find_by_owner_paginated(
-                &self,
-                _owner_id: crate::domain::value_objects::UserId,
-                _limit: usize,
-                _offset: usize,
-            ) -> crate::error::Result<Vec<crate::domain::entities::event_receiver::EventReceiver>>
-            {
-                unimplemented!()
-            }
-
-            async fn is_owner(
-                &self,
-                _receiver_id: EventReceiverId,
-                _user_id: crate::domain::value_objects::UserId,
-            ) -> crate::error::Result<bool> {
-                unimplemented!()
-            }
-
-            async fn get_resource_version(
-                &self,
-                _receiver_id: EventReceiverId,
-            ) -> crate::error::Result<Option<i64>> {
-                unimplemented!()
-            }
-
-            async fn find_by_criteria(
-                &self,
-                _criteria: crate::domain::repositories::event_receiver_repo::FindEventReceiverCriteria,
-            ) -> crate::error::Result<Vec<crate::domain::entities::event_receiver::EventReceiver>>
-            {
-                unimplemented!()
-            }
-        }
-
-        let handler =
-            EventReceiverGroupHandler::new(Arc::new(MockGroupRepo), Arc::new(MockReceiverRepo));
-
-        let state = GroupMembershipState {
-            group_handler: handler,
-        };
-
-        let _cloned_state = state.clone();
+    fn test_group_membership_state_is_clone() {
+        fn assert_clone<T: Clone>() {}
+        assert_clone::<GroupMembershipState>();
     }
 }

@@ -139,18 +139,132 @@ pub async fn graphql_health() -> (StatusCode, Json<serde_json::Value>) {
 mod tests {
     use super::*;
     use crate::api::graphql::create_schema;
-    use crate::application::handlers::{EventReceiverGroupHandler, EventReceiverHandler};
+    use crate::application::handlers::{
+        EventHandler, EventReceiverGroupHandler, EventReceiverHandler,
+    };
+    use crate::domain::entities::event::Event;
     use crate::domain::entities::event_receiver::EventReceiver;
     use crate::domain::repositories::{
         event_receiver_group_repo::{EventReceiverGroupRepository, FindEventReceiverGroupCriteria},
         event_receiver_repo::{EventReceiverRepository, FindEventReceiverCriteria},
+        event_repo::{EventRepository, FindEventCriteria},
     };
-    use crate::domain::value_objects::{EventReceiverGroupId, EventReceiverId};
+    use crate::domain::value_objects::{EventId, EventReceiverGroupId, EventReceiverId};
     use crate::error::Result;
 
     use async_trait::async_trait;
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
+
+    struct MockEventRepository;
+
+    #[async_trait]
+    impl EventRepository for MockEventRepository {
+        async fn save(&self, _event: &Event) -> Result<()> {
+            Ok(())
+        }
+
+        async fn find_by_id(&self, _id: EventId) -> Result<Option<Event>> {
+            Ok(None)
+        }
+
+        async fn find_by_receiver_id(&self, _receiver_id: EventReceiverId) -> Result<Vec<Event>> {
+            Ok(vec![])
+        }
+
+        async fn find_by_success(&self, _success: bool) -> Result<Vec<Event>> {
+            Ok(vec![])
+        }
+
+        async fn find_by_name(&self, _name: &str) -> Result<Vec<Event>> {
+            Ok(vec![])
+        }
+
+        async fn find_by_platform_id(&self, _platform_id: &str) -> Result<Vec<Event>> {
+            Ok(vec![])
+        }
+
+        async fn find_by_package(&self, _package: &str) -> Result<Vec<Event>> {
+            Ok(vec![])
+        }
+
+        async fn list(&self, _limit: usize, _offset: usize) -> Result<Vec<Event>> {
+            Ok(vec![])
+        }
+
+        async fn count(&self) -> Result<usize> {
+            Ok(0)
+        }
+
+        async fn count_by_receiver_id(&self, _receiver_id: EventReceiverId) -> Result<usize> {
+            Ok(0)
+        }
+
+        async fn count_successful_by_receiver_id(
+            &self,
+            _receiver_id: EventReceiverId,
+        ) -> Result<usize> {
+            Ok(0)
+        }
+
+        async fn delete(&self, _id: EventId) -> Result<()> {
+            Ok(())
+        }
+
+        async fn find_latest_by_receiver_id(
+            &self,
+            _receiver_id: EventReceiverId,
+        ) -> Result<Option<Event>> {
+            Ok(None)
+        }
+
+        async fn find_latest_successful_by_receiver_id(
+            &self,
+            _receiver_id: EventReceiverId,
+        ) -> Result<Option<Event>> {
+            Ok(None)
+        }
+
+        async fn find_by_time_range(
+            &self,
+            _start: chrono::DateTime<chrono::Utc>,
+            _end: chrono::DateTime<chrono::Utc>,
+        ) -> Result<Vec<Event>> {
+            Ok(vec![])
+        }
+
+        async fn find_by_criteria(&self, _criteria: FindEventCriteria) -> Result<Vec<Event>> {
+            Ok(vec![])
+        }
+
+        async fn find_by_owner(
+            &self,
+            _owner_id: crate::domain::value_objects::UserId,
+        ) -> Result<Vec<Event>> {
+            Ok(vec![])
+        }
+
+        async fn find_by_owner_paginated(
+            &self,
+            _owner_id: crate::domain::value_objects::UserId,
+            _limit: usize,
+            _offset: usize,
+        ) -> Result<Vec<Event>> {
+            Ok(vec![])
+        }
+
+        async fn is_owner(
+            &self,
+            _event_id: EventId,
+            _user_id: crate::domain::value_objects::UserId,
+        ) -> Result<bool> {
+            Ok(false)
+        }
+
+        async fn get_resource_version(&self, _event_id: EventId) -> Result<Option<i64>> {
+            Ok(None)
+        }
+    }
 
     // Mock repository for testing
     struct MockEventReceiverRepository {
@@ -470,13 +584,15 @@ mod tests {
     }
 
     fn create_test_schema() -> Schema {
+        let event_repo = Arc::new(MockEventRepository);
         let receiver_repo = Arc::new(MockEventReceiverRepository::new());
         let group_repo = Arc::new(MockEventReceiverGroupRepository);
 
+        let event_handler = Arc::new(EventHandler::new(event_repo, receiver_repo.clone()));
         let receiver_handler = Arc::new(EventReceiverHandler::new(receiver_repo.clone()));
         let group_handler = Arc::new(EventReceiverGroupHandler::new(group_repo, receiver_repo));
 
-        create_schema(receiver_handler, group_handler)
+        create_schema(event_handler, receiver_handler, group_handler)
     }
 
     fn create_test_authenticated_user() -> AuthenticatedUser {

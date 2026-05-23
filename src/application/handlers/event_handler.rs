@@ -5,8 +5,8 @@
 
 use crate::domain::entities::event::{CreateEventParams, Event};
 use crate::domain::repositories::event_receiver_repo::EventReceiverRepository;
-use crate::domain::repositories::event_repo::EventRepository;
-use crate::domain::value_objects::{EventId, EventReceiverId};
+use crate::domain::repositories::event_repo::{EventRepository, FindEventCriteria};
+use crate::domain::value_objects::{EventId, EventReceiverId, UserId};
 use crate::error::{DomainError, Result};
 use crate::infrastructure::messaging::producer::KafkaEventPublisher;
 
@@ -216,6 +216,24 @@ impl EventHandler {
         }
 
         self.event_repository.list(limit, offset).await
+    }
+
+    /// Finds events for a specific owner using repository criteria.
+    pub async fn find_events_for_user(
+        &self,
+        mut criteria: FindEventCriteria,
+        owner_id: UserId,
+    ) -> Result<Vec<Event>> {
+        criteria = criteria.with_owner_id(owner_id);
+
+        if criteria.limit.is_none() {
+            criteria = criteria.with_limit(50);
+        }
+        if criteria.offset.is_none() {
+            criteria = criteria.with_offset(0);
+        }
+
+        self.event_repository.find_by_criteria(criteria).await
     }
 
     /// Counts total number of events
@@ -476,9 +494,19 @@ mod tests {
 
         async fn find_by_criteria(
             &self,
-            _criteria: crate::domain::repositories::event_repo::FindEventCriteria,
+            criteria: crate::domain::repositories::event_repo::FindEventCriteria,
         ) -> Result<Vec<Event>> {
-            Ok(vec![])
+            let events = self.events.lock().unwrap();
+            Ok(events
+                .values()
+                .filter(|event| {
+                    criteria
+                        .owner_id
+                        .map(|owner_id| event.owner_id() == owner_id)
+                        .unwrap_or(true)
+                })
+                .cloned()
+                .collect())
         }
 
         async fn find_by_owner(

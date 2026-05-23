@@ -1,11 +1,6 @@
 // SPDX-FileCopyrightText: 2025 Brett Smith <xbcsmith@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-// Generated from xzepr-architecture-plan.md
-// Section: Multiple sections
-// Original line: 0
-
-// src/auth/api_key.rs
 use crate::domain::entities::user::User;
 use crate::domain::value_objects::{ApiKeyId, UserId};
 use crate::error::AuthError;
@@ -171,33 +166,29 @@ fn hash_api_key(key: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-// Stub implementation for demo purposes
+#[cfg(test)]
 pub struct StubApiKeyRepository;
 
+#[cfg(test)]
 #[async_trait::async_trait]
 impl ApiKeyRepository for StubApiKeyRepository {
     async fn save(&self, _api_key: &ApiKey) -> Result<(), AuthError> {
-        // Stub: pretend to save
         Ok(())
     }
 
     async fn find_by_hash(&self, _hash: &str) -> Result<Option<ApiKey>, AuthError> {
-        // Stub: no keys found
         Ok(None)
     }
 
     async fn update_last_used(&self, _id: ApiKeyId) -> Result<(), AuthError> {
-        // Stub: pretend to update
         Ok(())
     }
 
     async fn find_by_user_id(&self, _user_id: UserId) -> Result<Vec<ApiKey>, AuthError> {
-        // Stub: return empty list
         Ok(vec![])
     }
 
     async fn revoke(&self, _id: ApiKeyId) -> Result<(), AuthError> {
-        // Stub: pretend to revoke
         Ok(())
     }
 }

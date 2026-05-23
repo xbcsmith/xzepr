@@ -5,9 +5,11 @@
 
 use crate::domain::entities::event::Event;
 use crate::domain::entities::event_receiver::EventReceiver;
+use crate::domain::repositories::event_receiver_group_repo::EventReceiverGroupRepository;
 use crate::domain::repositories::event_receiver_repo::{
     EventReceiverRepository, FindEventReceiverCriteria,
 };
+use crate::domain::repositories::event_repo::EventRepository;
 use crate::domain::value_objects::{EventReceiverId, UserId};
 use crate::error::{DomainError, Result};
 use crate::infrastructure::messaging::cloudevents::CloudEventMessage;
@@ -35,6 +37,8 @@ pub struct UpdateEventReceiverParams {
 #[derive(Clone)]
 pub struct EventReceiverHandler {
     repository: Arc<dyn EventReceiverRepository>,
+    event_repository: Option<Arc<dyn EventRepository>>,
+    group_repository: Option<Arc<dyn EventReceiverGroupRepository>>,
     event_publisher: Option<Arc<KafkaEventPublisher>>,
 }
 
@@ -43,6 +47,8 @@ impl EventReceiverHandler {
     pub fn new(repository: Arc<dyn EventReceiverRepository>) -> Self {
         Self {
             repository,
+            event_repository: None,
+            group_repository: None,
             event_publisher: None,
         }
     }
@@ -54,8 +60,21 @@ impl EventReceiverHandler {
     ) -> Self {
         Self {
             repository,
+            event_repository: None,
+            group_repository: None,
             event_publisher: Some(event_publisher),
         }
+    }
+
+    /// Adds repositories used for delete integrity checks.
+    pub fn with_integrity_repositories(
+        mut self,
+        event_repository: Arc<dyn EventRepository>,
+        group_repository: Arc<dyn EventReceiverGroupRepository>,
+    ) -> Self {
+        self.event_repository = Some(event_repository);
+        self.group_repository = Some(group_repository);
+        self
     }
 
     /// Creates a new event receiver
@@ -393,8 +412,28 @@ impl EventReceiverHandler {
             return Err(DomainError::ReceiverNotFound.into());
         }
 
-        // TODO: Check if receiver is being used by any events or groups
-        // This should be done by checking with other repositories
+        if let Some(event_repository) = &self.event_repository {
+            if event_repository.count_by_receiver_id(id).await? > 0 {
+                return Err(DomainError::BusinessRuleViolation {
+                    rule: "Cannot delete receiver because it has events".to_string(),
+                }
+                .into());
+            }
+        }
+
+        if let Some(group_repository) = &self.group_repository {
+            if !group_repository
+                .find_by_event_receiver_id(id)
+                .await?
+                .is_empty()
+            {
+                return Err(DomainError::BusinessRuleViolation {
+                    rule: "Cannot delete receiver because it belongs to one or more groups"
+                        .to_string(),
+                }
+                .into());
+            }
+        }
 
         self.repository.delete(id).await?;
 

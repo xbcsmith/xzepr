@@ -405,7 +405,9 @@ impl UserRepository for PostgresUserRepository {
 
         debug!("Creating new OIDC user: {}", subject);
 
-        let email_value = email.unwrap_or_else(|| format!("{}@placeholder.local", username));
+        let email_value = email.ok_or_else(|| {
+            DomainError::InvalidData("OIDC user provisioning requires an email address".to_string())
+        })?;
 
         let user = User::new_oidc(username, email_value, subject);
         self.create(user).await
