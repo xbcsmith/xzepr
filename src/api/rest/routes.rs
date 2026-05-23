@@ -8,7 +8,9 @@ use axum::{
     routing::{delete, get, post, put},
     Router,
 };
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
+#[cfg(test)]
+use tower_http::cors::CorsLayer;
+use tower_http::trace::TraceLayer;
 
 use crate::api::middleware::{
     jwt_auth_middleware, rbac_enforcement_middleware, JwtMiddlewareState,
@@ -22,7 +24,8 @@ use crate::api::rest::events::{
     AppState,
 };
 
-/// Builds the complete router with all API routes
+/// Builds a test-only router with all API routes.
+#[cfg(test)]
 pub fn build_router(state: AppState) -> Router {
     // Create GraphQL schema
     let schema = create_schema(
@@ -93,10 +96,17 @@ pub fn build_protected_router(state: AppState, jwt_state: JwtMiddlewareState) ->
     // Build public routes (no authentication required)
     let public_routes = Router::new()
         .route("/health", get(health_check))
-        .route("/graphql", post(graphql_handler))
         .route("/graphql/playground", get(graphql_playground))
         .route("/graphql/health", get(graphql_health))
         .with_state(schema.clone());
+
+    let protected_graphql_routes = Router::new()
+        .route("/graphql", post(graphql_handler))
+        .with_state(schema)
+        .layer(middleware::from_fn_with_state(
+            jwt_state.clone(),
+            jwt_auth_middleware,
+        ));
 
     // Build protected API routes (require authentication and RBAC)
     let protected_routes = Router::new()
@@ -125,10 +135,13 @@ pub fn build_protected_router(state: AppState, jwt_state: JwtMiddlewareState) ->
 
     // Combine public and protected routes
     public_routes
+        .merge(protected_graphql_routes)
         .merge(protected_routes)
         // Global middleware layers
         .layer(TraceLayer::new_for_http())
-        .layer(CorsLayer::permissive())
+        .layer(crate::api::middleware::cors::cors_layer(
+            &crate::api::middleware::cors::CorsConfig::default(),
+        ))
 }
 
 #[cfg(test)]
@@ -684,6 +697,23 @@ mod tests {
             // Should not be 404 Not Found
             assert_ne!(response.status(), StatusCode::NOT_FOUND);
         }
+    }
+
+    #[tokio::test]
+    async fn test_protected_router_event_create_without_token_is_unauthorized() {
+        let state = create_test_state();
+        let jwt_state = create_test_jwt_state();
+        let app = build_protected_router(state, jwt_state);
+
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("/api/v1/events")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from("{}"))
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]

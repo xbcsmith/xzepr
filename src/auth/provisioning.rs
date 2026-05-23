@@ -61,6 +61,11 @@ impl<R: UserRepository> UserProvisioningService<R> {
         Self { user_repository }
     }
 
+    /// Returns the repository used for user provisioning and local authentication.
+    pub fn user_repository(&self) -> &Arc<R> {
+        &self.user_repository
+    }
+
     /// Provision a user from OIDC user data
     ///
     /// This method creates a new user if they don't exist, or updates
@@ -183,11 +188,6 @@ impl<R: UserRepository> UserProvisioningService<R> {
         }
 
         Ok(updated)
-    }
-
-    /// Get user repository reference
-    pub fn user_repository(&self) -> &Arc<R> {
-        &self.user_repository
     }
 }
 

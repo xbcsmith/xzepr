@@ -70,6 +70,15 @@ impl EventHandler {
             DomainError::ReceiverNotFound
         })?;
 
+        if receiver.owner_id() != params.owner_id {
+            warn!(
+                receiver_id = %params.receiver_id,
+                owner_id = %params.owner_id,
+                "User attempted to create an event for a receiver they do not own"
+            );
+            return Err(crate::error::AuthorizationError::PermissionDenied.into());
+        }
+
         info!(
             receiver_id = %params.receiver_id,
             receiver_name = %receiver.name(),
@@ -136,6 +145,21 @@ impl EventHandler {
         }
 
         Ok(event)
+    }
+
+    /// Gets an event by ID for an authorized owner.
+    pub async fn get_event_for_user(
+        &self,
+        id: EventId,
+        owner_id: crate::domain::value_objects::UserId,
+    ) -> Result<Option<Event>> {
+        let event = self.get_event(id).await?;
+
+        match event {
+            Some(event) if event.owner_id() == owner_id => Ok(Some(event)),
+            Some(_) => Err(crate::error::AuthorizationError::PermissionDenied.into()),
+            None => Ok(None),
+        }
     }
 
     /// Gets an event by ID, returning an error if not found
@@ -616,6 +640,7 @@ mod tests {
 
         let receiver = create_test_receiver();
         let receiver_id = receiver.id();
+        let owner_id = receiver.owner_id();
         receiver_repo.insert(receiver);
 
         let handler = EventHandler::new(event_repo, receiver_repo);
@@ -632,7 +657,7 @@ mod tests {
                 payload,
                 success: true,
                 receiver_id,
-                owner_id: crate::domain::value_objects::UserId::new(),
+                owner_id,
             })
             .await;
 

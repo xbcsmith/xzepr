@@ -8,4 +8,4 @@ pub mod middleware;
 pub mod rest;
 pub mod router;
 
-pub use router::{build_router, RouterConfig};
+pub use router::{build_production_router, RouterConfig};

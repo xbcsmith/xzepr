@@ -121,7 +121,7 @@ pub async fn rbac_enforcement_middleware(
         })?;
 
     // Check permission
-    let permission_str = format!("{:?}", required_permission);
+    let permission_str = required_permission.to_string();
     let has_permission = user.has_permission(&permission_str);
 
     if !has_permission {
@@ -190,7 +190,7 @@ pub async fn rbac_enforcement_middleware_with_state(
         })?;
 
     let user_id = user.user_id().to_string();
-    let permission_str = format!("{:?}", required_permission);
+    let permission_str = required_permission.to_string();
     let has_permission = user.has_permission(&permission_str);
 
     // Check permission

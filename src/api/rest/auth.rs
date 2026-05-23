@@ -12,7 +12,7 @@
 
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
+    http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Redirect, Response},
     Json,
 };
@@ -194,12 +194,38 @@ impl<R: UserRepository> Clone for AuthState<R> {
 ///
 /// Returns JWT tokens on success, 401 on invalid credentials
 pub async fn login<R: UserRepository>(
-    State(_auth_state): State<AuthState<R>>,
-    Json(_request): Json<LoginRequest>,
+    State(auth_state): State<AuthState<R>>,
+    Json(request): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, AuthError> {
-    // TODO: Implement local authentication with user repository
-    // For now, return placeholder error
-    Err(AuthError::InvalidCredentials)
+    let user = auth_state
+        .provisioning_service
+        .user_repository()
+        .find_by_username(&request.username)
+        .await
+        .map_err(|e| AuthError::Internal(format!("User lookup failed: {}", e)))?
+        .ok_or(AuthError::InvalidCredentials)?;
+
+    if !user.enabled() {
+        return Err(AuthError::InvalidCredentials);
+    }
+
+    let password_is_valid = user
+        .verify_password(&request.password)
+        .map_err(|_| AuthError::InvalidCredentials)?;
+
+    if !password_is_valid {
+        return Err(AuthError::InvalidCredentials);
+    }
+
+    let token_pair = generate_jwt_pair_from_user(&auth_state.jwt_service, &user)
+        .map_err(|e| AuthError::Jwt(e.to_string()))?;
+
+    Ok(Json(LoginResponse {
+        access_token: token_pair.access_token,
+        refresh_token: Some(token_pair.refresh_token),
+        token_type: "Bearer".to_string(),
+        expires_in: token_pair.expires_in,
+    }))
 }
 
 /// GET /api/v1/auth/oidc/login - Initiate OIDC authentication flow
@@ -276,7 +302,7 @@ pub async fn oidc_callback<R: UserRepository>(
             .ok_or_else(|| AuthError::Session("Session not found or expired".to_string()))?
     };
 
-    let (oidc_result, user_data) = callback_handler
+    let (_oidc_result, user_data) = callback_handler
         .handle_callback(query, session)
         .await
         .map_err(|e| AuthError::Oidc(e.to_string()))?;
@@ -287,14 +313,14 @@ pub async fn oidc_callback<R: UserRepository>(
         .await
         .map_err(|e| AuthError::Internal(format!("User provisioning failed: {}", e)))?;
 
-    let access_token = generate_jwt_from_user(&auth_state.jwt_service, &user)
+    let token_pair = generate_jwt_pair_from_user(&auth_state.jwt_service, &user)
         .map_err(|e| AuthError::Jwt(e.to_string()))?;
 
     Ok(Json(LoginResponse {
-        access_token,
-        refresh_token: oidc_result.refresh_token,
+        access_token: token_pair.access_token,
+        refresh_token: Some(token_pair.refresh_token),
         token_type: "Bearer".to_string(),
-        expires_in: oidc_result.expires_in.unwrap_or(900) as i64,
+        expires_in: token_pair.expires_in,
     }))
 }
 
@@ -314,23 +340,41 @@ pub async fn refresh_token<R: UserRepository>(
     State(auth_state): State<AuthState<R>>,
     Json(request): Json<RefreshRequest>,
 ) -> Result<Json<LoginResponse>, AuthError> {
-    // Check if OIDC is configured and handle OIDC refresh
-    if let Some(oidc_client) = &auth_state.oidc_client {
-        let _oidc_result = oidc_client
-            .refresh_token(request.refresh_token)
-            .await
-            .map_err(|e| AuthError::Oidc(e.to_string()))?;
+    let claims = auth_state
+        .jwt_service
+        .validate_token(&request.refresh_token)
+        .await
+        .map_err(|e| AuthError::Jwt(e.to_string()))?;
 
-        // TODO: Map OIDC claims to user data and generate JWT
-        return Err(AuthError::Internal(
-            "OIDC refresh not fully implemented".to_string(),
-        ));
+    let user_id = crate::domain::value_objects::UserId::parse(&claims.sub)
+        .map_err(|e| AuthError::Jwt(format!("Invalid token subject: {}", e)))?;
+
+    let user = auth_state
+        .provisioning_service
+        .user_repository()
+        .find_by_id(&user_id)
+        .await
+        .map_err(|e| AuthError::Internal(format!("User lookup failed: {}", e)))?
+        .ok_or(AuthError::InvalidCredentials)?;
+
+    if !user.enabled() {
+        return Err(AuthError::InvalidCredentials);
     }
 
-    // TODO: Implement local refresh token validation
-    Err(AuthError::Internal(
-        "Local refresh not implemented".to_string(),
-    ))
+    let roles = roles_from_user(&user);
+    let permissions = permissions_from_user(&user);
+    let token_pair = auth_state
+        .jwt_service
+        .refresh_access_token(&request.refresh_token, roles, permissions)
+        .await
+        .map_err(|e| AuthError::Jwt(e.to_string()))?;
+
+    Ok(Json(LoginResponse {
+        access_token: token_pair.access_token,
+        refresh_token: Some(token_pair.refresh_token),
+        token_type: "Bearer".to_string(),
+        expires_in: token_pair.expires_in,
+    }))
 }
 
 /// POST /api/v1/auth/logout - Logout user
@@ -345,30 +389,62 @@ pub async fn refresh_token<R: UserRepository>(
 ///
 /// Returns 204 No Content on success
 pub async fn logout<R: UserRepository>(
-    State(_auth_state): State<AuthState<R>>,
+    State(auth_state): State<AuthState<R>>,
+    headers: HeaderMap,
 ) -> Result<StatusCode, AuthError> {
-    // TODO: Extract JWT from Authorization header
-    // TODO: Add JWT to blacklist
+    let token = extract_bearer_token(&headers)?;
+
+    auth_state
+        .jwt_service
+        .validate_token(token)
+        .await
+        .map_err(|e| AuthError::Jwt(e.to_string()))?;
+
+    auth_state
+        .jwt_service
+        .revoke_token(token)
+        .await
+        .map_err(|e| AuthError::Jwt(e.to_string()))?;
+
     Ok(StatusCode::NO_CONTENT)
 }
 
 /// Helper function to generate JWT from provisioned user
-fn generate_jwt_from_user(
+fn generate_jwt_pair_from_user(
     jwt_service: &JwtService,
     user: &crate::domain::entities::user::User,
-) -> Result<String, String> {
-    let roles: Vec<String> = user.roles().iter().map(role_to_string).collect();
+) -> Result<crate::auth::jwt::TokenPair, String> {
+    jwt_service
+        .generate_token_pair(
+            user.id().to_string(),
+            roles_from_user(user),
+            permissions_from_user(user),
+        )
+        .map_err(|e| format!("JWT generation error: {}", e))
+}
 
-    let permissions: Vec<String> = user
-        .roles()
+fn roles_from_user(user: &crate::domain::entities::user::User) -> Vec<String> {
+    user.roles().iter().map(role_to_string).collect()
+}
+
+fn permissions_from_user(user: &crate::domain::entities::user::User) -> Vec<String> {
+    user.roles()
         .iter()
         .flat_map(|r| r.permissions())
         .map(|p| permission_to_string(&p))
-        .collect();
+        .collect()
+}
 
-    jwt_service
-        .generate_access_token(user.id().to_string(), roles, permissions)
-        .map_err(|e| format!("JWT generation error: {}", e))
+fn extract_bearer_token(headers: &HeaderMap) -> Result<&str, AuthError> {
+    let value = headers
+        .get(header::AUTHORIZATION)
+        .ok_or_else(|| AuthError::Jwt("Missing Authorization header".to_string()))?
+        .to_str()
+        .map_err(|_| AuthError::Jwt("Invalid Authorization header".to_string()))?;
+
+    value
+        .strip_prefix("Bearer ")
+        .ok_or_else(|| AuthError::Jwt("Authorization header must use Bearer scheme".to_string()))
 }
 
 /// Convert Role to string representation
@@ -383,23 +459,7 @@ fn role_to_string(role: &crate::auth::rbac::Role) -> String {
 
 /// Convert Permission to string representation
 fn permission_to_string(permission: &crate::auth::rbac::Permission) -> String {
-    use crate::auth::rbac::Permission;
-    match permission {
-        Permission::EventCreate => "event:create".to_string(),
-        Permission::EventRead => "event:read".to_string(),
-        Permission::EventUpdate => "event:update".to_string(),
-        Permission::EventDelete => "event:delete".to_string(),
-        Permission::ReceiverCreate => "receiver:create".to_string(),
-        Permission::ReceiverRead => "receiver:read".to_string(),
-        Permission::ReceiverUpdate => "receiver:update".to_string(),
-        Permission::ReceiverDelete => "receiver:delete".to_string(),
-        Permission::GroupCreate => "group:create".to_string(),
-        Permission::GroupRead => "group:read".to_string(),
-        Permission::GroupUpdate => "group:update".to_string(),
-        Permission::GroupDelete => "group:delete".to_string(),
-        Permission::UserManage => "user:manage".to_string(),
-        Permission::RoleManage => "role:manage".to_string(),
-    }
+    permission.to_string()
 }
 
 #[cfg(test)]

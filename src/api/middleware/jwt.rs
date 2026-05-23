@@ -18,7 +18,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, warn};
 
-use crate::auth::jwt::{Claims, JwtService};
+use crate::auth::jwt::{Claims, JwtService, TokenType};
 use crate::infrastructure::{AuditAction, AuditLogger, AuditOutcome, PrometheusMetrics};
 
 /// Extension type for authenticated user claims
@@ -179,6 +179,13 @@ pub async fn jwt_auth_middleware(
         }
     };
 
+    if claims.token_type != TokenType::Access {
+        warn!(token_type = ?claims.token_type, "Rejected non-access token for protected route");
+        return Err(AuthError::InvalidToken(
+            "Protected routes require an access token".to_string(),
+        ));
+    }
+
     let user_id = claims.sub.clone();
     debug!(user_id = %user_id, "User authenticated");
 
@@ -222,10 +229,12 @@ pub async fn optional_jwt_auth_middleware(
     if let Ok(token) = extract_token_from_header(&request) {
         // Try to validate token
         if let Ok(claims) = state.jwt_service.validate_token(token).await {
-            debug!(user_id = %claims.sub, "User authenticated (optional)");
-            request
-                .extensions_mut()
-                .insert(AuthenticatedUser::new(claims));
+            if claims.token_type == TokenType::Access {
+                debug!(user_id = %claims.sub, "User authenticated (optional)");
+                request
+                    .extensions_mut()
+                    .insert(AuthenticatedUser::new(claims));
+            }
         }
     }
 
@@ -434,6 +443,29 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_middleware_rejects_refresh_token() {
+        let jwt_service = create_test_service();
+        let token = jwt_service
+            .generate_refresh_token("user123".to_string())
+            .unwrap();
+
+        let app = create_test_app(jwt_service).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/protected")
+                    .header("Authorization", format!("Bearer {}", token))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]

@@ -8,7 +8,6 @@ use crate::domain::entities::event_receiver::EventReceiver;
 use crate::domain::repositories::event_receiver_repo::{
     EventReceiverRepository, FindEventReceiverCriteria,
 };
-#[allow(unused_imports)]
 use crate::domain::value_objects::{EventReceiverId, UserId};
 use crate::error::{DomainError, Result};
 use crate::infrastructure::messaging::cloudevents::CloudEventMessage;
@@ -16,6 +15,21 @@ use crate::infrastructure::messaging::producer::KafkaEventPublisher;
 
 use std::sync::Arc;
 use tracing::{error, info, warn};
+
+/// Parameters for updating an event receiver with authorization.
+#[derive(Debug, Clone, Default)]
+pub struct UpdateEventReceiverParams {
+    /// Optional receiver name replacement.
+    pub name: Option<String>,
+    /// Optional receiver type replacement.
+    pub receiver_type: Option<String>,
+    /// Optional semantic version replacement.
+    pub version: Option<String>,
+    /// Optional description replacement.
+    pub description: Option<String>,
+    /// Optional JSON schema replacement.
+    pub schema: Option<serde_json::Value>,
+}
 
 /// Application service for handling event receiver operations
 #[derive(Clone)]
@@ -160,6 +174,21 @@ impl EventReceiverHandler {
         Ok(receiver)
     }
 
+    /// Gets an event receiver by ID for an authorized owner.
+    pub async fn get_event_receiver_for_user(
+        &self,
+        id: EventReceiverId,
+        owner_id: UserId,
+    ) -> Result<Option<EventReceiver>> {
+        let receiver = self.get_event_receiver(id).await?;
+
+        match receiver {
+            Some(receiver) if receiver.owner_id() == owner_id => Ok(Some(receiver)),
+            Some(_) => Err(crate::error::AuthorizationError::PermissionDenied.into()),
+            None => Ok(None),
+        }
+    }
+
     /// Gets an event receiver by ID, returning an error if not found
     pub async fn get_event_receiver_or_error(&self, id: EventReceiverId) -> Result<EventReceiver> {
         self.get_event_receiver(id)
@@ -231,6 +260,31 @@ impl EventReceiverHandler {
         }
 
         self.repository.list(limit, offset).await
+    }
+
+    /// Lists event receivers owned by a user with pagination.
+    pub async fn list_event_receivers_for_user(
+        &self,
+        owner_id: UserId,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<EventReceiver>> {
+        if limit == 0 || limit > 1000 {
+            return Err(DomainError::ValidationError {
+                field: "limit".to_string(),
+                message: "Limit must be between 1 and 1000".to_string(),
+            }
+            .into());
+        }
+
+        self.repository
+            .find_by_owner_paginated(owner_id, limit, offset)
+            .await
+    }
+
+    /// Counts event receivers owned by a user.
+    pub async fn count_event_receivers_for_user(&self, owner_id: UserId) -> Result<usize> {
+        Ok(self.repository.find_by_owner(owner_id).await?.len())
     }
 
     /// Counts total number of event receivers
@@ -308,6 +362,28 @@ impl EventReceiverHandler {
         Ok(())
     }
 
+    /// Updates an event receiver only when the caller owns it.
+    pub async fn update_event_receiver_for_user(
+        &self,
+        id: EventReceiverId,
+        owner_id: UserId,
+        params: UpdateEventReceiverParams,
+    ) -> Result<()> {
+        if !self.repository.is_owner(id, owner_id).await? {
+            return Err(crate::error::AuthorizationError::PermissionDenied.into());
+        }
+
+        self.update_event_receiver(
+            id,
+            params.name,
+            params.receiver_type,
+            params.version,
+            params.description,
+            params.schema,
+        )
+        .await
+    }
+
     /// Deletes an event receiver
     pub async fn delete_event_receiver(&self, id: EventReceiverId) -> Result<()> {
         info!(receiver_id = %id, "Deleting event receiver");
@@ -325,6 +401,19 @@ impl EventReceiverHandler {
         info!(receiver_id = %id, "Event receiver deleted successfully");
 
         Ok(())
+    }
+
+    /// Deletes an event receiver only when the caller owns it.
+    pub async fn delete_event_receiver_for_user(
+        &self,
+        id: EventReceiverId,
+        owner_id: UserId,
+    ) -> Result<()> {
+        if !self.repository.is_owner(id, owner_id).await? {
+            return Err(crate::error::AuthorizationError::PermissionDenied.into());
+        }
+
+        self.delete_event_receiver(id).await
     }
 
     /// Validates an event payload against a receiver's schema

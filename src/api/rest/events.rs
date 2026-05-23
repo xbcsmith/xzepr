@@ -18,6 +18,7 @@ use crate::api::rest::dtos::{
     PaginatedResponse, PaginationMeta, UpdateEventReceiverGroupRequest, UpdateEventReceiverRequest,
 };
 use crate::application::handlers::event_receiver_group_handler::UpdateEventReceiverGroupParams;
+use crate::application::handlers::event_receiver_handler::UpdateEventReceiverParams;
 use crate::application::handlers::{EventHandler, EventReceiverGroupHandler, EventReceiverHandler};
 use crate::domain::entities::event::CreateEventParams;
 use crate::domain::value_objects::{EventId, EventReceiverGroupId, EventReceiverId, UserId};
@@ -28,6 +29,21 @@ pub struct AppState {
     pub event_handler: EventHandler,
     pub event_receiver_handler: EventReceiverHandler,
     pub event_receiver_group_handler: EventReceiverGroupHandler,
+}
+
+fn parse_authenticated_user_id(
+    user: &AuthenticatedUser,
+) -> Result<UserId, (StatusCode, Json<ErrorResponse>)> {
+    UserId::parse(user.user_id()).map_err(|e| {
+        error!(error = %e, "Invalid user ID in authentication token");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::new(
+                "internal_error".to_string(),
+                "Invalid user ID in authentication token".to_string(),
+            )),
+        )
+    })
 }
 
 /// Creates a new event
@@ -43,20 +59,7 @@ pub async fn create_event(
         "Creating new event"
     );
 
-    // Parse user ID
-    let owner_id = match UserId::parse(user_id_str) {
-        Ok(id) => id,
-        Err(e) => {
-            error!("Invalid user ID in JWT token: {}", e);
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse::new(
-                    "internal_error".to_string(),
-                    "Invalid user ID in authentication token".to_string(),
-                )),
-            ));
-        }
-    };
+    let owner_id = parse_authenticated_user_id(&user)?;
 
     // Validate request
     if let Err(e) = request.validate() {
@@ -126,9 +129,11 @@ pub async fn create_event(
 /// Gets an event by ID
 pub async fn get_event(
     State(state): State<AppState>,
+    user: AuthenticatedUser,
     Path(id_str): Path<String>,
 ) -> Result<Json<EventResponse>, (StatusCode, Json<ErrorResponse>)> {
-    info!("Getting event: {}", id_str);
+    let owner_id = parse_authenticated_user_id(&user)?;
+    info!(user_id = %owner_id, "Getting event: {}", id_str);
 
     // Parse event ID
     let event_id = match EventId::parse(&id_str) {
@@ -146,7 +151,11 @@ pub async fn get_event(
     };
 
     // Get event
-    match state.event_handler.get_event(event_id).await {
+    match state
+        .event_handler
+        .get_event_for_user(event_id, owner_id)
+        .await
+    {
         Ok(Some(event)) => {
             info!("Event found: {}", event_id);
             Ok(Json(EventResponse::from(event)))
@@ -188,20 +197,7 @@ pub async fn create_event_receiver(
         "Creating new event receiver"
     );
 
-    // Parse user ID
-    let owner_id = match UserId::parse(user_id_str) {
-        Ok(id) => id,
-        Err(e) => {
-            error!("Invalid user ID in JWT token: {}", e);
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse::new(
-                    "internal_error".to_string(),
-                    "Invalid user ID in authentication token".to_string(),
-                )),
-            ));
-        }
-    };
+    let owner_id = parse_authenticated_user_id(&user)?;
 
     // Validate request
     if let Err(e) = request.validate() {
@@ -254,9 +250,11 @@ pub async fn create_event_receiver(
 /// Gets an event receiver by ID
 pub async fn get_event_receiver(
     State(state): State<AppState>,
+    user: AuthenticatedUser,
     Path(id_str): Path<String>,
 ) -> Result<Json<EventReceiverResponse>, (StatusCode, Json<ErrorResponse>)> {
-    info!("Getting event receiver: {}", id_str);
+    let owner_id = parse_authenticated_user_id(&user)?;
+    info!(user_id = %owner_id, "Getting event receiver: {}", id_str);
 
     // Parse receiver ID
     let receiver_id = match EventReceiverId::parse(&id_str) {
@@ -276,7 +274,7 @@ pub async fn get_event_receiver(
     // Get event receiver
     match state
         .event_receiver_handler
-        .get_event_receiver(receiver_id)
+        .get_event_receiver_for_user(receiver_id, owner_id)
         .await
     {
         Ok(Some(receiver)) => {
@@ -310,9 +308,12 @@ pub async fn get_event_receiver(
 /// Lists event receivers with optional filtering and pagination
 pub async fn list_event_receivers(
     State(state): State<AppState>,
+    user: AuthenticatedUser,
     Query(params): Query<EventReceiverQueryParams>,
 ) -> Result<Json<PaginatedResponse<EventReceiverResponse>>, (StatusCode, Json<ErrorResponse>)> {
+    let owner_id = parse_authenticated_user_id(&user)?;
     info!(
+        user_id = %owner_id,
         "Listing event receivers with limit: {}, offset: {}",
         params.limit, params.offset
     );
@@ -330,7 +331,11 @@ pub async fn list_event_receivers(
     }
 
     // Get total count for pagination
-    let total = match state.event_receiver_handler.count_event_receivers().await {
+    let total = match state
+        .event_receiver_handler
+        .count_event_receivers_for_user(owner_id)
+        .await
+    {
         Ok(count) => count,
         Err(e) => {
             error!("Failed to count event receivers: {}", e);
@@ -344,7 +349,7 @@ pub async fn list_event_receivers(
     // List event receivers
     match state
         .event_receiver_handler
-        .list_event_receivers(params.limit, params.offset)
+        .list_event_receivers_for_user(owner_id, params.limit, params.offset)
         .await
     {
         Ok(receivers) => {
@@ -374,10 +379,12 @@ pub async fn list_event_receivers(
 /// Updates an event receiver
 pub async fn update_event_receiver(
     State(state): State<AppState>,
+    user: AuthenticatedUser,
     Path(id_str): Path<String>,
     Json(request): Json<UpdateEventReceiverRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    info!("Updating event receiver: {}", id_str);
+    let owner_id = parse_authenticated_user_id(&user)?;
+    info!(user_id = %owner_id, "Updating event receiver: {}", id_str);
 
     // Parse receiver ID
     let receiver_id = match EventReceiverId::parse(&id_str) {
@@ -409,13 +416,16 @@ pub async fn update_event_receiver(
     // Update event receiver
     match state
         .event_receiver_handler
-        .update_event_receiver(
+        .update_event_receiver_for_user(
             receiver_id,
-            request.name,
-            request.receiver_type,
-            request.version,
-            request.description,
-            request.schema,
+            owner_id,
+            UpdateEventReceiverParams {
+                name: request.name,
+                receiver_type: request.receiver_type,
+                version: request.version,
+                description: request.description,
+                schema: request.schema,
+            },
         )
         .await
     {
@@ -437,9 +447,11 @@ pub async fn update_event_receiver(
 /// Deletes an event receiver
 pub async fn delete_event_receiver(
     State(state): State<AppState>,
+    user: AuthenticatedUser,
     Path(id_str): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    info!("Deleting event receiver: {}", id_str);
+    let owner_id = parse_authenticated_user_id(&user)?;
+    info!(user_id = %owner_id, "Deleting event receiver: {}", id_str);
 
     // Parse receiver ID
     let receiver_id = match EventReceiverId::parse(&id_str) {
@@ -459,7 +471,7 @@ pub async fn delete_event_receiver(
     // Delete event receiver
     match state
         .event_receiver_handler
-        .delete_event_receiver(receiver_id)
+        .delete_event_receiver_for_user(receiver_id, owner_id)
         .await
     {
         Ok(()) => {
@@ -490,20 +502,7 @@ pub async fn create_event_receiver_group(
         "Creating new event receiver group"
     );
 
-    // Parse user ID
-    let owner_id = match UserId::parse(user_id_str) {
-        Ok(id) => id,
-        Err(e) => {
-            error!("Invalid user ID in JWT token: {}", e);
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse::new(
-                    "internal_error".to_string(),
-                    "Invalid user ID in authentication token".to_string(),
-                )),
-            ));
-        }
-    };
+    let owner_id = parse_authenticated_user_id(&user)?;
 
     // Validate request
     if let Err(e) = request.validate() {
@@ -573,9 +572,11 @@ pub async fn create_event_receiver_group(
 /// Gets an event receiver group by ID
 pub async fn get_event_receiver_group(
     State(state): State<AppState>,
+    user: AuthenticatedUser,
     Path(id_str): Path<String>,
 ) -> Result<Json<EventReceiverGroupResponse>, (StatusCode, Json<ErrorResponse>)> {
-    info!("Getting event receiver group: {}", id_str);
+    let owner_id = parse_authenticated_user_id(&user)?;
+    info!(user_id = %owner_id, "Getting event receiver group: {}", id_str);
 
     // Parse group ID
     let group_id = match EventReceiverGroupId::parse(&id_str) {
@@ -595,7 +596,7 @@ pub async fn get_event_receiver_group(
     // Get event receiver group
     match state
         .event_receiver_group_handler
-        .get_event_receiver_group(group_id)
+        .get_event_receiver_group_for_user(group_id, owner_id)
         .await
     {
         Ok(Some(group)) => {
@@ -629,10 +630,12 @@ pub async fn get_event_receiver_group(
 /// Updates an event receiver group
 pub async fn update_event_receiver_group(
     State(state): State<AppState>,
+    user: AuthenticatedUser,
     Path(id_str): Path<String>,
     Json(request): Json<UpdateEventReceiverGroupRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    info!("Updating event receiver group: {}", id_str);
+    let owner_id = parse_authenticated_user_id(&user)?;
+    info!(user_id = %owner_id, "Updating event receiver group: {}", id_str);
 
     // Parse group ID
     let group_id = match EventReceiverGroupId::parse(&id_str) {
@@ -680,8 +683,9 @@ pub async fn update_event_receiver_group(
     // Update event receiver group
     match state
         .event_receiver_group_handler
-        .update_event_receiver_group(
+        .update_event_receiver_group_for_user(
             group_id,
+            owner_id,
             UpdateEventReceiverGroupParams {
                 name: request.name,
                 group_type: request.group_type,
@@ -711,9 +715,11 @@ pub async fn update_event_receiver_group(
 /// Deletes an event receiver group
 pub async fn delete_event_receiver_group(
     State(state): State<AppState>,
+    user: AuthenticatedUser,
     Path(id_str): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    info!("Deleting event receiver group: {}", id_str);
+    let owner_id = parse_authenticated_user_id(&user)?;
+    info!(user_id = %owner_id, "Deleting event receiver group: {}", id_str);
 
     // Parse group ID
     let group_id = match EventReceiverGroupId::parse(&id_str) {
@@ -733,7 +739,7 @@ pub async fn delete_event_receiver_group(
     // Delete event receiver group
     match state
         .event_receiver_group_handler
-        .delete_event_receiver_group(group_id)
+        .delete_event_receiver_group_for_user(group_id, owner_id)
         .await
     {
         Ok(()) => {

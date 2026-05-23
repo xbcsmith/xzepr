@@ -100,16 +100,24 @@ impl EventReceiverGroupHandler {
             .into());
         }
 
-        // Validate that all event receivers exist
+        // Validate that all event receivers exist and belong to the creator.
         for receiver_id in &event_receiver_ids {
-            if self
+            let receiver = self
                 .receiver_repository
                 .find_by_id(*receiver_id)
                 .await?
-                .is_none()
-            {
-                error!(receiver_id = %receiver_id, "Event receiver not found");
-                return Err(DomainError::ReceiverNotFound.into());
+                .ok_or_else(|| {
+                    error!(receiver_id = %receiver_id, "Event receiver not found");
+                    crate::error::Error::from(DomainError::ReceiverNotFound)
+                })?;
+
+            if receiver.owner_id() != owner_id {
+                warn!(
+                    receiver_id = %receiver_id,
+                    owner_id = %owner_id,
+                    "User attempted to create a group with a receiver they do not own"
+                );
+                return Err(crate::error::AuthorizationError::PermissionDenied.into());
             }
         }
 
@@ -223,6 +231,24 @@ impl EventReceiverGroupHandler {
         }
 
         Ok(group)
+    }
+
+    /// Gets an event receiver group by ID for an authorized user.
+    pub async fn get_event_receiver_group_for_user(
+        &self,
+        id: EventReceiverGroupId,
+        user_id: UserId,
+    ) -> Result<Option<EventReceiverGroup>> {
+        let group = self.get_event_receiver_group(id).await?;
+
+        match group {
+            Some(group) if group.owner_id() == user_id => Ok(Some(group)),
+            Some(group) if self.group_repository.is_member(group.id(), user_id).await? => {
+                Ok(Some(group))
+            }
+            Some(_) => Err(crate::error::AuthorizationError::PermissionDenied.into()),
+            None => Ok(None),
+        }
     }
 
     /// Gets an event receiver group by ID, returning an error if not found
@@ -342,6 +368,20 @@ impl EventReceiverGroupHandler {
         self.group_repository.count_disabled().await
     }
 
+    /// Updates an existing event receiver group only when the caller owns it.
+    pub async fn update_event_receiver_group_for_user(
+        &self,
+        id: EventReceiverGroupId,
+        owner_id: UserId,
+        params: UpdateEventReceiverGroupParams,
+    ) -> Result<()> {
+        if !self.group_repository.is_owner(id, owner_id).await? {
+            return Err(crate::error::AuthorizationError::PermissionDenied.into());
+        }
+
+        self.update_event_receiver_group(id, params).await
+    }
+
     /// Updates an existing event receiver group
     pub async fn update_event_receiver_group(
         &self,
@@ -395,17 +435,20 @@ impl EventReceiverGroupHandler {
             }
         }
 
-        // If event receiver IDs are being updated, validate they exist
+        // If event receiver IDs are being updated, validate ownership.
         if let Some(ref new_receiver_ids) = params.event_receiver_ids {
             for receiver_id in new_receiver_ids {
-                if self
+                let receiver = self
                     .receiver_repository
                     .find_by_id(*receiver_id)
                     .await?
-                    .is_none()
-                {
-                    error!(receiver_id = %receiver_id, "Event receiver not found");
-                    return Err(DomainError::ReceiverNotFound.into());
+                    .ok_or_else(|| {
+                        error!(receiver_id = %receiver_id, "Event receiver not found");
+                        crate::error::Error::from(DomainError::ReceiverNotFound)
+                    })?;
+
+                if receiver.owner_id() != group.owner_id() {
+                    return Err(crate::error::AuthorizationError::PermissionDenied.into());
                 }
             }
         }
@@ -545,6 +588,19 @@ impl EventReceiverGroupHandler {
         );
 
         Ok(())
+    }
+
+    /// Deletes an event receiver group only when the caller owns it.
+    pub async fn delete_event_receiver_group_for_user(
+        &self,
+        id: EventReceiverGroupId,
+        owner_id: UserId,
+    ) -> Result<()> {
+        if !self.group_repository.is_owner(id, owner_id).await? {
+            return Err(crate::error::AuthorizationError::PermissionDenied.into());
+        }
+
+        self.delete_event_receiver_group(id).await
     }
 
     /// Deletes an event receiver group
@@ -1087,6 +1143,7 @@ mod tests {
         )
         .unwrap();
         let receiver_id = receiver.id();
+        let owner_id = receiver.owner_id();
         receiver_repo.add_receiver(receiver);
 
         let result = handler
@@ -1097,7 +1154,7 @@ mod tests {
                 "A test group".to_string(),
                 true,
                 vec![receiver_id],
-                crate::domain::value_objects::UserId::new(),
+                owner_id,
             )
             .await;
 
@@ -1153,6 +1210,7 @@ mod tests {
         )
         .unwrap();
         let receiver_id = receiver.id();
+        let owner_id = receiver.owner_id();
         receiver_repo.add_receiver(receiver);
 
         // Create a disabled group
@@ -1164,7 +1222,7 @@ mod tests {
                 "A test group".to_string(),
                 false,
                 vec![receiver_id],
-                crate::domain::value_objects::UserId::new(),
+                owner_id,
             )
             .await
             .unwrap();

@@ -10,6 +10,8 @@ use axum::{
     middleware::Next,
     response::Response,
 };
+
+use crate::api::middleware::jwt::AuthenticatedUser;
 use redis::{aio::ConnectionManager, Client};
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -373,39 +375,48 @@ impl RateLimiterState {
 /// 1. User ID (if authenticated)
 /// 2. API Key hash (if using API key)
 /// 3. IP address (anonymous)
-fn extract_rate_limit_key(headers: &HeaderMap, ip: Option<IpAddr>) -> String {
-    // TODO: Extract user ID from authenticated request
-    // Check for X-User-Id header or JWT claims
-
-    // Check for API key
-    if let Some(api_key) = headers.get("x-api-key") {
-        if let Ok(key_str) = api_key.to_str() {
-            return format!("apikey:{}", key_str);
-        }
+fn extract_rate_limit_key(user: Option<&AuthenticatedUser>, ip: Option<IpAddr>) -> String {
+    if let Some(user) = user {
+        return format!("user:{}", user.user_id());
     }
 
-    // Fall back to IP address
     if let Some(ip) = ip {
         return format!("ip:{}", ip);
     }
 
-    // Last resort: use a default key (not recommended for production)
     "anonymous".to_string()
 }
 
 /// Determines the rate limit for the request based on user tier
-fn determine_rate_limit(config: &RateLimitConfig, path: &str, _headers: &HeaderMap) -> u32 {
-    // Check for per-endpoint limit first
+fn determine_rate_limit(
+    config: &RateLimitConfig,
+    path: &str,
+    user: Option<&AuthenticatedUser>,
+) -> u32 {
     if let Some(&limit) = config.per_endpoint.get(path) {
         return limit;
     }
 
-    // TODO: Determine user tier from authentication
-    // Check for admin role -> admin_rpm
-    // Check for authenticated user -> authenticated_rpm
-    // Default to anonymous_rpm
+    match user {
+        Some(user) if user.has_role("admin") => config.admin_rpm,
+        Some(_) => config.authenticated_rpm,
+        None => config.anonymous_rpm,
+    }
+}
 
-    config.anonymous_rpm
+fn extract_client_ip(headers: &HeaderMap) -> Option<IpAddr> {
+    headers
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(',').next())
+        .map(str::trim)
+        .and_then(|value| value.parse().ok())
+        .or_else(|| {
+            headers
+                .get("x-real-ip")
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse().ok())
+        })
 }
 
 /// Rate limiting middleware
@@ -421,18 +432,15 @@ fn determine_rate_limit(config: &RateLimitConfig, path: &str, _headers: &HeaderM
 /// - X-RateLimit-Reset: Seconds until reset
 pub async fn rate_limit_middleware(
     State(limiter): State<RateLimiterState>,
-    headers: HeaderMap,
     request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
     let path = request.uri().path();
+    let user = request.extensions().get::<AuthenticatedUser>();
+    let ip = extract_client_ip(request.headers());
 
-    // TODO: Extract IP address from request
-    // Use X-Forwarded-For or X-Real-IP if behind proxy
-    let ip: Option<IpAddr> = None;
-
-    let rate_limit_key = extract_rate_limit_key(&headers, ip);
-    let limit = determine_rate_limit(&limiter.config, path, &headers);
+    let rate_limit_key = extract_rate_limit_key(user, ip);
+    let limit = determine_rate_limit(&limiter.config, path, user);
 
     let status = limiter
         .store
@@ -442,7 +450,7 @@ pub async fn rate_limit_middleware(
 
     if !status.allowed {
         tracing::warn!(
-            key = %rate_limit_key,
+            key_kind = %rate_limit_key.split(':').next().unwrap_or("unknown"),
             path = %path,
             limit = %limit,
             "Rate limit exceeded"
