@@ -44,7 +44,7 @@ Redpanda for event streaming and PostgreSQL for data persistence.
 3. **Build and start services:**
 
    ```bash
-   docker-compose up -d
+   docker compose up -d
    ```
 
 4. **Verify deployment:**
@@ -53,7 +53,7 @@ Redpanda for event streaming and PostgreSQL for data persistence.
    curl -k https://localhost:8443/health
 
    # Check Redpanda Console (optional)
-   open http://localhost:8081
+   # Open http://localhost:8081 in your browser
    ```
 
 ## Building the Image
@@ -181,13 +181,13 @@ volumes:
 2. **Deploy with production compose:**
 
    ```bash
-   docker-compose -f docker-compose.prod.yaml --env-file .env.prod up -d
+   docker compose -f docker-compose.prod.yaml --env-file .env.prod up -d
    ```
 
 3. **Scale services if needed:**
 
    ```bash
-   docker-compose -f docker-compose.prod.yaml up -d --scale xzepr=3
+   docker compose -f docker-compose.prod.yaml up -d --scale xzepr=3
    ```
 
 ### Kubernetes Deployment
@@ -279,13 +279,13 @@ docker stack deploy -c docker-compose.prod.yaml xzepr
 
 ```bash
 # Start development environment
-docker-compose -f docker-compose.yaml -f docker-compose.dev.yaml up -d
+docker compose up -d --build
 
 # View logs
-docker-compose logs -f xzepr
+docker compose logs -f xzepr
 
 # Access container shell
-docker-compose exec xzepr bash
+docker compose exec xzepr /bin/bash
 ```
 
 ### Volume Mounts for Development
@@ -344,10 +344,10 @@ Enable monitoring with Docker Compose profiles:
 
 ```bash
 # Start with monitoring
-docker-compose --profile monitoring up -d
+docker compose --profile monitoring up -d
 
 # Access Grafana
-open http://localhost:3000
+# Open http://localhost:3000 in your browser
 ```
 
 ### Log Management
@@ -383,13 +383,13 @@ Events are automatically published to Redpanda topics based on the event name:
 
 ```bash
 # List topics using rpk
-docker exec xzepr-redpanda rpk topic list
+docker exec redpanda-0 rpk topic list
 
 # Create a custom topic
-docker exec xzepr-redpanda rpk topic create xzepr.events.custom
+docker exec redpanda-0 rpk topic create xzepr.events.custom
 
 # View topic configuration
-docker exec xzepr-redpanda rpk topic describe xzepr.events.deployment
+docker exec redpanda-0 rpk topic describe xzepr.events.deployment
 ```
 
 ### Redpanda Console
@@ -398,21 +398,20 @@ Access the Redpanda Console for monitoring and management:
 
 ```bash
 # Console is available at http://localhost:8081
-# View topics, consumers, and message throughput
-open http://localhost:8081
+# View topics, consumers, and message throughput in your browser
 ```
 
 ### Event Stream Monitoring
 
 ```bash
 # Monitor event production
-docker exec xzepr-redpanda rpk topic consume xzepr.events.deployment --print-headers
+docker exec redpanda-0 rpk topic consume xzepr.events.deployment --print-headers
 
 # Check consumer group status
-docker exec xzepr-redpanda rpk group list
+docker exec redpanda-0 rpk group list
 
 # View consumer lag
-docker exec xzepr-redpanda rpk group describe xzepr-consumer-group
+docker exec redpanda-0 rpk group describe xzepr-consumer-group
 ```
 
 ### Redpanda Performance Tuning
@@ -439,39 +438,39 @@ redpanda-0:
 
 ```bash
 # Check container logs
-docker logs xzepr-server
+docker compose logs xzepr
 
 # Check container status
-docker ps -a
+docker compose ps
 
 # Inspect container configuration
-docker inspect xzepr-server
+docker compose config
 ```
 
 #### Database Connection Issues
 
 ```bash
 # Test database connectivity
-docker-compose exec postgres psql -U xzepr -d xzepr -c "SELECT 1;"
+docker compose exec postgres psql -U xzepr -d xzepr -c "SELECT 1;"
 
 # Check database logs
-docker-compose logs postgres
+docker compose logs postgres
 ```
 
 #### Redpanda Connection Issues
 
 ```bash
 # Check Redpanda status
-docker exec xzepr-redpanda rpk cluster info
+docker exec redpanda-0 rpk cluster info
 
 # Test topic creation
-docker exec xzepr-redpanda rpk topic create test-topic
+docker exec redpanda-0 rpk topic create test-topic
 
 # Check Redpanda logs
-docker-compose logs redpanda-0
+docker compose logs redpanda-0
 
 # Test connectivity from app container
-docker exec xzepr-server nc -zv redpanda-0 9092
+docker compose exec xzepr nc -zv redpanda-0 9092
 ```
 
 #### Certificate Issues
@@ -490,17 +489,17 @@ openssl s_client -connect localhost:8443 -servername localhost
 
 ```bash
 # Monitor container resources
-docker stats xzepr-server
+docker stats
 
 # Check memory limits
-docker exec xzepr-server free -h
+docker compose exec xzepr free -h
 ```
 
 #### CPU Usage
 
 ```bash
 # Profile application
-docker exec xzepr-server top
+docker compose exec xzepr top
 ```
 
 ### Debugging
@@ -515,10 +514,10 @@ RUST_LOG=debug,xzepr=trace
 
 ```bash
 # Interactive shell
-docker exec -it xzepr-server bash
+docker compose exec xzepr /bin/bash
 
 # Run admin commands
-docker exec xzepr-server ./admin list-users
+docker compose exec xzepr ./admin list-users
 ```
 
 ## Security Considerations
@@ -665,6 +664,6 @@ services:
 
 For more information, see:
 
-- [Main README](../README.md)
-- [Configuration Guide](CONFIGURATION.md)
-- [API Documentation](API.md)
+- [Main README](../../README.md)
+- [Configuration Guide](../reference/configuration.md)
+- [API Documentation](../reference/api.md)

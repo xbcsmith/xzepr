@@ -2,104 +2,89 @@
 
 ## Overview
 
-This document provides a quick reference for all Docker commands used in the XZepr demo tutorial. Commands are organized by task for easy lookup.
+This document provides a quick reference for Docker Compose commands used with
+the current XZepr stack. Commands are organized by task for easy lookup and use
+the default `docker-compose.yaml` workflow.
 
-## Backend Services
+## Core Stack Commands
 
-### Start All Backend Services
+### Start All Services
 
 ```bash
-docker compose -f docker-compose.services.yaml up -d
+docker compose up -d --build
 ```
 
-### Stop All Backend Services
+### Stop All Services
 
 ```bash
-docker compose -f docker-compose.services.yaml down
+docker compose down
 ```
 
 ### Stop and Remove Volumes
 
 ```bash
-docker compose -f docker-compose.services.yaml down -v
+docker compose down -v
 ```
 
 ### View Service Status
 
 ```bash
-docker compose -f docker-compose.services.yaml ps
+docker compose ps
 ```
 
 ### View Service Logs
 
 ```bash
 # All services
-docker compose -f docker-compose.services.yaml logs -f
+docker compose logs -f
 
 # Specific service
-docker compose -f docker-compose.services.yaml logs postgres
-docker compose -f docker-compose.services.yaml logs redpanda-0
-docker compose -f docker-compose.services.yaml logs keycloak
-docker compose -f docker-compose.services.yaml logs console
+docker compose logs xzepr
+docker compose logs postgres
+docker compose logs redpanda-0
+docker compose logs keycloak
+docker compose logs console
 ```
 
 ### Restart Services
 
 ```bash
-docker compose -f docker-compose.services.yaml restart
+docker compose restart
 ```
 
-## XZepr Server
+## XZepr Application
 
-### Build Image
+### Build the Application Image
 
 ```bash
-docker build -t xzepr:demo .
+docker compose build xzepr
 ```
 
-### Run Server Container
+### Start Only the Application Service
 
 ```bash
-docker run -d \
-  --name xzepr-server \
-  --network xzepr_redpanda_network \
-  -p 8042:8443 \
-  -e XZEPR__SERVER__HOST=0.0.0.0 \
-  -e XZEPR__SERVER__PORT=8443 \
-  -e XZEPR__SERVER__ENABLE_HTTPS=false \
-  -e XZEPR__DATABASE__URL=postgres://xzepr:password@postgres:5432/xzepr \
-  -e XZEPR__KAFKA__BROKERS=redpanda-0:9092 \
-  -e XZEPR__AUTH__KEYCLOAK__ISSUER_URL=http://keycloak:8080/realms/xzepr \
-  -e RUST_LOG=info,xzepr=debug \
-  -v "$(pwd)/certs:/app/certs:ro" \
-  xzepr:demo
+docker compose up -d xzepr
 ```
 
-### Stop Server
+### Restart the Application Service
 
 ```bash
-docker stop xzepr-server
+docker compose restart xzepr
 ```
 
-### Remove Server Container
+### View Application Logs
 
 ```bash
-docker rm xzepr-server
+docker compose logs xzepr
+
+# Follow logs in real time
+docker compose logs -f xzepr
 ```
 
-### View Server Logs
+### Execute Commands in the Running Application Container
 
 ```bash
-docker logs xzepr-server
-
-# Follow logs in real-time
-docker logs -f xzepr-server
-```
-
-### Execute Commands in Running Container
-
-```bash
-docker exec -it xzepr-server /bin/bash
+docker compose exec xzepr /bin/bash
 ```
 
 ## Admin CLI
@@ -107,11 +92,10 @@ docker exec -it xzepr-server /bin/bash
 ### Create User
 
 ```bash
-docker run --rm \
-  --network xzepr_redpanda_network \
+docker compose run --rm -T \
   -e XZEPR__DATABASE__URL=postgres://xzepr:password@postgres:5432/xzepr \
   --entrypoint ./admin \
-  xzepr:demo \
+  xzepr \
   create-user \
   --username USERNAME \
   --email EMAIL \
@@ -122,22 +106,20 @@ docker run --rm \
 ### List Users
 
 ```bash
-docker run --rm \
-  --network xzepr_redpanda_network \
+docker compose run --rm -T \
   -e XZEPR__DATABASE__URL=postgres://xzepr:password@postgres:5432/xzepr \
   --entrypoint ./admin \
-  xzepr:demo \
+  xzepr \
   list-users
 ```
 
 ### Add Role to User
 
 ```bash
-docker run --rm \
-  --network xzepr_redpanda_network \
+docker compose run --rm -T \
   -e XZEPR__DATABASE__URL=postgres://xzepr:password@postgres:5432/xzepr \
   --entrypoint ./admin \
-  xzepr:demo \
+  xzepr \
   add-role \
   --username USERNAME \
   --role ROLE
@@ -146,11 +128,10 @@ docker run --rm \
 ### Remove Role from User
 
 ```bash
-docker run --rm \
-  --network xzepr_redpanda_network \
+docker compose run --rm -T \
   -e XZEPR__DATABASE__URL=postgres://xzepr:password@postgres:5432/xzepr \
   --entrypoint ./admin \
-  xzepr:demo \
+  xzepr \
   remove-role \
   --username USERNAME \
   --role ROLE
@@ -159,11 +140,10 @@ docker run --rm \
 ### Generate API Key
 
 ```bash
-docker run --rm \
-  --network xzepr_redpanda_network \
+docker compose run --rm -T \
   -e XZEPR__DATABASE__URL=postgres://xzepr:password@postgres:5432/xzepr \
   --entrypoint ./admin \
-  xzepr:demo \
+  xzepr \
   generate-api-key \
   --username USERNAME \
   --name "KEY_NAME" \
@@ -173,11 +153,10 @@ docker run --rm \
 ### List API Keys
 
 ```bash
-docker run --rm \
-  --network xzepr_redpanda_network \
+docker compose run --rm -T \
   -e XZEPR__DATABASE__URL=postgres://xzepr:password@postgres:5432/xzepr \
   --entrypoint ./admin \
-  xzepr:demo \
+  xzepr \
   list-api-keys \
   --username USERNAME
 ```
@@ -185,58 +164,109 @@ docker run --rm \
 ### Revoke API Key
 
 ```bash
-docker run --rm \
-  --network xzepr_redpanda_network \
+docker compose run --rm -T \
   -e XZEPR__DATABASE__URL=postgres://xzepr:password@postgres:5432/xzepr \
   --entrypoint ./admin \
-  xzepr:demo \
+  xzepr \
   revoke-api-key \
   --key-id KEY_ID
 ```
 
 ## Database Operations
 
-### Run Database Migrations
+### Check PostgreSQL Readiness
 
 ```bash
-docker run --rm \
-  --network xzepr_redpanda_network \
-  -e DATABASE_URL=postgres://xzepr:password@postgres:5432/xzepr \
-  -v "$(pwd)/migrations:/migrations:ro" \
-  --entrypoint sh \
-  xzepr:demo -c "apt-get update && apt-get install -y postgresql-client && \
-    for file in /migrations/*.sql; do \
-      echo \"Running \$file...\"; \
-      PGPASSWORD=password psql -h postgres -U xzepr -d xzepr -f \"\$file\"; \
-    done"
+docker compose exec postgres pg_isready -U xzepr
 ```
 
 ### Access PostgreSQL CLI
 
 ```bash
-docker exec -it $(docker ps -qf "name=postgres") \
-  psql -U xzepr -d xzepr
+docker compose exec postgres psql -U xzepr -d xzepr
+```
+
+### Run a Simple Database Query
+
+```bash
+docker compose exec postgres psql -U xzepr -d xzepr -c "SELECT 1;"
+```
+
+## Redpanda Operations
+
+### Check Cluster Info
+
+```bash
+docker exec redpanda-0 rpk cluster info
+```
+
+### Check Cluster Health
+
+```bash
+docker exec redpanda-0 rpk cluster health
+```
+
+### List Topics
+
+```bash
+docker exec redpanda-0 rpk topic list
+```
+
+### Consume Messages from a Topic
+
+```bash
+docker exec redpanda-0 rpk topic consume TOPIC_NAME
+```
+
+## Health and Verification
+
+### Check Application Health
+
+```bash
+curl -k https://localhost:8443/health
+```
+
+### Check API Login
+
+```bash
+curl -k -X POST https://localhost:8443/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin123"}'
+```
+
+### Create the Default Admin User
+
+```bash
+docker compose run --rm -T \
+  -e XZEPR__DATABASE__URL=postgres://xzepr:password@postgres:5432/xzepr \
+  --entrypoint ./admin \
+  xzepr \
+  create-user \
+  --username admin \
+  --email admin@xzepr.local \
+  --password admin123 \
+  --role admin
 ```
 
 ### Run SQL Query
 
 ```bash
-docker exec -it $(docker ps -qf "name=postgres") \
+docker compose exec postgres \
   psql -U xzepr -d xzepr -c "SELECT * FROM users;"
 ```
 
 ### Backup Database
 
 ```bash
-docker exec $(docker ps -qf "name=postgres") \
+docker compose exec postgres \
   pg_dump -U xzepr xzepr > backup.sql
 ```
 
 ### Restore Database
 
 ```bash
-cat backup.sql | docker exec -i $(docker ps -qf "name=postgres") \
-  psql -U xzepr -d xzepr
+docker compose exec -T postgres \
+  psql -U xzepr -d xzepr < backup.sql
 ```
 
 ## Network Operations
@@ -291,19 +321,19 @@ docker images
 ### Remove Image
 
 ```bash
-docker rmi xzepr:demo
+docker rmi xzepr-xzepr
 ```
 
 ### Tag Image
 
 ```bash
-docker tag xzepr:demo xzepr:v1.0.0
+docker tag xzepr-xzepr xzepr:v1.0.0
 ```
 
 ### Inspect Image
 
 ```bash
-docker inspect xzepr:demo
+docker inspect xzepr-xzepr
 ```
 
 ## Container Management
@@ -320,10 +350,10 @@ docker ps
 docker ps -a
 ```
 
-### Stop All Containers
+### Stop the XZepr Stack
 
 ```bash
-docker stop $(docker ps -q)
+docker compose stop
 ```
 
 ### Remove All Stopped Containers
@@ -341,7 +371,7 @@ docker stats
 ### View Container Processes
 
 ```bash
-docker top xzepr-server
+docker compose top xzepr
 ```
 
 ## Troubleshooting
@@ -349,32 +379,32 @@ docker top xzepr-server
 ### Check Container Health
 
 ```bash
-docker inspect --format='{{json .State.Health}}' xzepr-server | jq
+docker compose ps
 ```
 
 ### View Container Environment
 
 ```bash
-docker exec xzepr-server env
+docker compose exec xzepr env
 ```
 
 ### Copy Files from Container
 
 ```bash
-docker cp xzepr-server:/app/logs/app.log ./local-logs/
+docker compose cp xzepr:/app/logs ./local-logs
 ```
 
 ### Copy Files to Container
 
 ```bash
-docker cp local-config.yaml xzepr-server:/app/config/
+docker compose cp local-config.yaml xzepr:/app/config/local-config.yaml
 ```
 
 ### Test Network Connectivity
 
 ```bash
-docker exec xzepr-server ping postgres
-docker exec xzepr-server nc -zv redpanda-0 9092
+docker compose exec xzepr ping postgres
+docker compose exec xzepr nc -zv redpanda-0 9092
 ```
 
 ## System Cleanup
@@ -382,33 +412,30 @@ docker exec xzepr-server nc -zv redpanda-0 9092
 ### Clean Everything
 
 ```bash
-# Stop all containers
-docker stop $(docker ps -q)
+# Stop the XZepr stack
+docker compose down -v
 
-# Remove all containers
+# Remove unused containers
 docker container prune -f
 
-# Remove all images
+# Remove unused images
 docker image prune -a -f
 
-# Remove all volumes
+# Remove unused volumes
 docker volume prune -f
 
-# Remove all networks
+# Remove unused networks
 docker network prune -f
 ```
 
 ### Clean XZepr Specific Resources
 
 ```bash
-# Stop and remove XZepr server
-docker stop xzepr-server && docker rm xzepr-server
+# Stop the stack and remove volumes
+docker compose down -v
 
-# Stop backend services and remove volumes
-docker compose -f docker-compose.services.yaml down -v
-
-# Remove XZepr image
-docker rmi xzepr:demo
+# Remove the XZepr image
+docker rmi xzepr-xzepr
 ```
 
 ## Common Patterns
@@ -416,41 +443,34 @@ docker rmi xzepr:demo
 ### Rebuild and Restart
 
 ```bash
-# Rebuild image
-docker build -t xzepr:demo .
+# Rebuild the application image
+docker compose build --no-cache xzepr
 
-# Stop old container
-docker stop xzepr-server && docker rm xzepr-server
-
-# Start new container
-docker run -d --name xzepr-server \
-  --network xzepr_redpanda_network \
-  -p 8042:8443 \
-  -e XZEPR__DATABASE__URL=postgres://xzepr:password@postgres:5432/xzepr \
-  xzepr:demo
+# Restart the stack
+docker compose up -d
 ```
 
 ### View All Logs
 
 ```bash
-# Backend services
-docker compose -f docker-compose.services.yaml logs -f &
+# All services
+docker compose logs -f
 
-# XZepr server
-docker logs -f xzepr-server
+# Application only
+docker compose logs -f xzepr
 ```
 
 ### Quick Status Check
 
 ```bash
-# Check all containers
-docker ps
+# Check all services
+docker compose ps
 
 # Check XZepr health
-curl http://localhost:8042/health
+curl -k https://localhost:8443/health
 
 # Check PostgreSQL
-docker exec $(docker ps -qf "name=postgres") pg_isready -U xzepr
+docker compose exec postgres pg_isready -U xzepr
 
 # Check Redpanda
 curl http://localhost:19644/v1/status/ready
@@ -470,13 +490,13 @@ XZEPR__AUTH__KEYCLOAK__ISSUER_URL=http://keycloak:8080/realms/xzepr
 RUST_LOG=info,xzepr=debug
 ```
 
-### Setting Variables in Run Command
+### Setting Variables in Compose Commands
 
 ```bash
-docker run -d \
+docker compose run --rm -T \
   -e VAR1=value1 \
   -e VAR2=value2 \
-  xzepr:demo
+  xzepr env
 ```
 
 ### Using Environment File
@@ -489,8 +509,8 @@ XZEPR__KAFKA__BROKERS=redpanda-0:9092
 RUST_LOG=debug
 EOF
 
-# Use in run command
-docker run -d --env-file xzepr.env xzepr:demo
+# Use in a one-off compose command
+docker compose run --rm -T --env-file xzepr.env xzepr env
 ```
 
 ## Port Mappings
@@ -498,7 +518,7 @@ docker run -d --env-file xzepr.env xzepr:demo
 ### Standard Ports
 
 - `5432` - PostgreSQL
-- `8042` - XZepr Server (HTTP)
+- `8443` - XZepr Server (HTTPS)
 - `8080` - Keycloak
 - `8081` - Redpanda Console
 - `18081` - Redpanda Schema Registry
@@ -509,47 +529,40 @@ docker run -d --env-file xzepr.env xzepr:demo
 ### Custom Port Mapping
 
 ```bash
-# Map container port 8443 to host port 9000
-docker run -p 9000:8443 xzepr:demo
+# Map the XZepr HTTPS port to a different host port
+docker compose run --rm --service-ports -p 9000:8443 xzepr
 ```
 
 ## Best Practices
 
-### Always Use Named Containers
+### Prefer Compose Service Names
 
 ```bash
-docker run -d --name xzepr-server xzepr:demo
+docker compose ps
+docker compose logs xzepr
+docker compose exec xzepr /bin/bash
 ```
 
 ### Use Resource Limits
 
 ```bash
-docker run -d \
-  --memory="2g" \
-  --cpus="1.5" \
-  --name xzepr-server \
-  xzepr:demo
+docker compose up -d
+
+# Define memory and CPU limits in your compose configuration for repeatable deployments.
 ```
 
 ### Use Health Checks
 
 ```bash
-docker run -d \
-  --health-cmd="curl -f http://localhost:8443/health || exit 1" \
-  --health-interval=30s \
-  --health-timeout=10s \
-  --health-retries=3 \
-  --name xzepr-server \
-  xzepr:demo
+docker compose ps
+curl -k https://localhost:8443/health
 ```
 
 ### Use Restart Policies
 
 ```bash
-docker run -d \
-  --restart=unless-stopped \
-  --name xzepr-server \
-  xzepr:demo
+# Configure restart policies in docker-compose.yaml for persistent environments.
+docker compose up -d
 ```
 
 ## Additional Resources

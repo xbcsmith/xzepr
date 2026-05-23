@@ -257,11 +257,11 @@ XZEPR__MONITORING__JAEGER_ENDPOINT=http://jaeger:14268/api/traces
 
 ```yaml
 scrape_configs:
-  - job_name: 'xzepr'
+  - job_name: "xzepr"
     scrape_interval: 15s
     scrape_timeout: 10s
     static_configs:
-      - targets: ['xzepr:8080']
+      - targets: ["xzepr:8080"]
     metrics_path: /metrics
 ```
 
@@ -302,17 +302,17 @@ async fn handler(
 metrics.record_auth_failure("invalid_token", "client123");
 
 // Record rate limit rejection
-metrics.record_rate_limit_rejection("/api/events", "client123");
+metrics.record_rate_limit_rejection("/api/v1/events", "client123");
 
 // Record validation error
-metrics.record_validation_error("/api/events", "name");
+metrics.record_validation_error("/api/v1/events", "name");
 
 // Update active connections
 metrics.increment_active_connections();
 metrics.decrement_active_connections();
 
 // Record HTTP request manually
-metrics.record_http_request("POST", "/api/events", 201, 0.045);
+metrics.record_http_request("POST", "/api/v1/events", 201, 0.045);
 ```
 
 ### Using MetricsError
@@ -346,11 +346,13 @@ async fn handler(
 ### High Cardinality Issues
 
 Symptoms:
+
 - Prometheus running out of memory
 - Slow queries
 - Large `/metrics` response
 
 Solutions:
+
 - Hash user IDs: `format!("{:x}", md5::compute(user_id))[..8]`
 - Aggregate rare values: `if is_common(x) { x } else { "other" }`
 - Reduce label count
@@ -372,6 +374,7 @@ xzepr_http_requests_total
 **Endpoint:** `GET /health`
 
 **Response:**
+
 ```json
 {
   "status": "healthy"
@@ -387,6 +390,7 @@ Request duration buckets (seconds):
 ```
 
 Covers:
+
 - Fast responses: 1ms - 100ms
 - Normal responses: 100ms - 500ms
 - Slow responses: 500ms - 5s
@@ -396,6 +400,7 @@ Covers:
 **Overhead per request:** ~500ns
 
 **Memory usage:**
+
 - Base metrics: ~100KB
 - Per time-series: ~3KB
 - 1000 series: ~3MB

@@ -4,7 +4,7 @@ This guide explains how to use the Role-Based Access Control (RBAC) system in XZ
 
 ## Overview
 
-XZepr uses JWT-based authentication with role and permission-based authorization. The system is fully implemented and tested for GraphQL endpoints, with REST API integration pending.
+XZepr uses JWT-based authentication with role and permission-based authorization. GraphQL endpoints are available through the HTTPS server, and the examples in this guide use the current local GraphQL endpoint at `https://localhost:8443/graphql`.
 
 ## Quick Start
 
@@ -31,7 +31,7 @@ println!("Access Token: {}", token_pair.access_token);
 
 ```bash
 # GraphQL request with authentication
-curl -X POST http://localhost:8042/graphql \
+curl -k -X POST https://localhost:8443/graphql \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -58,6 +58,7 @@ XZepr defines four built-in roles:
 Full system access with all permissions.
 
 **Permissions**:
+
 - All event operations (create, read, update, delete)
 - All receiver operations (create, read, update, delete)
 - All group operations (create, read, update, delete)
@@ -71,6 +72,7 @@ Full system access with all permissions.
 Create and update operations without delete permissions.
 
 **Permissions**:
+
 - Event: create, read, update
 - Receiver: create, read, update
 - Group: create, read, update
@@ -82,6 +84,7 @@ Create and update operations without delete permissions.
 Read-only access to events, receivers, and groups.
 
 **Permissions**:
+
 - Event: read
 - Receiver: read
 - Group: read
@@ -93,6 +96,7 @@ Read-only access to events, receivers, and groups.
 Basic read access to events only.
 
 **Permissions**:
+
 - Event: read
 
 **Use Case**: Regular users, consumers
@@ -102,24 +106,28 @@ Basic read access to events only.
 Permissions follow the pattern `resource:action`:
 
 ### Event Permissions
+
 - `EventCreate` - Create new events
 - `EventRead` - Read event data
 - `EventUpdate` - Update existing events
 - `EventDelete` - Delete events
 
 ### Receiver Permissions
+
 - `ReceiverCreate` - Create event receivers
 - `ReceiverRead` - Read receiver data
 - `ReceiverUpdate` - Update receivers
 - `ReceiverDelete` - Delete receivers
 
 ### Group Permissions
+
 - `GroupCreate` - Create receiver groups
 - `GroupRead` - Read group data
 - `GroupUpdate` - Update groups
 - `GroupDelete` - Delete groups
 
 ### Admin Permissions
+
 - `UserManage` - Manage users
 - `RoleManage` - Assign/revoke roles
 
@@ -200,9 +208,9 @@ helpers::require_admin(ctx)?;
 helpers::require_user(ctx)?;
 ```
 
-## REST API Usage (Future)
+## REST API Usage
 
-REST API RBAC enforcement is not yet implemented. Middleware is prepared but not wired up.
+REST API routes are protected by JWT authentication and RBAC middleware in the current application. The example below shows the intended route protection pattern using the current `/api/v1/*` route structure.
 
 ### Planned Usage
 
@@ -348,8 +356,8 @@ JWT_REFRESH_TOKEN_EXPIRATION_DAYS=7
 
 # Server settings
 SERVER_HOST=0.0.0.0
-SERVER_PORT=8042
-ENABLE_HTTPS=false
+SERVER_PORT=8443
+ENABLE_HTTPS=true
 ```
 
 ## Error Handling
@@ -448,8 +456,9 @@ assert!(claims.has_permission("event:create"));
 echo "YOUR_TOKEN" | base64 -d
 
 # Verify JWT structure
-curl -X POST http://localhost:8042/graphql \
+curl -k -X POST https://localhost:8443/graphql \
   -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
   -d '{"query": "{ __typename }"}'
 ```
 

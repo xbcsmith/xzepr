@@ -21,8 +21,8 @@ Create `config/development.yaml`:
 auth:
   enable_local_auth: true
   jwt:
-    access_token_expiration_seconds: 900      # 15 minutes
-    refresh_token_expiration_seconds: 604800  # 7 days
+    access_token_expiration_seconds: 900 # 15 minutes
+    refresh_token_expiration_seconds: 604800 # 7 days
     issuer: "xzepr-dev"
     audience: "xzepr-api-dev"
     algorithm: "HS256"
@@ -78,8 +78,8 @@ use xzepr::api::middleware::jwt::{jwt_auth_middleware, JwtMiddlewareState};
 let jwt_state = JwtMiddlewareState::new(jwt_service);
 
 let app = Router::new()
-    .route("/api/events", get(list_events))
-    .route("/api/events/:id", get(get_event))
+    .route("/api/v1/events", get(list_events))
+    .route("/api/v1/events/:id", get(get_event))
     .layer(middleware::from_fn_with_state(jwt_state, jwt_auth_middleware));
 ```
 
@@ -100,7 +100,7 @@ println!("Access Token: {}", token_pair.access_token);
 Use the token in requests:
 
 ```bash
-curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:8443/api/events
+curl -k -H "Authorization: Bearer YOUR_TOKEN" https://localhost:8443/api/v1/events
 ```
 
 ## Production Setup (RS256)
@@ -135,8 +135,8 @@ Create `config/production.yaml`:
 auth:
   enable_local_auth: true
   jwt:
-    access_token_expiration_seconds: 900      # 15 minutes
-    refresh_token_expiration_seconds: 604800  # 7 days
+    access_token_expiration_seconds: 900 # 15 minutes
+    refresh_token_expiration_seconds: 604800 # 7 days
     issuer: "xzepr"
     audience: "xzepr-api"
     algorithm: "RS256"
@@ -277,8 +277,8 @@ async fn logout(
 ```rust
 // All routes require authentication
 let protected_routes = Router::new()
-    .route("/api/events", get(list_events))
-    .route("/api/events", post(create_event))
+    .route("/api/v1/events", get(list_events))
+    .route("/api/v1/events", post(create_event))
     .layer(middleware::from_fn_with_state(jwt_state, jwt_auth_middleware));
 ```
 
@@ -301,7 +301,7 @@ use xzepr::api::middleware::jwt::require_permissions;
 
 // Require write permission
 let write_routes = Router::new()
-    .route("/api/events", post(create_event))
+    .route("/api/v1/events", post(create_event))
     .layer(middleware::from_fn(require_permissions(vec!["write".to_string()])))
     .layer(middleware::from_fn_with_state(jwt_state, jwt_auth_middleware));
 ```
@@ -406,7 +406,7 @@ CMD ["/app/xzepr"]
 ### Docker Compose with Secrets
 
 ```yaml
-version: '3.8'
+version: "3.8"
 
 services:
   xzepr:
@@ -450,23 +450,23 @@ spec:
   template:
     spec:
       containers:
-      - name: xzepr
-        image: xzepr:latest
-        env:
-        - name: RUST_ENV
-          value: "production"
-        - name: XZEPR__AUTH__JWT__PRIVATE_KEY_PATH
-          value: "/etc/xzepr/keys/private.pem"
-        - name: XZEPR__AUTH__JWT__PUBLIC_KEY_PATH
-          value: "/etc/xzepr/keys/public.pem"
-        volumeMounts:
-        - name: jwt-keys
-          mountPath: /etc/xzepr/keys
-          readOnly: true
+        - name: xzepr
+          image: xzepr:latest
+          env:
+            - name: RUST_ENV
+              value: "production"
+            - name: XZEPR__AUTH__JWT__PRIVATE_KEY_PATH
+              value: "/etc/xzepr/keys/private.pem"
+            - name: XZEPR__AUTH__JWT__PUBLIC_KEY_PATH
+              value: "/etc/xzepr/keys/public.pem"
+          volumeMounts:
+            - name: jwt-keys
+              mountPath: /etc/xzepr/keys
+              readOnly: true
       volumes:
-      - name: jwt-keys
-        secret:
-          secretName: xzepr-jwt-keys
+        - name: jwt-keys
+          secret:
+            secretName: xzepr-jwt-keys
 ```
 
 ## Key Rotation
@@ -510,6 +510,7 @@ Deploy with new keys in a rolling fashion to avoid downtime.
 ### Token Validation Fails
 
 Check:
+
 1. Token hasn't expired
 2. Issuer and audience match configuration
 3. Signature is valid
@@ -535,7 +536,7 @@ Increase leeway if servers have time synchronization issues:
 
 ```yaml
 jwt:
-  leeway_seconds: 120  # 2 minutes tolerance
+  leeway_seconds: 120 # 2 minutes tolerance
 ```
 
 ## Best Practices
@@ -564,4 +565,3 @@ jwt:
 
 - JWT Authentication Explanation: `docs/explanation/jwt_authentication.md`
 - Configuration Reference: `docs/reference/configuration.md`
-- Production Readiness Roadmap: `docs/explanation/production_readiness_roadmap.md`

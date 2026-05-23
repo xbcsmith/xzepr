@@ -60,7 +60,7 @@ cargo run --release
 Test the metrics endpoint:
 
 ```bash
-curl http://localhost:8080/metrics
+curl -k https://localhost:8443/metrics
 ```
 
 You should see Prometheus-formatted metrics:
@@ -102,10 +102,13 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
-  - job_name: 'xzepr'
+  - job_name: "xzepr"
     static_configs:
-      - targets: ['localhost:8080']
-    metrics_path: '/metrics'
+      - targets: ["localhost:8443"]
+    metrics_path: "/metrics"
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
     scrape_interval: 10s
     scrape_timeout: 5s
 ```
@@ -114,15 +117,15 @@ For multiple instances:
 
 ```yaml
 scrape_configs:
-  - job_name: 'xzepr'
+  - job_name: "xzepr"
     static_configs:
       - targets:
-        - 'xzepr-01.internal:8080'
-        - 'xzepr-02.internal:8080'
-        - 'xzepr-03.internal:8080'
+          - "xzepr-01.internal:8443"
+          - "xzepr-02.internal:8443"
+          - "xzepr-03.internal:8443"
     labels:
-      environment: 'production'
-      service: 'xzepr'
+      environment: "production"
+      service: "xzepr"
 ```
 
 ### Step 3: Start Prometheus
@@ -353,36 +356,36 @@ global:
   resolve_timeout: 5m
 
 route:
-  group_by: ['alertname', 'severity']
+  group_by: ["alertname", "severity"]
   group_wait: 10s
   group_interval: 10s
   repeat_interval: 12h
-  receiver: 'team-notifications'
+  receiver: "team-notifications"
   routes:
     - match:
         severity: critical
-      receiver: 'pagerduty'
+      receiver: "pagerduty"
     - match:
         category: security
-      receiver: 'security-team'
+      receiver: "security-team"
 
 receivers:
-  - name: 'team-notifications'
+  - name: "team-notifications"
     slack_configs:
-      - api_url: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK'
-        channel: '#alerts'
-        title: 'XZepr Alert'
-        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+      - api_url: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+        channel: "#alerts"
+        title: "XZepr Alert"
+        text: "{{ range .Alerts }}{{ .Annotations.description }}{{ end }}"
 
-  - name: 'pagerduty'
+  - name: "pagerduty"
     pagerduty_configs:
-      - service_key: 'YOUR_PAGERDUTY_KEY'
+      - service_key: "YOUR_PAGERDUTY_KEY"
 
-  - name: 'security-team'
+  - name: "security-team"
     email_configs:
-      - to: 'security@example.com'
-        from: 'alerts@example.com'
-        smarthost: 'smtp.example.com:587'
+      - to: "security@example.com"
+        from: "alerts@example.com"
+        smarthost: "smtp.example.com:587"
 ```
 
 ## Setup Grafana Dashboards
@@ -561,7 +564,7 @@ Access Jaeger UI at `http://localhost:16686`
 XZepr provides a health check endpoint at `/health`:
 
 ```bash
-curl http://localhost:8080/health
+curl -k https://localhost:8443/health
 ```
 
 Response:
@@ -601,8 +604,9 @@ Use for:
 **Solutions**:
 
 1. Verify metrics endpoint is accessible:
+
    ```bash
-   curl http://localhost:8080/metrics
+   curl -k https://localhost:8443/metrics
    ```
 
 2. Check Prometheus targets page: `http://localhost:9090/targets`
@@ -653,17 +657,17 @@ Run multiple Prometheus instances with federation:
 ```yaml
 # prometheus-federated.yml
 scrape_configs:
-  - job_name: 'federate'
+  - job_name: "federate"
     scrape_interval: 15s
     honor_labels: true
-    metrics_path: '/federate'
+    metrics_path: "/federate"
     params:
-      'match[]':
+      "match[]":
         - '{job="xzepr"}'
     static_configs:
       - targets:
-        - 'prometheus-1:9090'
-        - 'prometheus-2:9090'
+          - "prometheus-1:9090"
+          - "prometheus-2:9090"
 ```
 
 ### Monitoring Best Practices
@@ -685,5 +689,5 @@ scrape_configs:
 ## Related Documentation
 
 - [Configure Redis Rate Limiting](configure_redis_rate_limiting.md)
-- [Security Configuration](../reference/security_configuration.md)
-- [Production Deployment](deploy_production.md)
+- [Kafka Security Checklist](../reference/kafka_security_checklist.md)
+- [Production Deployment](deployment.md)

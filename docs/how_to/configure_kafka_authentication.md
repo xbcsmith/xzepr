@@ -163,6 +163,7 @@ kafka:
 2. **Use environment variables in production**
 
    Environment variables are more secure than config files because they:
+
    - Are not stored on disk
    - Can be managed by secrets management systems
    - Are easier to rotate
@@ -170,6 +171,7 @@ kafka:
 3. **Use secrets management systems**
 
    For production deployments, use:
+
    - Kubernetes Secrets
    - HashiCorp Vault
    - AWS Secrets Manager
@@ -179,6 +181,7 @@ kafka:
 4. **Rotate credentials regularly**
 
    Implement a credential rotation policy:
+
    - Change passwords every 90 days
    - Update SSL certificates before expiration
    - Use automated rotation where possible
@@ -218,14 +221,14 @@ kafka:
 
 Choose the appropriate mechanism for your use case:
 
-| Mechanism | Security Level | Use Case |
-|-----------|---------------|----------|
-| PLAINTEXT | None | Development only |
-| SASL_PLAINTEXT | Low | Development/testing |
-| SASL_SSL (PLAIN) | Medium | Internal networks |
-| SASL_SSL (SCRAM-SHA-256) | High | Production (recommended) |
-| SASL_SSL (SCRAM-SHA-512) | Highest | High security requirements |
-| SSL (mTLS) | High | Certificate-based auth |
+| Mechanism                | Security Level | Use Case                   |
+| ------------------------ | -------------- | -------------------------- |
+| PLAINTEXT                | None           | Development only           |
+| SASL_PLAINTEXT           | Low            | Development/testing        |
+| SASL_SSL (PLAIN)         | Medium         | Internal networks          |
+| SASL_SSL (SCRAM-SHA-256) | High           | Production (recommended)   |
+| SASL_SSL (SCRAM-SHA-512) | Highest        | High security requirements |
+| SSL (mTLS)               | High           | Certificate-based auth     |
 
 ## Verification Steps
 
@@ -270,10 +273,16 @@ TOKEN=$(curl -X POST https://localhost:8443/api/v1/auth/login \
   -k -s | jq -r '.token')
 
 # Create event receiver
-RECEIVER=$(curl -X POST https://localhost:8443/api/v1/event-receivers \
+RECEIVER=$(curl -X POST https://localhost:8443/api/v1/receivers \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"name": "Test Receiver", "description": "Auth test"}' \
+  -d '{
+    "name": "Test Receiver",
+    "type": "webhook",
+    "version": "1.0.0",
+    "description": "Auth test",
+    "schema": {}
+  }' \
   -k -s | jq -r '.id')
 
 # Create test event
@@ -564,33 +573,33 @@ spec:
   template:
     spec:
       containers:
-      - name: xzepr
-        image: xzepr:latest
-        env:
-        - name: XZEPR_KAFKA_SECURITY_PROTOCOL
-          value: "SASL_SSL"
-        - name: XZEPR_KAFKA_SASL_MECHANISM
-          value: "SCRAM-SHA-256"
-        - name: XZEPR_KAFKA_SASL_USERNAME
-          valueFrom:
-            secretKeyRef:
-              name: kafka-credentials
-              key: username
-        - name: XZEPR_KAFKA_SASL_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: kafka-credentials
-              key: password
-        - name: XZEPR_KAFKA_SSL_CA_LOCATION
-          value: "/app/certs/ca-cert.pem"
-        volumeMounts:
-        - name: kafka-certs
-          mountPath: /app/certs
-          readOnly: true
+        - name: xzepr
+          image: xzepr:latest
+          env:
+            - name: XZEPR_KAFKA_SECURITY_PROTOCOL
+              value: "SASL_SSL"
+            - name: XZEPR_KAFKA_SASL_MECHANISM
+              value: "SCRAM-SHA-256"
+            - name: XZEPR_KAFKA_SASL_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: kafka-credentials
+                  key: username
+            - name: XZEPR_KAFKA_SASL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: kafka-credentials
+                  key: password
+            - name: XZEPR_KAFKA_SSL_CA_LOCATION
+              value: "/app/certs/ca-cert.pem"
+          volumeMounts:
+            - name: kafka-certs
+              mountPath: /app/certs
+              readOnly: true
       volumes:
-      - name: kafka-certs
-        secret:
-          secretName: kafka-ssl-certs
+        - name: kafka-certs
+          secret:
+            secretName: kafka-ssl-certs
 ```
 
 ## Performance Considerations
@@ -601,7 +610,7 @@ XZepr maintains a pool of Kafka connections. Configure pool size based on load:
 
 ```yaml
 kafka:
-  connection_pool_size: 10  # Default
+  connection_pool_size: 10 # Default
   connection_timeout_ms: 5000
   request_timeout_ms: 30000
 ```
@@ -622,7 +631,7 @@ Enable compression to reduce network usage:
 
 ```yaml
 kafka:
-  compression_type: "snappy"  # Options: none, gzip, snappy, lz4, zstd
+  compression_type: "snappy" # Options: none, gzip, snappy, lz4, zstd
 ```
 
 ## Migration from Unauthenticated Kafka
@@ -646,7 +655,7 @@ If you are migrating from an unauthenticated Kafka setup:
 - [Kafka SSL Configuration](https://kafka.apache.org/documentation/#security_ssl)
 - [librdkafka Configuration](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)
 - [XZepr Configuration Reference](../reference/configuration.md)
-- [XZepr Event Publication](../explanations/event_publication_implementation.md)
+- [XZepr Event Publication](../explanation/event_publication_implementation.md)
 
 ## Summary
 

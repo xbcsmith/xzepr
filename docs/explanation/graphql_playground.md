@@ -81,6 +81,7 @@ Processes GraphQL queries and mutations. Accepts JSON payloads with the followin
 ```
 
 The handler:
+
 - Parses the incoming JSON request
 - Builds an async-graphql Request object
 - Executes the query against the schema
@@ -175,6 +176,7 @@ Schema::build(Query, Mutation, EmptySubscription)
 ```
 
 This approach:
+
 - Maintains separation of concerns
 - Allows easy testing with mock handlers
 - Follows dependency injection patterns
@@ -198,7 +200,7 @@ This pattern allows different route groups to have different state types while s
 
 ### Accessing the Playground
 
-Navigate to `http://localhost:8042/graphql/playground` in your browser to access the interactive GraphQL Playground.
+Navigate to `https://localhost:8443/graphql/playground` in your browser to access the interactive GraphQL Playground.
 
 ### Example Queries
 
@@ -231,6 +233,7 @@ query GetReceiverByName($name: String!) {
 ```
 
 Variables:
+
 ```json
 {
   "name": "webhook-receiver"
@@ -246,6 +249,7 @@ mutation CreateReceiver($input: CreateEventReceiverInput!) {
 ```
 
 Variables:
+
 ```json
 {
   "input": {
@@ -282,11 +286,11 @@ query GetGroups {
 For programmatic access, send HTTP POST requests to `/graphql`:
 
 ```bash
-curl -X POST http://localhost:8042/graphql \
+curl -X POST https://localhost:8443/graphql \
   -H "Content-Type: application/json" \
   -d '{
     "query": "{ eventReceivers(eventReceiver: {}) { id name } }"
-  }'
+  }' -k
 ```
 
 ## Error Handling
@@ -347,6 +351,7 @@ Currently, the repository layer supports limit/offset pagination through the `Fi
 ### Caching
 
 Consider implementing:
+
 - DataLoader for N+1 query prevention
 - Response caching for frequently accessed data
 - Persisted queries for production deployments
@@ -365,6 +370,7 @@ The GraphQL endpoints are currently public. For production deployments:
 ### Input Validation
 
 All mutations perform validation through:
+
 - Domain entity validation rules
 - Repository-level uniqueness checks
 - Schema validation for JSON fields
@@ -373,6 +379,7 @@ All mutations perform validation through:
 ### Rate Limiting
 
 Consider implementing rate limiting at:
+
 - Query execution level
 - Mutation level
 - Per-client basis using IP or API keys
@@ -427,6 +434,7 @@ Add tracing and metrics:
 ### Playground Not Loading
 
 Check that:
+
 - Server is running on the expected port
 - `/graphql/playground` route is registered
 - Browser can access the server URL
@@ -435,6 +443,7 @@ Check that:
 ### Queries Failing
 
 Verify:
+
 - Query syntax is valid GraphQL
 - Field names match schema definitions
 - Variables are properly formatted JSON
@@ -443,6 +452,7 @@ Verify:
 ### Schema Not Reflecting Changes
 
 After modifying the schema:
+
 - Restart the server
 - Clear browser cache
 - Refresh the playground page

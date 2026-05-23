@@ -304,44 +304,39 @@ curl -X GET http://localhost:18082/consumers/xzepr-consumer-group/instances/even
 ### Create Event Receiver
 
 ```bash
-curl -X POST https://localhost:8443/api/v1/event-receivers \
+curl -X POST https://localhost:8443/api/v1/receivers \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Production CI/CD Pipeline",
+    "type": "webhook",
+    "version": "1.0.0",
     "description": "Receives events from production deployments",
-    "webhook_url": "https://webhook.example.com/events",
-    "secret": "webhook-secret-key",
-    "enabled": true,
-    "event_filters": {
-      "event_names": ["deployment-success", "deployment-failure"],
-      "platforms": ["kubernetes-amd64"]
-    }
+    "schema": {}
   }'
 
 # Response:
 {
-  "id": "01234567-89ab-cdef-0123-456789abcdef",
-  "name": "Production CI/CD Pipeline",
-  "created_at": "2024-12-19T10:00:00Z",
-  "api_key": "xzepr_base64encodedkey..."
+  "data": "01234567-89ab-cdef-0123-456789abcdef"
 }
 ```
 
 ### List Event Receivers
 
 ```bash
-curl -X GET https://localhost:8443/api/v1/event-receivers \
+curl -X GET https://localhost:8443/api/v1/receivers \
   -H "Authorization: Bearer $TOKEN"
 
 # Response:
 {
-  "receivers": [
+  "data": [
     {
       "id": "01234567-89ab-cdef-0123-456789abcdef",
       "name": "Production CI/CD Pipeline",
+      "type": "webhook",
+      "version": "1.0.0",
       "description": "Receives events from production deployments",
-      "enabled": true,
+      "schema": {},
       "created_at": "2024-12-19T10:00:00Z",
       "event_count": 42
     }

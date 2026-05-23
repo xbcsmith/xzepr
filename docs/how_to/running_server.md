@@ -1,27 +1,24 @@
 # Running the XZEPR Server
 
 This guide explains how to start, stop, and manage the XZEPR event tracking
-server.
+server using direct Docker Compose and Cargo commands.
 
 ## Prerequisites
 
 Before running the server, ensure you have:
 
-1. **PostgreSQL running** with the xzepr database
-2. **Database migrations applied**
+1. **Docker Compose available** for local dependencies
+2. **Rust installed** if you plan to run the server locally with Cargo
 3. **Configuration files** in place
-4. **TLS certificates** generated (if using HTTPS)
+4. **TLS certificates** generated if using HTTPS
 
 ## Quick Start
 
-### Start All Services
+### Start Required Services
 
 ```bash
 # Start PostgreSQL, Keycloak, and Redpanda
-docker compose -f docker-compose.services.yaml up -d
-
-# Run database migrations
-make db-migrate
+docker compose up -d postgres keycloak redpanda-0 console
 
 # Start the XZEPR server
 cargo run --bin xzepr
@@ -93,17 +90,17 @@ export RUST_ENV=development  # or production
 ### Development Mode
 
 ```bash
-# Run with hot reload
-make dev-watch
+# Start required services
+docker compose up -d postgres keycloak redpanda-0 console
 
-# Or run directly
+# Run directly
 cargo run --bin xzepr
 ```
 
 **Features:**
 
 - Detailed logging
-- Auto-reload on code changes (with cargo-watch)
+- Development-friendly defaults
 - Development JWT secrets
 - Local binding (127.0.0.1)
 
@@ -132,7 +129,12 @@ export RUST_ENV=production
 For development:
 
 ```bash
-make certs-generate
+mkdir -p certs
+openssl req -x509 -newkey rsa:4096 \
+  -keyout certs/key.pem \
+  -out certs/cert.pem \
+  -days 365 -nodes \
+  -subj "/C=US/ST=State/L=City/O=XZEPR/CN=localhost"
 ```
 
 This creates:
@@ -353,16 +355,16 @@ sudo firewall-cmd --list-all
 
 ### Database Errors
 
-**Run migrations:**
+**Restart dependencies and let the application apply migrations on startup:**
 
 ```bash
-make db-migrate
+docker compose up -d postgres keycloak redpanda-0 console
 ```
 
 **Check database status:**
 
 ```bash
-docker compose -f docker-compose.services.yaml ps postgres
+docker compose ps postgres
 ```
 
 ### TLS Certificate Errors
@@ -371,7 +373,12 @@ docker compose -f docker-compose.services.yaml ps postgres
 
 ```bash
 rm -rf certs/
-make certs-generate
+mkdir -p certs
+openssl req -x509 -newkey rsa:4096 \
+  -keyout certs/key.pem \
+  -out certs/cert.pem \
+  -days 365 -nodes \
+  -subj "/C=US/ST=State/L=City/O=XZEPR/CN=localhost"
 ```
 
 **Use HTTP mode temporarily:**
@@ -438,6 +445,7 @@ INFO request{method=GET uri=/health}: finished processing request latency=0 ms s
 
 ## Next Steps
 
-- [Authentication Setup](authentication.md) - Configure auth providers
+- [JWT Authentication Setup](jwt_authentication_setup.md) - Configure JWT authentication
 - [API Usage](../reference/api.md) - API endpoint documentation
 - [Deployment Guide](deployment.md) - Production deployment
+- [Getting Started Tutorial](../tutorials/getting_started.md) - First steps

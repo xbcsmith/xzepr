@@ -31,9 +31,11 @@ practice.
 
 - [Running the Server](how_to/running_server.md) - Start, stop, and manage the
   XZEPR server
-- [Setting Up Authentication](how_to/authentication.md) - Configure local, OIDC,
-  and API key authentication
+- [JWT Authentication Setup](how_to/jwt_authentication_setup.md) - Configure
+  JWT-based authentication
 - [Deploying with Docker](how_to/deployment.md) - Deploy XZEPR in containers
+- [Setup Monitoring](how_to/setup_monitoring.md) - Configure observability and
+  monitoring
 - [Database Management](how_to/database.md) - Manage migrations and backups
 - [OPA Bundle Server Setup](how-to/opa_bundle_server_setup.md) - Deploy and configure OPA bundle server
 - [OPA Policy Development](how-to/opa_policy_development.md) - Develop and test OPA authorization policies
@@ -45,8 +47,14 @@ particular problem.
 
 **Understanding-oriented** - Conceptual discussions to deepen your knowledge.
 
-- [Architecture Overview](explanations/architecture.md) - System design and
+- [Architecture Overview](explanation/architecture.md) - System design and
   component interaction
+- [Security Architecture](explanation/security_architecture.md) - How security,
+  RBAC, and authentication fit together
+- [Observability Architecture](explanation/observability_architecture.md) -
+  Understanding monitoring and tracing design
+- [CloudEvents Compatibility](explanation/cloudevents_compatibility.md) - Event
+  format compatibility and design decisions
 - [Authentication and Authorization](explanations/auth_concepts.md) - How RBAC
   and multi-provider auth works
 - [Event Streaming Model](explanations/event_streaming.md) - Understanding
@@ -66,6 +74,9 @@ Read these to understand the concepts and reasoning behind XZEPR's design.
   options
 - [Database Schema](reference/database_schema.md) - Table structures and
   relationships
+- [Docker Commands](reference/docker_commands.md) - Common container and admin
+  CLI commands
+- [GraphQL API](reference/graphql_api.md) - GraphQL schema and query reference
 - [Makefile Commands](reference/makefile.md) - All available Make targets
 - [Environment Variables](reference/environment_variables.md) - Configuration
   via environment
@@ -87,7 +98,7 @@ Consult these when you need to look up specific information or details.
 **Integrate with the API** → Check [API Reference](reference/api.md)
 
 **Understand how it works** → Read
-[Architecture Overview](explanations/architecture.md)
+[Architecture Overview](explanation/architecture.md)
 
 **Deploy to production** → See [Deploying with Docker](how_to/deployment.md)
 

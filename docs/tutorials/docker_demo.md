@@ -72,11 +72,11 @@ Expected output:
 Start PostgreSQL, Redpanda, and Keycloak using Docker Compose:
 
 ```bash
-# Start backend services in detached mode
-docker compose -f docker-compose.services.yaml up -d
+# Start all services in detached mode
+docker compose up -d --build
 
 # View logs to monitor startup
-docker compose -f docker-compose.services.yaml logs -f
+docker compose logs -f
 ```
 
 Wait for the following log messages indicating services are ready:
@@ -91,7 +91,7 @@ Press `Ctrl+C` to exit log viewing.
 Verify all services are running:
 
 ```bash
-docker compose -f docker-compose.services.yaml ps
+docker compose ps
 ```
 
 Expected output:
@@ -109,11 +109,11 @@ redpanda-console     docker.redpanda.com/redpandadata/...     Up
 Build the XZepr Docker image:
 
 ```bash
-# Build the image with tag 'xzepr:demo'
-docker build -t xzepr:demo .
+# Build the application image
+docker compose build xzepr
 
 # Verify the image was created
-docker images | grep xzepr
+docker images | grep xzepr-xzepr
 ```
 
 Expected output:
@@ -130,16 +130,16 @@ The XZepr Docker image includes sqlx-cli for managing database migrations. Run m
 
 ```bash
 # Run migrations using sqlx-cli built into the Docker image
-docker run --rm \
-  --network xzepr_redpanda_network \
+docker compose run --rm -T \
   -e DATABASE_URL=postgres://xzepr:password@postgres:5432/xzepr \
-  xzepr:demo \
-  ./sqlx migrate run
+  --entrypoint ./sqlx \
+  xzepr \
+  migrate run
 ```
 
 This command:
 
-- Uses sqlx-cli which is built into the xzepr:demo image
+- Uses sqlx-cli which is built into the `xzepr` image
 - Tracks migrations in the `_sqlx_migrations` table
 - Is idempotent and safe to run multiple times
 - Provides proper error handling and rollback support
@@ -148,11 +148,11 @@ Check migration status:
 
 ```bash
 # View applied migrations
-docker run --rm \
-  --network xzepr_redpanda_network \
+docker compose run --rm -T \
   -e DATABASE_URL=postgres://xzepr:password@postgres:5432/xzepr \
-  xzepr:demo \
-  ./sqlx migrate info
+  --entrypoint ./sqlx \
+  xzepr \
+  migrate info
 ```
 
 Expected output:
@@ -177,11 +177,10 @@ Use the XZepr admin CLI to create an administrative user:
 
 ```bash
 # Create admin user
-docker run --rm \
-  --network xzepr_redpanda_network \
+docker compose run --rm -T \
   -e XZEPR__DATABASE__URL=postgres://xzepr:password@postgres:5432/xzepr \
   --entrypoint ./admin \
-  xzepr:demo \
+  xzepr \
   create-user \
   --username admin \
   --email admin@xzepr.local \
@@ -204,11 +203,10 @@ Create users with different roles for testing:
 
 ```bash
 # Create an EventManager user
-docker run --rm \
-  --network xzepr_redpanda_network \
+docker compose run --rm -T \
   -e XZEPR__DATABASE__URL=postgres://xzepr:password@postgres:5432/xzepr \
   --entrypoint ./admin \
-  xzepr:demo \
+  xzepr \
   create-user \
   --username eventmanager \
   --email manager@xzepr.local \
@@ -216,11 +214,10 @@ docker run --rm \
   --role event_manager
 
 # Create an EventViewer user
-docker run --rm \
-  --network xzepr_redpanda_network \
+docker compose run --rm -T \
   -e XZEPR__DATABASE__URL=postgres://xzepr:password@postgres:5432/xzepr \
   --entrypoint ./admin \
-  xzepr:demo \
+  xzepr \
   create-user \
   --username viewer \
   --email viewer@xzepr.local \
@@ -228,11 +225,10 @@ docker run --rm \
   --role event_viewer
 
 # Create a regular User
-docker run --rm \
-  --network xzepr_redpanda_network \
+docker compose run --rm -T \
   -e XZEPR__DATABASE__URL=postgres://xzepr:password@postgres:5432/xzepr \
   --entrypoint ./admin \
-  xzepr:demo \
+  xzepr \
   create-user \
   --username user \
   --email user@xzepr.local \
@@ -245,11 +241,10 @@ docker run --rm \
 Verify users were created:
 
 ```bash
-docker run --rm \
-  --network xzepr_redpanda_network \
+docker compose run --rm -T \
   -e XZEPR__DATABASE__URL=postgres://xzepr:password@postgres:5432/xzepr \
   --entrypoint ./admin \
-  xzepr:demo \
+  xzepr \
   list-users
 ```
 
@@ -269,11 +264,10 @@ ID                                   Username        Email                    Ro
 Generate an API key for programmatic access:
 
 ```bash
-docker run --rm \
-  --network xzepr_redpanda_network \
+docker compose run --rm -T \
   -e XZEPR__DATABASE__URL=postgres://xzepr:password@postgres:5432/xzepr \
   --entrypoint ./admin \
-  xzepr:demo \
+  xzepr \
   generate-api-key \
   --username admin \
   --name "Demo API Key" \
@@ -303,38 +297,24 @@ export XZEPR_API_KEY="xzepr_<random-string>"
 Run the XZepr server in a Docker container:
 
 ```bash
-docker run \
-  --name xzepr-server \
-  --network xzepr_redpanda_network \
-  -p 8042:8443 \
-  -e XZEPR__SERVER__HOST=0.0.0.0 \
-  -e XZEPR__SERVER__PORT=8443 \
-  -e XZEPR__SERVER__ENABLE_HTTPS=false \
-  -e XZEPR__DATABASE__URL=postgres://xzepr:password@postgres:5432/xzepr \
-  -e XZEPR__KAFKA__BROKERS=redpanda-0:9092 \
-  -e XZEPR__AUTH__KEYCLOAK__ISSUER_URL=http://keycloak:8080/realms/xzepr \
-  -e RUST_LOG=info,xzepr=debug \
-  -v "$(pwd)/certs:/app/certs:ro" \
-  xzepr:demo
+docker compose up -d xzepr
 ```
 
-Note: We're running without HTTPS for simplicity in this demo. In production, set `ENABLE_HTTPS=true`.
+The default compose workflow runs XZepr with HTTPS enabled.
 
 View server logs:
 
 ```bash
-docker logs -f xzepr-server
+docker compose logs -f xzepr
 ```
 
-Wait for the log message:
+Wait for log messages indicating the server is ready, such as:
 
 ```text
-Server listening on http://0.0.0.0:8443
-Health check: http://0.0.0.0:8443/health
-API documentation: http://0.0.0.0:8443/api/v1
-GraphQL endpoint: http://0.0.0.0:8443/graphql
-GraphQL Playground: http://0.0.0.0:8443/graphql/playground
-XZepr server ready to accept connections
+Starting HTTPS server on https://0.0.0.0:8443
+Health check: https://0.0.0.0:8443/health
+GraphQL endpoint: https://0.0.0.0:8443/graphql
+GraphQL Playground: https://0.0.0.0:8443/graphql/playground
 ```
 
 Press `Ctrl+C` to exit log viewing.
@@ -344,7 +324,7 @@ Press `Ctrl+C` to exit log viewing.
 Check that the server is responding:
 
 ```bash
-curl http://localhost:8042/health
+curl -k https://localhost:8443/health
 ```
 
 Expected output:
@@ -360,7 +340,7 @@ Expected output:
 Check GraphQL health:
 
 ```bash
-curl http://localhost:8042/graphql/health
+curl -k https://localhost:8443/graphql/health
 ```
 
 Expected output:
@@ -402,7 +382,7 @@ In the Redpanda Console:
 Open your browser and navigate to:
 
 ```text
-http://localhost:8042/graphql/playground
+https://localhost:8443/graphql/playground
 ```
 
 The GraphQL Playground provides an interactive IDE for exploring the API.
@@ -513,7 +493,7 @@ Variables:
 ### Create Event Receiver via REST API
 
 ```bash
-curl -X POST http://localhost:8042/api/v1/receivers \
+curl -X POST https://localhost:8443/api/v1/receivers \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $XZEPR_API_KEY" \
   -d '{
@@ -527,33 +507,33 @@ curl -X POST http://localhost:8042/api/v1/receivers \
         "message": {"type": "string"}
       }
     }
-  }'
+  }' -k
 ```
 
 Expected response:
 
 ```json
-{"data":"01K935TSPGKP0S63PKM5EPBW3F"}
+{ "data": "01K935TSPGKP0S63PKM5EPBW3F" }
 ```
 
 ### List Event Receivers
 
 ```bash
-curl http://localhost:8042/api/v1/receivers \
+curl -k https://localhost:8443/api/v1/receivers \
   -H "Authorization: Bearer $XZEPR_API_KEY"
 ```
 
 ### Get Event Receiver by ID
 
 ```bash
-curl http://localhost:8042/api/v1/receivers/<receiver-id> \
+curl -k https://localhost:8443/api/v1/receivers/<receiver-id> \
   -H "Authorization: Bearer $XZEPR_API_KEY"
 ```
 
 ### Create Event
 
 ```bash
-curl -X POST http://localhost:8042/api/v1/events \
+curl -X POST https://localhost:8443/api/v1/events \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $XZEPR_API_KEY" \
   -d '{
@@ -570,13 +550,13 @@ curl -X POST http://localhost:8042/api/v1/events \
     },
     "event_receiver_id": "<receiver-id>",
     "success": true
-  }'
+  }' -k
 ```
 
 ### Create Event Receiver Group
 
 ```bash
-curl -X POST http://localhost:8042/api/v1/groups \
+curl -X POST https://localhost:8443/api/v1/groups \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $XZEPR_API_KEY" \
   -d '{
@@ -586,7 +566,7 @@ curl -X POST http://localhost:8042/api/v1/groups \
     "description": "CI/CD event receivers",
     "enabled": true,
     "event_receiver_ids": ["<receiver-id>"]
-  }'
+  }' -k
 ```
 
 ## Step 15: Test GraphQL API with curl
@@ -594,7 +574,7 @@ curl -X POST http://localhost:8042/api/v1/groups \
 ### Execute GraphQL Query
 
 ```bash
-curl -X POST http://localhost:8042/graphql \
+curl -k -X POST https://localhost:8443/graphql \
   -H "Content-Type: application/json" \
   -d '{
     "query": "{ eventReceivers(eventReceiver: {}) { id name type version } }"
@@ -604,7 +584,7 @@ curl -X POST http://localhost:8042/graphql \
 ### Execute GraphQL Query with Variables
 
 ```bash
-curl -X POST http://localhost:8042/graphql \
+curl -k -X POST https://localhost:8443/graphql \
   -H "Content-Type: application/json" \
   -d '{
     "query": "query GetReceiver($id: ID!) { eventReceiversById(id: $id) { id name type } }",
@@ -617,7 +597,7 @@ curl -X POST http://localhost:8042/graphql \
 ### Execute GraphQL Mutation
 
 ```bash
-curl -X POST http://localhost:8042/graphql \
+curl -k -X POST https://localhost:8443/graphql \
   -H "Content-Type: application/json" \
   -d '{
     "query": "mutation CreateReceiver($input: CreateEventReceiverInput!) { createEventReceiver(eventReceiver: $input) }",
@@ -651,26 +631,26 @@ curl -X POST http://localhost:8042/graphql \
 ### XZepr Server Logs
 
 ```bash
-docker logs xzepr-server
+docker compose logs xzepr
 ```
 
 View real-time logs:
 
 ```bash
-docker logs -f xzepr-server
+docker compose logs -f xzepr
 ```
 
 ### Backend Services Logs
 
 ```bash
 # PostgreSQL logs
-docker compose -f docker-compose.services.yaml logs postgres
+docker compose logs postgres
 
 # Redpanda logs
-docker compose -f docker-compose.services.yaml logs redpanda-0
+docker compose logs redpanda-0
 
 # Keycloak logs
-docker compose -f docker-compose.services.yaml logs keycloak
+docker compose logs keycloak
 ```
 
 ## Step 18: Advanced Admin Operations
@@ -678,11 +658,10 @@ docker compose -f docker-compose.services.yaml logs keycloak
 ### List User API Keys
 
 ```bash
-docker run --rm \
-  --network xzepr_redpanda_network \
+docker compose run --rm -T \
   -e XZEPR__DATABASE__URL=postgres://xzepr:password@postgres:5432/xzepr \
   --entrypoint ./admin \
-  xzepr:demo \
+  xzepr \
   list-api-keys \
   --username admin
 ```
@@ -690,11 +669,10 @@ docker run --rm \
 ### Add Role to User
 
 ```bash
-docker run --rm \
-  --network xzepr_redpanda_network \
+docker compose run --rm -T \
   -e XZEPR__DATABASE__URL=postgres://xzepr:password@postgres:5432/xzepr \
   --entrypoint ./admin \
-  xzepr:demo \
+  xzepr \
   add-role \
   --username user \
   --role event_manager
@@ -703,11 +681,10 @@ docker run --rm \
 ### Remove Role from User
 
 ```bash
-docker run --rm \
-  --network xzepr_redpanda_network \
+docker compose run --rm -T \
   -e XZEPR__DATABASE__URL=postgres://xzepr:password@postgres:5432/xzepr \
   --entrypoint ./admin \
-  xzepr:demo \
+  xzepr \
   remove-role \
   --username user \
   --role event_manager
@@ -722,7 +699,7 @@ docker run --rm \
 # Save as test-workflow.sh
 
 echo "1. Creating event receiver..."
-RECEIVER_RESPONSE=$(curl -s -X POST http://localhost:8042/api/v1/receivers \
+RECEIVER_RESPONSE=$(curl -s -k -X POST https://localhost:8443/api/v1/receivers \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $XZEPR_API_KEY" \
   -d '{
@@ -738,7 +715,7 @@ echo "✓ Receiver created: $RECEIVER_ID"
 
 echo ""
 echo "2. Creating event..."
-EVENT_RESPONSE=$(curl -s -X POST http://localhost:8042/api/v1/events \
+EVENT_RESPONSE=$(curl -s -k -X POST https://localhost:8443/api/v1/events \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $XZEPR_API_KEY" \
   -d "{
@@ -758,7 +735,7 @@ echo "✓ Event created: $EVENT_ID"
 
 echo ""
 echo "3. Creating receiver group..."
-GROUP_RESPONSE=$(curl -s -X POST http://localhost:8042/api/v1/groups \
+GROUP_RESPONSE=$(curl -s -k -X POST https://localhost:8443/api/v1/groups \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $XZEPR_API_KEY" \
   -d "{
@@ -775,7 +752,7 @@ echo "✓ Group created: $GROUP_ID"
 
 echo ""
 echo "4. Verifying via GraphQL..."
-curl -s -X POST http://localhost:8042/graphql \
+curl -s -k -X POST https://localhost:8443/graphql \
   -H "Content-Type: application/json" \
   -d "{
     \"query\": \"{ eventReceiversById(id: \\\"$RECEIVER_ID\\\") { id name } }\"
@@ -797,8 +774,8 @@ chmod +x test-workflow.sh
 ### Stop XZepr Server
 
 ```bash
-docker stop xzepr-server
-docker rm xzepr-server
+docker compose stop xzepr
+docker compose rm -f xzepr
 ```
 
 ### Stop Backend Services
@@ -813,10 +790,10 @@ To completely reset and remove all data:
 
 ```bash
 # Stop and remove containers, networks, and volumes
-docker compose -f docker-compose.services.yaml down -v
+docker compose down -v
 
 # Remove XZepr image
-docker rmi xzepr:demo
+docker rmi xzepr-xzepr
 
 # Remove certificates
 rm -rf certs/
@@ -828,7 +805,7 @@ To keep data but stop services:
 
 ```bash
 # Stop services but keep volumes
-docker compose -f docker-compose.services.yaml down
+docker compose down
 ```
 
 Restart later with:
@@ -845,11 +822,13 @@ If you see errors about ports being in use:
 
 ```bash
 # Check what's using a port
-lsof -i :8042
+lsof -i :8443
 lsof -i :5432
 
 # Stop conflicting services or use different ports
-docker run -p 8043:8443 ...  # Use port 8043 instead of 8042
+docker compose down
+docker compose up -d --build
+# Or map a different host port in your compose override if needed
 ```
 
 ### Container Won't Start
@@ -857,8 +836,8 @@ docker run -p 8043:8443 ...  # Use port 8043 instead of 8042
 Check logs:
 
 ```bash
-docker logs xzepr-server
-docker compose -f docker-compose.services.yaml logs
+docker compose logs xzepr
+docker compose logs
 ```
 
 ### Database Connection Failed
@@ -866,10 +845,10 @@ docker compose -f docker-compose.services.yaml logs
 Verify PostgreSQL is running:
 
 ```bash
-docker compose -f docker-compose.services.yaml ps postgres
+docker compose ps postgres
 
 # Test connection
-docker exec -it $(docker ps -qf "name=postgres") psql -U xzepr -d xzepr -c "SELECT 1;"
+docker compose exec postgres psql -U xzepr -d xzepr -c "SELECT 1;"
 ```
 
 ### Migration Failed
@@ -878,30 +857,30 @@ If migrations fail, check the status and fix issues:
 
 ```bash
 # Check migration status
-docker run --rm \
-  --network xzepr_redpanda_network \
+docker compose run --rm -T \
   -e DATABASE_URL=postgres://xzepr:password@postgres:5432/xzepr \
-  xzepr:demo \
-  ./sqlx migrate info
+  --entrypoint ./sqlx \
+  xzepr \
+  migrate info
 
 # View migration table directly
-docker exec -it $(docker ps -qf "name=postgres") \
+docker compose exec postgres \
   psql -U xzepr -d xzepr -c "SELECT * FROM _sqlx_migrations ORDER BY installed_on;"
 
 # If a migration is marked as failed, you may need to manually fix it
 # Then revert the failed migration and try again
-docker run --rm \
-  --network xzepr_redpanda_network \
+docker compose run --rm -T \
   -e DATABASE_URL=postgres://xzepr:password@postgres:5432/xzepr \
-  xzepr:demo \
-  ./sqlx migrate revert
+  --entrypoint ./sqlx \
+  xzepr \
+  migrate revert
 
 # Run migrations again
-docker run --rm \
-  --network xzepr_redpanda_network \
+docker compose run --rm -T \
   -e DATABASE_URL=postgres://xzepr:password@postgres:5432/xzepr \
-  xzepr:demo \
-  ./sqlx migrate run
+  --entrypoint ./sqlx \
+  xzepr \
+  migrate run
 ```
 
 ### Cannot Connect to Redpanda
@@ -909,10 +888,10 @@ docker run --rm \
 Verify Redpanda is running:
 
 ```bash
-docker compose -f docker-compose.services.yaml ps redpanda-0
+docker compose ps redpanda-0
 
 # Check Redpanda logs
-docker compose -f docker-compose.services.yaml logs redpanda-0
+docker compose logs redpanda-0
 ```
 
 ### GraphQL Playground Not Loading
@@ -920,8 +899,7 @@ docker compose -f docker-compose.services.yaml logs redpanda-0
 Verify XZepr is running and accessible:
 
 ```bash
-curl http://localhost:8042/health
-curl http://localhost:8042/graphql/health
+curl -k https://localhost:8443/health
 ```
 
 Check browser console for errors and ensure JavaScript is enabled.

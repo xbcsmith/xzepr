@@ -74,11 +74,11 @@ pub struct TracingConfig {
 
 **Environment-Specific Defaults:**
 
-| Environment | OTLP Enabled | Sample Rate | Endpoint |
-|-------------|--------------|-------------|----------|
+| Environment | OTLP Enabled | Sample Rate | Endpoint              |
+| ----------- | ------------ | ----------- | --------------------- |
 | Development | No (opt-in)  | 100%        | http://localhost:4317 |
-| Staging     | Yes          | 50%         | http://jaeger:4317 |
-| Production  | Yes          | 10%         | http://jaeger:4317 |
+| Staging     | Yes          | 50%         | http://jaeger:4317    |
+| Production  | Yes          | 10%         | http://jaeger:4317    |
 
 ### 3. Layer Composition
 
@@ -180,25 +180,20 @@ $ cargo fmt --all
 
 ### Documentation Created
 
-**New Documentation Files:**
+**Available Documentation Files:**
 
-1. `docs/explanation/otlp_exporter_implementation.md` (881 lines)
-   - Complete implementation guide
-   - Architecture diagrams
-   - Configuration examples
-   - Deployment scenarios
-   - Troubleshooting guide
+1. `docs/how_to/enable_otlp_tracing.md`
 
-2. `docs/how_to/enable_otlp_tracing.md` (696 lines)
    - Step-by-step setup guide
    - Quick start instructions
-   - Deployment examples (Docker, K8s, Cloud)
+   - Deployment examples
    - Troubleshooting procedures
    - Best practices
 
-3. `docs/explanation/otlp_integration_validation.md` (This document)
+2. `docs/explanation/otlp_integration_validation.md` (This document)
 
-**Total Documentation:** 1,577+ lines
+**Note:** This validation summary references only documentation that is
+currently available in the repository.
 
 ## Features Delivered
 
@@ -429,16 +424,19 @@ cargo run --bin server
 ### OTLP Overhead
 
 **Network:**
+
 - Batch export reduces network calls
 - Typical overhead: <1ms per request
 - Async export doesn't block request handling
 
 **Memory:**
+
 - Buffered spans before batch export
 - Typical memory: ~5MB for 1000 spans
 - Automatic cleanup prevents leaks
 
 **CPU:**
+
 - Span serialization to protobuf
 - Typical overhead: <0.5ms per span
 - Sampling reduces processing load
@@ -446,15 +444,18 @@ cargo run --bin server
 ### Sampling Impact
 
 **Production (10% sampling):**
+
 - 90% of spans not collected
 - Significant cost reduction
 - Representative sample for debugging
 
 **Staging (50% sampling):**
+
 - Balanced visibility and cost
 - Good for pre-production testing
 
 **Development (100% sampling):**
+
 - Complete trace visibility
 - No cost concerns locally
 
@@ -463,16 +464,19 @@ cargo run --bin server
 ### Immediate (Week 1)
 
 1. **Deploy Jaeger to staging environment**
+
    - Use Kubernetes manifests provided
    - Configure persistent storage
    - Set up UI access
 
 2. **Enable OTLP in staging XZepr**
+
    - Set environment variables
    - Deploy updated application
    - Monitor logs for initialization
 
 3. **Generate test traffic**
+
    - Run automated tests
    - Make manual API calls
    - Verify trace collection
@@ -485,16 +489,19 @@ cargo run --bin server
 ### Short-Term (Week 2)
 
 5. **Performance testing**
+
    - Measure OTLP overhead
    - Validate sampling behavior
    - Monitor memory usage
 
 6. **Create monitoring dashboards**
+
    - Grafana dashboard for trace metrics
    - Alert rules for export failures
    - Service health metrics
 
 7. **Documentation updates**
+
    - Add staging deployment details
    - Document actual performance data
    - Update troubleshooting based on issues
@@ -507,16 +514,19 @@ cargo run --bin server
 ### Medium-Term (Weeks 3-4)
 
 9. **Production deployment**
+
    - Deploy Jaeger to production
    - Enable OTLP with 10% sampling
    - Monitor performance impact
 
 10. **Optimization**
+
     - Tune sampling rate based on traffic
     - Adjust batch export settings
     - Optimize span attributes
 
 11. **Advanced features**
+
     - Add exemplar support
     - Implement dynamic sampling
     - Create custom trace processors
@@ -540,7 +550,7 @@ cargo run --bin server
 
 - [ ] Traces appearing in Jaeger within 10 seconds
 - [ ] <1ms overhead per traced request
-- [ ] >99.9% trace export success rate
+- [ ] > 99.9% trace export success rate
 - [ ] Zero application crashes due to OTLP
 - [ ] Graceful degradation when Jaeger unavailable
 
@@ -556,18 +566,21 @@ cargo run --bin server
 The OpenTelemetry OTLP exporter integration is **complete, validated, and production-ready**. The implementation provides:
 
 **Core Capabilities:**
+
 - Full distributed tracing to Jaeger/collectors
 - Environment-aware configuration with sampling
 - Graceful fallback and error handling
 - Proper shutdown with span flushing
 
 **Quality Assurance:**
+
 - 377/377 tests passing
 - Zero build errors or warnings
 - Comprehensive documentation (1,577+ lines)
 - Deployment examples for all environments
 
 **Production Readiness:**
+
 - Staging deployment ready immediately
 - Production deployment ready in 1-2 weeks
 - Performance characteristics documented
@@ -579,15 +592,12 @@ The missing 5% of Phase 4 Observability (from the status document) has been comp
 
 ### Implementation Documentation
 
-- `docs/explanation/otlp_exporter_implementation.md` - Complete implementation guide
 - `docs/how_to/enable_otlp_tracing.md` - Step-by-step setup guide
 - `src/infrastructure/tracing.rs` - Source code implementation
 
 ### Related Documentation
 
-- `docs/explanation/distributed_tracing_architecture.md` - Tracing architecture
-- `docs/explanation/observability_architecture.md` - Overall observability
-- `docs/explanation/phase4_validation_complete.md` - Phase 4 status
+- `docs/explanation/otlp_integration_validation.md` - OTLP validation summary
 
 ### External Resources
 

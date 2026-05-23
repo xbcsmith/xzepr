@@ -545,7 +545,7 @@ Test security in realistic scenarios:
 async fn test_rate_limit_enforcement() {
     // Make 11 requests (limit is 10)
     for i in 1..=11 {
-        let response = client.get("/api/events").send().await;
+        let response = client.get("/api/v1/events").send().await;
         if i <= 10 {
             assert_eq!(response.status(), StatusCode::OK);
         } else {

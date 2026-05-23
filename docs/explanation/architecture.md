@@ -2572,10 +2572,11 @@ xzepr/
 │   └── docker-compose.yaml
 │
 └── docs/
-    ├── API.md
-    ├── ARCHITECTURE.md
-    ├── AUTHENTICATION.md
-    └── SECURITY.md
+    ├── README.md
+    ├── explanation/
+    ├── how_to/
+    ├── reference/
+    └── tutorials/
 ```
 
 ---

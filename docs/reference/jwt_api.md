@@ -790,14 +790,14 @@ Response:
 ### Protected Request
 
 ```http
-GET /api/events
+GET /api/v1/events
 Authorization: Bearer eyJhbGc...
 ```
 
 ### Logout (Revoke Token)
 
 ```http
-POST /auth/logout
+POST /api/v1/auth/logout
 Authorization: Bearer eyJhbGc...
 ```
 

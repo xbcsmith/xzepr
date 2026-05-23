@@ -117,12 +117,12 @@ Different rate limits based on user tier and endpoint:
 ```yaml
 security:
   rate_limit:
-    anonymous_rpm: 10        # Unauthenticated users
-    authenticated_rpm: 100   # Authenticated users
-    admin_rpm: 1000          # Admin users
+    anonymous_rpm: 10 # Unauthenticated users
+    authenticated_rpm: 100 # Authenticated users
+    admin_rpm: 1000 # Admin users
     per_endpoint:
-      /auth/login: 5         # Stricter for auth endpoints
-      /api/v1/events: 50     # Per-endpoint overrides
+      /auth/login: 5 # Stricter for auth endpoints
+      /api/v1/events: 50 # Per-endpoint overrides
 ```
 
 **Token Bucket Algorithm**
@@ -260,7 +260,7 @@ Prevents DoS attacks via large payloads:
 ```yaml
 security:
   validation:
-    max_body_size: 1048576  # 1 MB
+    max_body_size: 1048576 # 1 MB
     max_string_length: 10000
     max_array_length: 1000
 ```
@@ -586,8 +586,8 @@ Rate limiting provides automatic protection:
 
 - [How to Configure Redis Rate Limiting](../how_to/configure_redis_rate_limiting.md)
 - [How to Setup Monitoring](../how_to/setup_monitoring.md)
-- [Security Configuration Reference](../reference/security_configuration.md)
-- [Authentication Guide](../how_to/configure_authentication.md)
+- [Kafka Security Checklist](../reference/kafka_security_checklist.md)
+- [JWT Authentication Setup](../how_to/jwt_authentication_setup.md)
 
 ## References
 

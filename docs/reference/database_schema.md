@@ -520,6 +520,6 @@ ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
 
 ## See Also
 
-- [Database Management How-to](../how_to/database.md) - Practical database tasks
+- [Running the Server](../how_to/running_server.md) - Operational database checks and startup workflow
 - [Configuration Reference](configuration.md) - Database connection settings
-- [Migrations README](../../migrations/readme.md) - Detailed migration guide
+- [Migrations README](../../migrations/README.md) - Detailed migration guide

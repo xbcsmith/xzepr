@@ -4,7 +4,7 @@ This guide walks you through using the GraphQL Playground IDE to interact with t
 
 ## Prerequisites
 
-- XZepr server running (default port: 8042)
+- XZepr server running (default port: 8443 with HTTPS enabled)
 - Web browser (Chrome, Firefox, Safari, or Edge)
 - Basic understanding of GraphQL query syntax
 
@@ -13,14 +13,14 @@ This guide walks you through using the GraphQL Playground IDE to interact with t
 Start the XZepr server:
 
 ```bash
-cargo run --bin server
+cargo run --bin xzepr
 ```
 
 The server will log its URL:
 
 ```text
-Server listening on http://0.0.0.0:8042
-GraphQL Playground: http://0.0.0.0:8042/graphql/playground
+Starting HTTPS server on https://0.0.0.0:8443
+GraphQL Playground: https://0.0.0.0:8443/graphql/playground
 ```
 
 ## Accessing the Playground
@@ -28,7 +28,7 @@ GraphQL Playground: http://0.0.0.0:8042/graphql/playground
 Open your web browser and navigate to:
 
 ```text
-http://localhost:8042/graphql/playground
+https://localhost:8443/graphql/playground
 ```
 
 You should see the GraphQL Playground interface with:
@@ -110,12 +110,7 @@ Query receivers by type and version:
 
 ```graphql
 query FindByTypeVersion {
-  eventReceivers(
-    eventReceiver: {
-      type: "webhook"
-      version: "1.0.0"
-    }
-  ) {
+  eventReceivers(eventReceiver: { type: "webhook", version: "1.0.0" }) {
     id
     name
     description
@@ -250,9 +245,7 @@ query {
 
 ```graphql
 query GetWebhookGroups {
-  eventReceiverGroups(
-    eventReceiverGroup: { type: "webhook-group" }
-  ) {
+  eventReceiverGroups(eventReceiverGroup: { type: "webhook-group" }) {
     id
     name
     enabled
@@ -332,17 +325,9 @@ query {
 Use GraphQL variables for dynamic queries:
 
 ```graphql
-query FindReceivers(
-  $name: String
-  $type: String
-  $version: String
-) {
+query FindReceivers($name: String, $type: String, $version: String) {
   eventReceivers(
-    eventReceiver: {
-      name: $name
-      type: $type
-      version: $version
-    }
+    eventReceiver: { name: $name, type: $type, version: $version }
   ) {
     id
     name

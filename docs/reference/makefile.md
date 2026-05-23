@@ -671,5 +671,5 @@ make k8s-deploy   # Only works with kubectl configured
 For more information, see:
 
 - [Main README](../README.md)
-- [Docker Documentation](DOCKER.md)
-- [Configuration Guide](CONFIGURATION.md)
+- [Docker Commands](docker_commands.md)
+- [Configuration Guide](configuration.md)
