@@ -4,5 +4,5 @@
 pub mod permissions;
 pub mod roles;
 
-pub use permissions::Permission;
+pub use permissions::{Permission, PermissionParseError};
 pub use roles::{Role, RoleParseError};

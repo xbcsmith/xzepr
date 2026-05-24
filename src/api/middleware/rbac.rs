@@ -419,7 +419,8 @@ mod tests {
             .route("/api/v1/events/:id", get(test_handler))
             .layer(middleware::from_fn(rbac_enforcement_middleware));
 
-        let claims = create_claims_with_permissions(vec!["EventRead".to_string()]);
+        // Use the new snake_case Display format for permissions in JWT claims.
+        let claims = create_claims_with_permissions(vec!["event_read".to_string()]);
         let request = create_test_request(Method::GET, "/api/v1/events/123", Some(claims)).await;
 
         let response = app.oneshot(request).await.unwrap();
@@ -432,7 +433,8 @@ mod tests {
             .route("/api/v1/events/:id", get(test_handler))
             .layer(middleware::from_fn(rbac_enforcement_middleware));
 
-        let claims = create_claims_with_permissions(vec!["ReceiverRead".to_string()]);
+        // Use snake_case format; wrong permission still denied.
+        let claims = create_claims_with_permissions(vec!["receiver_read".to_string()]);
         let request = create_test_request(Method::GET, "/api/v1/events/123", Some(claims)).await;
 
         let response = app.oneshot(request).await.unwrap();
@@ -457,7 +459,8 @@ mod tests {
             .route("/api/v1/receivers", post(test_post_handler))
             .layer(middleware::from_fn(rbac_enforcement_middleware));
 
-        let claims = create_claims_with_permissions(vec!["ReceiverCreate".to_string()]);
+        // Use the new snake_case Display format for permissions in JWT claims.
+        let claims = create_claims_with_permissions(vec!["receiver_create".to_string()]);
         let request = create_test_request(Method::POST, "/api/v1/receivers", Some(claims)).await;
 
         let response = app.oneshot(request).await.unwrap();
@@ -470,7 +473,8 @@ mod tests {
             .route("/api/v1/groups/:id", put(test_put_handler))
             .layer(middleware::from_fn(rbac_enforcement_middleware));
 
-        let claims = create_claims_with_permissions(vec!["GroupUpdate".to_string()]);
+        // Use the new snake_case Display format for permissions in JWT claims.
+        let claims = create_claims_with_permissions(vec!["group_update".to_string()]);
         let request = create_test_request(Method::PUT, "/api/v1/groups/123", Some(claims)).await;
 
         let response = app.oneshot(request).await.unwrap();
@@ -483,7 +487,8 @@ mod tests {
             .route("/api/v1/events/:id", delete(test_delete_handler))
             .layer(middleware::from_fn(rbac_enforcement_middleware));
 
-        let claims = create_claims_with_permissions(vec!["EventDelete".to_string()]);
+        // Use the new snake_case Display format for permissions in JWT claims.
+        let claims = create_claims_with_permissions(vec!["event_delete".to_string()]);
         let request = create_test_request(Method::DELETE, "/api/v1/events/123", Some(claims)).await;
 
         let response = app.oneshot(request).await.unwrap();

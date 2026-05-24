@@ -1,188 +1,73 @@
 // SPDX-FileCopyrightText: 2025 Brett Smith <xbcsmith@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-// src/domain/value_objects/api_key_id.rs
+//! API key identifier value object.
 
-use serde::{Deserialize, Serialize};
-use std::fmt;
-use ulid::Ulid;
-
-/// Value object representing a unique identifier for an API key
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ApiKeyId(Ulid);
-
-impl ApiKeyId {
-    /// Creates a new API key ID with a new ULID
-    pub fn new() -> Self {
-        Self(Ulid::new())
-    }
-
-    /// Creates an API key ID from an existing ULID
-    pub fn from_ulid(ulid: Ulid) -> Self {
-        Self(ulid)
-    }
-
-    /// Parses an API key ID from a string representation
-    pub fn parse(s: &str) -> Result<Self, ulid::DecodeError> {
-        Ok(Self(Ulid::from_string(s)?))
-    }
-
-    /// Returns the inner ULID
-    pub fn as_ulid(&self) -> Ulid {
-        self.0
-    }
-
-    /// Returns the string representation of the API key ID
-    pub fn as_str(&self) -> String {
-        self.0.to_string()
-    }
-
-    /// Returns the timestamp component of the ULID in milliseconds since Unix epoch
-    pub fn timestamp_ms(&self) -> u64 {
-        self.0.timestamp_ms()
-    }
-}
-
-impl Default for ApiKeyId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl fmt::Display for ApiKeyId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<Ulid> for ApiKeyId {
-    fn from(ulid: Ulid) -> Self {
-        Self(ulid)
-    }
-}
-
-impl From<ApiKeyId> for Ulid {
-    fn from(id: ApiKeyId) -> Self {
-        id.0
-    }
-}
-
-impl std::str::FromStr for ApiKeyId {
-    type Err = ulid::DecodeError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::parse(s)
-    }
-}
-
-// SQLx support for ApiKeyId
-impl sqlx::Type<sqlx::Postgres> for ApiKeyId {
-    fn type_info() -> sqlx::postgres::PgTypeInfo {
-        <String as sqlx::Type<sqlx::Postgres>>::type_info()
-    }
-}
-
-impl<'r> sqlx::Decode<'r, sqlx::Postgres> for ApiKeyId {
-    fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
-        let s = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
-        Ok(ApiKeyId::parse(&s)?)
-    }
-}
-
-impl<'q> sqlx::Encode<'q, sqlx::Postgres> for ApiKeyId {
-    fn encode_by_ref(
-        &self,
-        buf: &mut sqlx::postgres::PgArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync>> {
-        <String as sqlx::Encode<sqlx::Postgres>>::encode_by_ref(&self.to_string(), buf)
-    }
-}
+crate::define_ulid_id!(ApiKeyId, "ULID-backed unique identifier for an API key.");
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_new_api_key_id() {
-        let id1 = ApiKeyId::new();
-        let id2 = ApiKeyId::new();
-
-        // Each new ID should be unique
-        assert_ne!(id1, id2);
+    fn test_new_api_key_id_unique() {
+        assert_ne!(ApiKeyId::new(), ApiKeyId::new());
     }
 
     #[test]
-    fn test_from_ulid() {
-        let ulid = Ulid::new();
-        let id = ApiKeyId::from_ulid(ulid);
+    fn test_api_key_id_parse_valid() {
+        let id = ApiKeyId::new();
+        // SAFETY: id was just created, its string form is always a valid ULID
+        let parsed = ApiKeyId::parse(&id.to_string()).unwrap();
+        assert_eq!(id, parsed);
+    }
 
+    #[test]
+    fn test_api_key_id_parse_invalid() {
+        assert!(ApiKeyId::parse("not-a-ulid").is_err());
+    }
+
+    #[test]
+    fn test_api_key_id_from_ulid() {
+        let ulid = ulid::Ulid::new();
+        let id = ApiKeyId::from_ulid(ulid);
         assert_eq!(id.as_ulid(), ulid);
     }
 
     #[test]
-    fn test_parse() {
-        let ulid = Ulid::new();
-        let ulid_str = ulid.to_string();
-        let id = ApiKeyId::parse(&ulid_str).unwrap();
-
-        assert_eq!(id.as_ulid(), ulid);
-    }
-
-    #[test]
-    fn test_display() {
-        let ulid = Ulid::new();
+    fn test_api_key_id_display() {
+        let ulid = ulid::Ulid::new();
         let id = ApiKeyId::from_ulid(ulid);
-
         assert_eq!(id.to_string(), ulid.to_string());
     }
 
     #[test]
-    fn test_serialization() {
+    fn test_api_key_id_serde_roundtrip() {
         let id = ApiKeyId::new();
+        // SAFETY: ApiKeyId serializes to a ULID string which is always valid JSON
         let json = serde_json::to_string(&id).unwrap();
-        let deserialized: ApiKeyId = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(id, deserialized);
+        // SAFETY: we just serialized this value, it must deserialize cleanly
+        let back: ApiKeyId = serde_json::from_str(&json).unwrap();
+        assert_eq!(id, back);
     }
 
     #[test]
-    fn test_parse_invalid_ulid() {
-        let result = ApiKeyId::parse("invalid-ulid");
-        assert!(result.is_err());
+    fn test_api_key_id_default_non_empty() {
+        assert!(!ApiKeyId::default().as_str().is_empty());
     }
 
     #[test]
-    fn test_from_str() {
-        let ulid = Ulid::new();
-        let ulid_str = ulid.to_string();
-        let id: ApiKeyId = ulid_str.parse().unwrap();
-
-        assert_eq!(id.as_ulid(), ulid);
+    fn test_api_key_id_timestamp_range() {
+        let ts = ApiKeyId::new().timestamp_ms();
+        assert!(ts > 1_577_836_800_000);
+        assert!(ts < 2_000_000_000_000);
     }
 
     #[test]
-    fn test_default() {
-        let id = ApiKeyId::default();
-        assert!(!id.as_str().is_empty());
-    }
-
-    #[test]
-    fn test_timestamp_ms() {
-        let id = ApiKeyId::new();
-        let timestamp = id.timestamp_ms();
-
-        // Timestamp should be reasonable (after 2020 and before far future)
-        assert!(timestamp > 1_577_836_800_000); // Jan 1, 2020
-        assert!(timestamp < 2_000_000_000_000); // Some date far in future
-    }
-
-    #[test]
-    fn test_ordering_by_time() {
+    fn test_api_key_id_ordering_by_time() {
         let id1 = ApiKeyId::new();
         std::thread::sleep(std::time::Duration::from_millis(2));
         let id2 = ApiKeyId::new();
-
-        // Later IDs should have higher timestamps
         assert!(id2.timestamp_ms() >= id1.timestamp_ms());
     }
 }

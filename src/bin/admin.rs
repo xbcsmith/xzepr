@@ -6,7 +6,7 @@ use clap::{Parser, Subcommand};
 use sqlx::PgPool;
 use std::str::FromStr;
 use std::sync::Arc;
-use xzepr::auth::api_key::UserRepository;
+use xzepr::auth::api_key::AuthUserRepository;
 use xzepr::{
     ApiKeyId, ApiKeyService, PostgresApiKeyRepository, PostgresUserRepository, Role, Settings, User,
 };

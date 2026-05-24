@@ -10,6 +10,9 @@ use std::time::Duration;
 use tracing::info;
 
 use crate::domain::entities::event::Event;
+use crate::domain::entities::event_receiver::EventReceiver;
+use crate::domain::entities::event_receiver_group::EventReceiverGroup;
+use crate::domain::repositories::event_publisher::EventPublisher;
 use crate::error::{Error, InfrastructureError, Result};
 use crate::infrastructure::messaging::cloudevents::CloudEventMessage;
 use crate::infrastructure::messaging::config::KafkaAuthConfig;
@@ -124,66 +127,62 @@ impl KafkaEventPublisher {
         })
     }
 
-    /// Publish an event to Kafka
+    /// Publish an event to Kafka.
+    ///
+    /// Constructs a CloudEvents envelope from the domain event and forwards it
+    /// to the configured topic via `send_cloud_event_message_internal`.
     ///
     /// # Arguments
     ///
-    /// * `event` - The event to publish
+    /// * `event` - The domain event to publish.
     ///
     /// # Returns
     ///
-    /// Returns Ok(()) if the event was successfully published
+    /// Returns `Ok(())` if the event was successfully delivered to Kafka.
     ///
     /// # Errors
     ///
-    /// Returns InfrastructureError if publishing fails
+    /// Returns `InfrastructureError::KafkaProducerError` if serialisation or
+    /// delivery fails.
     pub async fn publish(&self, event: &Event) -> Result<()> {
-        // Convert Event to CloudEvents format for compatibility
         let cloudevent = CloudEventMessage::from_event(event);
-
-        let payload = serde_json::to_string(&cloudevent).map_err(|e| {
-            Error::Infrastructure(InfrastructureError::KafkaProducerError {
-                message: format!("Failed to serialize CloudEvent message: {}", e),
-            })
-        })?;
-
-        let key = event.id().to_string();
-
-        let record = FutureRecord::to(&self.topic).key(&key).payload(&payload);
-
-        self.producer
-            .send(record, Duration::from_secs(5))
-            .await
-            .map_err(|(err, _)| {
-                Error::Infrastructure(InfrastructureError::KafkaProducerError {
-                    message: format!("Failed to send event to Kafka: {}", err),
-                })
-            })?;
-
-        info!(
-            "Published CloudEvent {} (type: {}) to topic {}",
-            event.id(),
-            event.name(),
-            self.topic
-        );
-
-        Ok(())
+        self.send_cloud_event_message_internal(&cloudevent).await
     }
 
-    /// Publish a CloudEventMessage directly to Kafka
+    /// Publish a [`CloudEventMessage`] directly to Kafka.
+    ///
+    /// This is an inherent convenience method for callers that have already
+    /// constructed a [`CloudEventMessage`].  It delegates to the private
+    /// `send_cloud_event_message_internal` helper.
     ///
     /// # Arguments
     ///
-    /// * `message` - The CloudEventMessage to publish
+    /// * `message` - The pre-built CloudEvents message to publish.
     ///
     /// # Returns
     ///
-    /// Returns Ok(()) if the message was successfully published
+    /// Returns `Ok(())` if the message was successfully delivered.
     ///
     /// # Errors
     ///
-    /// Returns InfrastructureError if publishing fails
+    /// Returns `InfrastructureError::KafkaProducerError` if serialisation or
+    /// delivery fails.
     pub async fn publish_message(&self, message: &CloudEventMessage) -> Result<()> {
+        self.send_cloud_event_message_internal(message).await
+    }
+
+    /// Serialise and send a [`CloudEventMessage`] to the Kafka topic.
+    ///
+    /// This is the single private method that contains all Kafka I/O logic.
+    /// Both the inherent `publish`/`publish_message` methods and the
+    /// [`EventPublisher`] trait implementation delegate here so that the
+    /// transport code lives in exactly one place.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InfrastructureError::KafkaProducerError` on serialisation or
+    /// delivery failure.
+    async fn send_cloud_event_message_internal(&self, message: &CloudEventMessage) -> Result<()> {
         let payload = serde_json::to_string(message).map_err(|e| {
             Error::Infrastructure(InfrastructureError::KafkaProducerError {
                 message: format!("Failed to serialize CloudEvent message: {}", e),
@@ -191,7 +190,6 @@ impl KafkaEventPublisher {
         })?;
 
         let key = message.id.clone();
-
         let record = FutureRecord::to(&self.topic).key(&key).payload(&payload);
 
         self.producer
@@ -212,10 +210,68 @@ impl KafkaEventPublisher {
     }
 }
 
+/// [`EventPublisher`] trait implementation for [`KafkaEventPublisher`].
+///
+/// All three methods construct the appropriate [`CloudEventMessage`] variant
+/// and forward it to the private `send_cloud_event_message_internal` helper.
+/// The inherent `publish` and `publish_message` methods remain available for
+/// direct use and are kept for backward compatibility.
+#[async_trait::async_trait]
+impl EventPublisher for KafkaEventPublisher {
+    /// Publish a domain event as a basic CloudEvents envelope.
+    ///
+    /// Delegates to [`CloudEventMessage::from_event`] then sends via the
+    /// internal Kafka helper.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialisation or Kafka delivery fails.
+    async fn publish(&self, event: &Event) -> crate::error::Result<()> {
+        // Explicitly call the inherent method to avoid ambiguity.
+        KafkaEventPublisher::publish(self, event).await
+    }
+
+    /// Publish a domain event with receiver context included in the envelope.
+    ///
+    /// Delegates to [`CloudEventMessage::from_event_with_receiver`] then
+    /// sends via the internal Kafka helper.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialisation or Kafka delivery fails.
+    async fn publish_with_receiver(
+        &self,
+        event: &Event,
+        receiver: &EventReceiver,
+    ) -> crate::error::Result<()> {
+        let message = CloudEventMessage::from_event_with_receiver(event, receiver);
+        self.send_cloud_event_message_internal(&message).await
+    }
+
+    /// Publish a domain event with receiver-group context included in the envelope.
+    ///
+    /// Delegates to [`CloudEventMessage::from_event_with_group`] then sends
+    /// via the internal Kafka helper.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialisation or Kafka delivery fails.
+    async fn publish_with_group(
+        &self,
+        event: &Event,
+        group: &EventReceiverGroup,
+    ) -> crate::error::Result<()> {
+        let message = CloudEventMessage::from_event_with_group(event, group);
+        self.send_cloud_event_message_internal(&message).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::domain::entities::event::CreateEventParams;
+    use crate::domain::entities::event_receiver::EventReceiver;
+    use crate::domain::entities::event_receiver_group::EventReceiverGroup;
     use crate::domain::value_objects::{EventReceiverId, UserId};
 
     #[test]
@@ -398,5 +454,96 @@ mod tests {
 
         assert!(result_new.is_ok());
         assert!(result_with_auth.is_ok());
+    }
+
+    /// Helper: build a minimal valid Event for tests.
+    fn make_test_event() -> Event {
+        let receiver_id = EventReceiverId::new();
+        // SAFETY: All inputs are controlled test values; validation cannot fail.
+        Event::new(CreateEventParams {
+            name: "test.event".to_string(),
+            version: "1.0.0".to_string(),
+            release: "1.0.0".to_string(),
+            platform_id: "test".to_string(),
+            package: "test-pkg".to_string(),
+            description: "Test event".to_string(),
+            payload: serde_json::json!({"key": "value"}),
+            success: true,
+            receiver_id,
+            owner_id: UserId::new(),
+        })
+        .expect("SAFETY: All inputs are controlled test values; validation cannot fail.")
+    }
+
+    /// Helper: build a minimal valid EventReceiver for tests.
+    fn make_test_receiver() -> EventReceiver {
+        // SAFETY: All inputs are controlled test values; validation cannot fail.
+        EventReceiver::new(
+            "Test Receiver".to_string(),
+            "webhook".to_string(),
+            "1.0.0".to_string(),
+            "A test event receiver".to_string(),
+            serde_json::json!({"type": "object"}),
+            UserId::new(),
+        )
+        .expect("SAFETY: All inputs are controlled test values; validation cannot fail.")
+    }
+
+    /// Helper: build a minimal valid EventReceiverGroup for tests.
+    fn make_test_group() -> EventReceiverGroup {
+        // SAFETY: All inputs are controlled test values; validation cannot fail.
+        EventReceiverGroup::new(
+            "Test Group".to_string(),
+            "webhook_group".to_string(),
+            "1.0.0".to_string(),
+            "A test event receiver group".to_string(),
+            true,
+            vec![EventReceiverId::new()],
+            UserId::new(),
+        )
+        .expect("SAFETY: All inputs are controlled test values; validation cannot fail.")
+    }
+
+    #[test]
+    fn test_event_publisher_trait_impl_exists() {
+        // Verify KafkaEventPublisher satisfies the EventPublisher trait bound.
+        // SAFETY: publisher creation with a broker string succeeds without a live broker.
+        let publisher = KafkaEventPublisher::new("localhost:9092", "test-topic").expect(
+            "SAFETY: publisher creation with a broker string succeeds without a live broker.",
+        );
+        // Coerce to trait object to confirm the impl compiles.
+        let _: &dyn EventPublisher = &publisher;
+    }
+
+    #[tokio::test]
+    #[ignore = "Requires a running Kafka / Redpanda instance"]
+    async fn test_event_publisher_publish_delegates_to_kafka() {
+        // SAFETY: test is ignored without a live broker.
+        let publisher = KafkaEventPublisher::new("localhost:9092", "test-topic").unwrap();
+        let event = make_test_event();
+        let result = EventPublisher::publish(&publisher, &event).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    #[ignore = "Requires a running Kafka / Redpanda instance"]
+    async fn test_event_publisher_publish_with_receiver() {
+        // SAFETY: test is ignored without a live broker.
+        let publisher = KafkaEventPublisher::new("localhost:9092", "test-topic").unwrap();
+        let event = make_test_event();
+        let receiver = make_test_receiver();
+        let result = EventPublisher::publish_with_receiver(&publisher, &event, &receiver).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    #[ignore = "Requires a running Kafka / Redpanda instance"]
+    async fn test_event_publisher_publish_with_group() {
+        // SAFETY: test is ignored without a live broker.
+        let publisher = KafkaEventPublisher::new("localhost:9092", "test-topic").unwrap();
+        let event = make_test_event();
+        let group = make_test_group();
+        let result = EventPublisher::publish_with_group(&publisher, &event, &group).await;
+        assert!(result.is_ok());
     }
 }

@@ -484,6 +484,144 @@ impl UserRepository for PostgresUserRepository {
     }
 }
 
+#[async_trait]
+impl crate::auth::api_key::AuthUserRepository for PostgresUserRepository {
+    async fn find_by_id(
+        &self,
+        id: crate::domain::value_objects::UserId,
+    ) -> Result<Option<crate::domain::entities::user::User>, crate::error::AuthError> {
+        <Self as UserRepository>::find_by_id(self, &id)
+            .await
+            .map_err(|e| crate::error::AuthError::OidcError {
+                message: e.to_string(),
+            })
+    }
+
+    async fn find_by_username(
+        &self,
+        username: &str,
+    ) -> Result<Option<crate::domain::entities::user::User>, crate::error::AuthError> {
+        <Self as UserRepository>::find_by_username(self, username)
+            .await
+            .map_err(|e| crate::error::AuthError::OidcError {
+                message: e.to_string(),
+            })
+    }
+
+    async fn save(
+        &self,
+        user: &crate::domain::entities::user::User,
+    ) -> Result<(), crate::error::AuthError> {
+        use crate::domain::entities::user::AuthProvider;
+
+        let auth_provider_str = match user.auth_provider {
+            AuthProvider::Local => "local",
+            AuthProvider::Keycloak { .. } => "keycloak",
+            AuthProvider::ApiKey => "api_key",
+        };
+
+        let auth_provider_subject = match &user.auth_provider {
+            AuthProvider::Keycloak { subject } => Some(subject.clone()),
+            _ => None,
+        };
+
+        sqlx::query(
+            r#"
+            INSERT INTO users (id, username, email, password_hash, auth_provider_type, auth_provider_subject, enabled, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ON CONFLICT (id) DO UPDATE SET
+                username = EXCLUDED.username,
+                email = EXCLUDED.email,
+                password_hash = EXCLUDED.password_hash,
+                auth_provider_type = EXCLUDED.auth_provider_type,
+                auth_provider_subject = EXCLUDED.auth_provider_subject,
+                enabled = EXCLUDED.enabled,
+                updated_at = EXCLUDED.updated_at
+            "#,
+        )
+        .bind(user.id().as_ulid().to_string())
+        .bind(user.username())
+        .bind(user.email())
+        .bind(&user.password_hash)
+        .bind(auth_provider_str)
+        .bind(auth_provider_subject)
+        .bind(user.enabled())
+        .bind(user.created_at())
+        .bind(user.updated_at())
+        .execute(&self.pool)
+        .await
+        .map_err(|e| crate::error::AuthError::OidcError {
+            message: format!("save user: {}", e),
+        })?;
+
+        // Sync roles
+        sqlx::query("DELETE FROM user_roles WHERE user_id = $1")
+            .bind(user.id().as_ulid().to_string())
+            .execute(&self.pool)
+            .await
+            .map_err(|e| crate::error::AuthError::OidcError {
+                message: format!("delete roles: {}", e),
+            })?;
+
+        for role in user.roles() {
+            sqlx::query("INSERT INTO user_roles (user_id, role) VALUES ($1, $2)")
+                .bind(user.id().as_ulid().to_string())
+                .bind(role.to_string())
+                .execute(&self.pool)
+                .await
+                .map_err(|e| crate::error::AuthError::OidcError {
+                    message: format!("insert role: {}", e),
+                })?;
+        }
+
+        Ok(())
+    }
+
+    async fn find_all(
+        &self,
+    ) -> Result<Vec<crate::domain::entities::user::User>, crate::error::AuthError> {
+        <Self as UserRepository>::list(self, i64::MAX, 0)
+            .await
+            .map_err(|e| crate::error::AuthError::OidcError {
+                message: e.to_string(),
+            })
+    }
+
+    async fn add_role(
+        &self,
+        user_id: &crate::domain::value_objects::UserId,
+        role: crate::auth::rbac::roles::Role,
+    ) -> Result<(), crate::error::AuthError> {
+        sqlx::query(
+            "INSERT INTO user_roles (user_id, role) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        )
+        .bind(user_id.as_ulid().to_string())
+        .bind(role.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(|e| crate::error::AuthError::OidcError {
+            message: format!("add_role: {}", e),
+        })?;
+        Ok(())
+    }
+
+    async fn remove_role(
+        &self,
+        user_id: &crate::domain::value_objects::UserId,
+        role: crate::auth::rbac::roles::Role,
+    ) -> Result<(), crate::error::AuthError> {
+        sqlx::query("DELETE FROM user_roles WHERE user_id = $1 AND role = $2")
+            .bind(user_id.as_ulid().to_string())
+            .bind(role.to_string())
+            .execute(&self.pool)
+            .await
+            .map_err(|e| crate::error::AuthError::OidcError {
+                message: format!("remove_role: {}", e),
+            })?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

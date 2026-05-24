@@ -209,7 +209,7 @@ async fn test_event_create_requires_event_create_permission() {
         .generate_access_token(
             "user1".to_string(),
             vec!["user".to_string()],
-            vec!["EventRead".to_string()],
+            vec!["event_read".to_string()],
         )
         .unwrap();
 
@@ -228,7 +228,7 @@ async fn test_event_create_requires_event_create_permission() {
         .generate_access_token(
             "user2".to_string(),
             vec!["user".to_string()],
-            vec!["EventCreate".to_string()],
+            vec!["event_create".to_string()],
         )
         .unwrap();
 
@@ -252,7 +252,7 @@ async fn test_event_read_requires_event_read_permission() {
         .generate_access_token(
             "user1".to_string(),
             vec!["user".to_string()],
-            vec!["EventCreate".to_string()],
+            vec!["event_create".to_string()],
         )
         .unwrap();
 
@@ -271,7 +271,7 @@ async fn test_event_read_requires_event_read_permission() {
         .generate_access_token(
             "user2".to_string(),
             vec!["user".to_string()],
-            vec!["EventRead".to_string()],
+            vec!["event_read".to_string()],
         )
         .unwrap();
 
@@ -295,7 +295,7 @@ async fn test_event_delete_requires_event_delete_permission() {
         .generate_access_token(
             "user1".to_string(),
             vec!["user".to_string()],
-            vec!["EventRead".to_string()],
+            vec!["event_read".to_string()],
         )
         .unwrap();
 
@@ -314,7 +314,7 @@ async fn test_event_delete_requires_event_delete_permission() {
         .generate_access_token(
             "user2".to_string(),
             vec!["admin".to_string()],
-            vec!["EventDelete".to_string()],
+            vec!["event_delete".to_string()],
         )
         .unwrap();
 
@@ -337,7 +337,7 @@ async fn test_receiver_create_requires_receiver_create_permission() {
         .generate_access_token(
             "user1".to_string(),
             vec!["user".to_string()],
-            vec!["ReceiverRead".to_string()],
+            vec!["receiver_read".to_string()],
         )
         .unwrap();
 
@@ -355,7 +355,7 @@ async fn test_receiver_create_requires_receiver_create_permission() {
         .generate_access_token(
             "user2".to_string(),
             vec!["admin".to_string()],
-            vec!["ReceiverCreate".to_string()],
+            vec!["receiver_create".to_string()],
         )
         .unwrap();
 
@@ -378,7 +378,7 @@ async fn test_receiver_read_requires_receiver_read_permission() {
         .generate_access_token(
             "user1".to_string(),
             vec!["user".to_string()],
-            vec!["EventRead".to_string()],
+            vec!["event_read".to_string()],
         )
         .unwrap();
 
@@ -396,7 +396,7 @@ async fn test_receiver_read_requires_receiver_read_permission() {
         .generate_access_token(
             "user2".to_string(),
             vec!["user".to_string()],
-            vec!["ReceiverRead".to_string()],
+            vec!["receiver_read".to_string()],
         )
         .unwrap();
 
@@ -419,7 +419,7 @@ async fn test_receiver_update_requires_receiver_update_permission() {
         .generate_access_token(
             "user1".to_string(),
             vec!["user".to_string()],
-            vec!["ReceiverRead".to_string()],
+            vec!["receiver_read".to_string()],
         )
         .unwrap();
 
@@ -437,7 +437,7 @@ async fn test_receiver_update_requires_receiver_update_permission() {
         .generate_access_token(
             "user2".to_string(),
             vec!["admin".to_string()],
-            vec!["ReceiverUpdate".to_string()],
+            vec!["receiver_update".to_string()],
         )
         .unwrap();
 
@@ -460,7 +460,7 @@ async fn test_receiver_delete_requires_receiver_delete_permission() {
         .generate_access_token(
             "user1".to_string(),
             vec!["user".to_string()],
-            vec!["ReceiverRead".to_string()],
+            vec!["receiver_read".to_string()],
         )
         .unwrap();
 
@@ -478,7 +478,7 @@ async fn test_receiver_delete_requires_receiver_delete_permission() {
         .generate_access_token(
             "user2".to_string(),
             vec!["admin".to_string()],
-            vec!["ReceiverDelete".to_string()],
+            vec!["receiver_delete".to_string()],
         )
         .unwrap();
 
@@ -502,7 +502,7 @@ async fn test_group_operations_require_correct_permissions() {
         .generate_access_token(
             "user1".to_string(),
             vec!["admin".to_string()],
-            vec!["GroupCreate".to_string()],
+            vec!["group_create".to_string()],
         )
         .unwrap();
 
@@ -521,7 +521,7 @@ async fn test_group_operations_require_correct_permissions() {
         .generate_access_token(
             "user2".to_string(),
             vec!["user".to_string()],
-            vec!["GroupRead".to_string()],
+            vec!["group_read".to_string()],
         )
         .unwrap();
 
@@ -540,7 +540,7 @@ async fn test_group_operations_require_correct_permissions() {
         .generate_access_token(
             "user3".to_string(),
             vec!["admin".to_string()],
-            vec!["GroupUpdate".to_string()],
+            vec!["group_update".to_string()],
         )
         .unwrap();
 
@@ -559,7 +559,7 @@ async fn test_group_operations_require_correct_permissions() {
         .generate_access_token(
             "user4".to_string(),
             vec!["admin".to_string()],
-            vec!["GroupDelete".to_string()],
+            vec!["group_delete".to_string()],
         )
         .unwrap();
 
@@ -584,10 +584,10 @@ async fn test_user_with_multiple_permissions() {
             "superuser".to_string(),
             vec!["admin".to_string()],
             vec![
-                "EventCreate".to_string(),
-                "EventRead".to_string(),
-                "ReceiverRead".to_string(),
-                "GroupRead".to_string(),
+                "event_create".to_string(),
+                "event_read".to_string(),
+                "receiver_read".to_string(),
+                "group_read".to_string(),
             ],
         )
         .unwrap();
@@ -644,7 +644,7 @@ async fn test_missing_bearer_prefix_rejected() {
         .generate_access_token(
             "user1".to_string(),
             vec!["user".to_string()],
-            vec!["EventRead".to_string()],
+            vec!["event_read".to_string()],
         )
         .unwrap();
 
@@ -667,7 +667,7 @@ async fn test_forbidden_response_includes_permission_details() {
         .generate_access_token(
             "user1".to_string(),
             vec!["user".to_string()],
-            vec!["EventRead".to_string()],
+            vec!["event_read".to_string()],
         )
         .unwrap();
 
@@ -687,5 +687,5 @@ async fn test_forbidden_response_includes_permission_details() {
         .unwrap();
     let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
 
-    assert!(body_str.contains("EventCreate") || body_str.contains("permission"));
+    assert!(body_str.contains("event_create") || body_str.contains("permission"));
 }

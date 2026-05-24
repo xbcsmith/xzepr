@@ -1,6 +1,11 @@
 // SPDX-FileCopyrightText: 2025 Brett Smith <xbcsmith@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
+//! Domain value objects: typed ULID identifiers and shared helpers.
+
+#[macro_use]
+pub mod macros;
+
 pub mod api_key_id;
 pub mod event_id;
 pub mod event_receiver_group_id;

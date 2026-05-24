@@ -9,3 +9,7 @@ pub mod producer;
 pub mod topics;
 
 pub use topics::TopicManager;
+
+/// Re-export the domain `EventPublisher` trait for convenient access via
+/// `infrastructure::messaging::EventPublisher`.
+pub use crate::domain::repositories::event_publisher::EventPublisher;

@@ -4,11 +4,11 @@
 // src/application/handlers/event_handler.rs
 
 use crate::domain::entities::event::{CreateEventParams, Event};
+use crate::domain::repositories::event_publisher::EventPublisher;
 use crate::domain::repositories::event_receiver_repo::EventReceiverRepository;
 use crate::domain::repositories::event_repo::{EventRepository, FindEventCriteria};
 use crate::domain::value_objects::{EventId, EventReceiverId, UserId};
 use crate::error::{DomainError, Result};
-use crate::infrastructure::messaging::producer::KafkaEventPublisher;
 
 use std::sync::Arc;
 use tracing::{error, info, warn};
@@ -18,7 +18,7 @@ use tracing::{error, info, warn};
 pub struct EventHandler {
     event_repository: Arc<dyn EventRepository>,
     receiver_repository: Arc<dyn EventReceiverRepository>,
-    event_publisher: Option<Arc<KafkaEventPublisher>>,
+    event_publisher: Option<Arc<dyn EventPublisher>>,
 }
 
 impl EventHandler {
@@ -38,7 +38,7 @@ impl EventHandler {
     pub fn with_publisher(
         event_repository: Arc<dyn EventRepository>,
         receiver_repository: Arc<dyn EventReceiverRepository>,
-        event_publisher: Arc<KafkaEventPublisher>,
+        event_publisher: Arc<dyn EventPublisher>,
     ) -> Self {
         Self {
             event_repository,

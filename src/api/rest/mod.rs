@@ -74,6 +74,61 @@ pub fn validation_error(field: &str, message: &str) -> (StatusCode, Json<ErrorRe
     )
 }
 
+/// Parse a ULID-backed path identifier, returning a typed REST error on failure.
+///
+/// This helper eliminates the repetitive pattern of parsing path IDs in every
+/// REST handler and provides a consistent error response format across all
+/// endpoints.
+///
+/// # Type Parameters
+///
+/// * `T` - The identifier type to parse into.  Must implement [`std::str::FromStr`].
+///
+/// # Arguments
+///
+/// * `id_str` - The raw string taken from the URL path segment.
+/// * `entity` - The entity type name used in the error message (e.g., `"Event"`).
+///
+/// # Returns
+///
+/// `Ok(T)` if parsing succeeds.
+///
+/// # Errors
+///
+/// Returns a `(StatusCode::BAD_REQUEST, Json<ErrorResponse>)` tuple if the
+/// supplied string cannot be parsed into `T`.
+///
+/// # Examples
+///
+/// ```rust
+/// use xzepr::api::rest::parse_path_id;
+/// use xzepr::domain::value_objects::EventId;
+///
+/// // A valid ULID string parses successfully.
+/// let id = EventId::new();
+/// let result: Result<EventId, _> = parse_path_id(&id.to_string(), "Event");
+/// assert!(result.is_ok());
+///
+/// // An invalid string returns a BAD_REQUEST error.
+/// let result: Result<EventId, _> = parse_path_id("not-a-ulid", "Event");
+/// assert!(result.is_err());
+/// ```
+pub fn parse_path_id<T>(id_str: &str, entity: &str) -> Result<T, (StatusCode, Json<ErrorResponse>)>
+where
+    T: std::str::FromStr,
+    T::Err: std::fmt::Display,
+{
+    id_str.parse::<T>().map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::new(
+                "invalid_id".to_string(),
+                format!("Invalid {} ID format", entity),
+            )),
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -90,6 +145,26 @@ mod tests {
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
 
         let (status, _response) = validation_error("name", "Name is required");
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn test_parse_path_id_with_valid_ulid() {
+        use crate::domain::value_objects::EventId;
+
+        let id = EventId::new();
+        let result: Result<EventId, _> = parse_path_id(&id.to_string(), "Event");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), id);
+    }
+
+    #[test]
+    fn test_parse_path_id_with_invalid_string() {
+        use crate::domain::value_objects::EventId;
+
+        let result: Result<EventId, _> = parse_path_id("not-a-ulid", "Event");
+        assert!(result.is_err());
+        let (status, _) = result.unwrap_err();
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 }
