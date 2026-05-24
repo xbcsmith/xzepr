@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2025 Brett Smith <xbcsmith@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
+use std::fmt;
+
 use serde::Deserialize;
 
 use config::{Config, ConfigError, Environment, File};
@@ -18,9 +20,23 @@ pub struct Settings {
     pub opa: Option<crate::opa::types::OpaConfig>,
 }
 
-#[derive(Debug, Deserialize)]
+/// Database connection configuration.
+///
+/// The `Debug` implementation redacts the password from the connection URL
+/// so that it cannot be accidentally exposed via logging.
+#[derive(Deserialize)]
 pub struct DatabaseConfig {
+    /// PostgreSQL connection URL.
     pub url: String,
+}
+
+impl fmt::Debug for DatabaseConfig {
+    /// Formats the config, masking the password component of the URL.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DatabaseConfig")
+            .field("url", &mask_password(&self.url))
+            .finish()
+    }
 }
 
 #[derive(Debug, Deserialize, serde::Serialize)]
@@ -57,7 +73,7 @@ pub struct AuthConfig {
     pub keycloak: Option<KeycloakConfig>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Deserialize, Clone)]
 pub struct JwtAuthConfig {
     /// Access token expiration in seconds (default: 900 = 15 minutes)
     #[serde(default = "default_access_token_expiration")]
@@ -97,12 +113,66 @@ pub struct JwtAuthConfig {
     pub leeway_seconds: u64,
 }
 
-#[derive(Debug, Deserialize)]
+impl fmt::Debug for JwtAuthConfig {
+    /// Formats the config, showing `[REDACTED]` for `secret_key` if present.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let secret_key_display: &str = if self.secret_key.is_some() {
+            "[REDACTED]"
+        } else {
+            "None"
+        };
+        f.debug_struct("JwtAuthConfig")
+            .field(
+                "access_token_expiration_seconds",
+                &self.access_token_expiration_seconds,
+            )
+            .field(
+                "refresh_token_expiration_seconds",
+                &self.refresh_token_expiration_seconds,
+            )
+            .field("issuer", &self.issuer)
+            .field("audience", &self.audience)
+            .field("algorithm", &self.algorithm)
+            .field("private_key_path", &self.private_key_path)
+            .field("public_key_path", &self.public_key_path)
+            .field("secret_key", &secret_key_display)
+            .field("enable_token_rotation", &self.enable_token_rotation)
+            .field("leeway_seconds", &self.leeway_seconds)
+            .finish()
+    }
+}
+
+#[derive(Deserialize)]
 pub struct KeycloakConfig {
     pub issuer_url: String,
     pub client_id: String,
     pub client_secret: String,
     pub redirect_url: String,
+}
+
+impl fmt::Debug for KeycloakConfig {
+    /// Formats the config, showing `[REDACTED]` for `client_secret`.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KeycloakConfig")
+            .field("issuer_url", &self.issuer_url)
+            .field("client_id", &self.client_id)
+            .field("client_secret", &"[REDACTED]")
+            .field("redirect_url", &self.redirect_url)
+            .finish()
+    }
+}
+
+/// OIDC session configuration.
+///
+/// Controls the lifetime and concurrency limits for OIDC-authenticated sessions.
+#[derive(Debug, Clone, Deserialize)]
+pub struct OidcSessionConfig {
+    /// Session time-to-live in seconds (default: 3600 = 1 hour).
+    #[serde(default = "default_oidc_session_ttl")]
+    pub session_ttl_seconds: u64,
+    /// Maximum number of concurrent sessions per user (default: 10).
+    #[serde(default = "default_oidc_max_sessions")]
+    pub max_sessions_per_user: usize,
 }
 
 #[derive(Debug, Deserialize)]
@@ -173,6 +243,84 @@ impl Settings {
 
         builder.build()?.try_deserialize()
     }
+
+    /// Validates that the configuration meets production security requirements.
+    ///
+    /// This method checks for common misconfigurations that would be unsafe in a
+    /// production environment. Critical failures are returned as `Err`; advisories
+    /// are emitted via the `tracing` infrastructure as warnings.
+    ///
+    /// # Checks performed
+    ///
+    /// - HTTPS must be enabled when `RUST_ENV=production`.
+    /// - Database URL must not contain a default insecure password (`:password@`).
+    /// - JWT algorithm should be RS256 in production; HS256 triggers a warning.
+    /// - If OIDC is enabled, the Keycloak issuer URL must use `https://`.
+    /// - If OIDC is enabled, the Keycloak redirect URL must use `https://`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(String)` with a descriptive message when a critical
+    /// misconfiguration is detected.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use xzepr::infrastructure::config::Settings;
+    ///
+    /// let settings = Settings::new().expect("configuration should load");
+    /// settings
+    ///     .validate_production()
+    ///     .expect("production checks should pass");
+    /// ```
+    pub fn validate_production(&self) -> Result<(), String> {
+        let env = std::env::var("RUST_ENV").unwrap_or_else(|_| "development".into());
+
+        // Hard error: HTTPS must be enabled in production.
+        if env == "production" && !self.server.enable_https {
+            return Err(
+                "HTTPS must be enabled in production. Set server.enable_https = true.".to_string(),
+            );
+        }
+
+        // Advisory: warn about default or insecure database passwords.
+        if self.database.url.contains(":password@") {
+            tracing::warn!(
+                "Database URL appears to use a default password. \
+                 Update the database password before deploying to production."
+            );
+        }
+
+        // Advisory: warn when using the HS256 symmetric algorithm.
+        if self.auth.jwt.algorithm == "HS256" {
+            tracing::warn!(
+                "JWT algorithm is HS256. RS256 with asymmetric keys is recommended \
+                 for production deployments."
+            );
+        }
+
+        // Hard error: all OIDC endpoints must use HTTPS.
+        if self.auth.enable_oidc {
+            if let Some(keycloak) = &self.auth.keycloak {
+                if !keycloak.issuer_url.starts_with("https://") {
+                    return Err(format!(
+                        "OIDC issuer URL must use https:// when OIDC is enabled. \
+                         Got: {}",
+                        keycloak.issuer_url
+                    ));
+                }
+                if !keycloak.redirect_url.starts_with("https://") {
+                    return Err(format!(
+                        "OIDC redirect URL must use https:// when OIDC is enabled. \
+                         Got: {}",
+                        keycloak.redirect_url
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 // Default value functions for JWT config
@@ -215,6 +363,42 @@ fn default_kafka_partitions() -> i32 {
 
 fn default_kafka_replication_factor() -> i32 {
     1
+}
+
+// Default value functions for OIDC session config
+
+/// Returns the default OIDC session TTL in seconds (1 hour).
+fn default_oidc_session_ttl() -> u64 {
+    3600
+}
+
+/// Returns the default maximum number of concurrent sessions per user.
+fn default_oidc_max_sessions() -> usize {
+    10
+}
+
+/// Masks the password component of a database connection URL for safe logging.
+///
+/// # Arguments
+///
+/// * `url` - The database connection URL string.
+///
+/// # Returns
+///
+/// A copy of the URL with the password replaced by `***`, or the original
+/// URL unchanged if no password component is detected.
+fn mask_password(url: &str) -> String {
+    if let Some(at_pos) = url.rfind('@') {
+        if let Some(proto_end) = url.find("://") {
+            let proto = &url[..proto_end + 3];
+            let after_at = &url[at_pos..];
+            if let Some(colon_pos) = url[proto_end + 3..at_pos].find(':') {
+                let username = &url[proto_end + 3..proto_end + 3 + colon_pos];
+                return format!("{}{}:***{}", proto, username, after_at);
+            }
+        }
+    }
+    url.to_string()
 }
 
 #[cfg(test)]
@@ -466,5 +650,140 @@ mod tests {
         assert_eq!(default_kafka_topic(), "xzepr.dev.events");
         assert_eq!(default_kafka_partitions(), 3);
         assert_eq!(default_kafka_replication_factor(), 1);
+    }
+
+    #[test]
+    fn test_debug_database_config_redacts_password() {
+        let config = DatabaseConfig {
+            url: "postgres://user:pass@host/db".to_string(),
+        };
+        let debug_str = format!("{:?}", config);
+        assert!(
+            !debug_str.contains("pass"),
+            "Debug output must not expose the database password"
+        );
+        assert!(
+            debug_str.contains("***"),
+            "Debug output should show *** in place of the password"
+        );
+    }
+
+    #[test]
+    fn test_debug_jwt_auth_config_redacts_secret_key() {
+        let config = JwtAuthConfig {
+            access_token_expiration_seconds: 900,
+            refresh_token_expiration_seconds: 604800,
+            issuer: "xzepr".to_string(),
+            audience: "xzepr-api".to_string(),
+            algorithm: "RS256".to_string(),
+            private_key_path: None,
+            public_key_path: None,
+            secret_key: Some("super-secret-key".to_string()),
+            enable_token_rotation: true,
+            leeway_seconds: 60,
+        };
+        let debug_str = format!("{:?}", config);
+        assert!(
+            !debug_str.contains("super-secret-key"),
+            "Debug output must not expose the JWT secret key"
+        );
+        assert!(
+            debug_str.contains("[REDACTED]"),
+            "Debug output should show [REDACTED] for the secret key"
+        );
+    }
+
+    #[test]
+    fn test_debug_keycloak_config_redacts_client_secret() {
+        let config = KeycloakConfig {
+            issuer_url: "https://keycloak.example.com/realms/xzepr".to_string(),
+            client_id: "xzepr".to_string(),
+            client_secret: "my-super-secret".to_string(),
+            redirect_url: "https://app.example.com/callback".to_string(),
+        };
+        let debug_str = format!("{:?}", config);
+        assert!(
+            !debug_str.contains("my-super-secret"),
+            "Debug output must not expose the Keycloak client secret"
+        );
+        assert!(
+            debug_str.contains("[REDACTED]"),
+            "Debug output should show [REDACTED] for the client secret"
+        );
+    }
+
+    #[test]
+    fn test_validate_production_rejects_insecure_oidc() {
+        let settings = Settings {
+            server: ServerConfig {
+                host: "0.0.0.0".to_string(),
+                port: 8443,
+                enable_https: true,
+            },
+            database: DatabaseConfig {
+                url: "postgres://user:securepass@host/db".to_string(),
+            },
+            auth: AuthConfig {
+                jwt: JwtAuthConfig {
+                    access_token_expiration_seconds: 900,
+                    refresh_token_expiration_seconds: 604800,
+                    issuer: "xzepr".to_string(),
+                    audience: "xzepr-api".to_string(),
+                    algorithm: "RS256".to_string(),
+                    private_key_path: None,
+                    public_key_path: None,
+                    secret_key: None,
+                    enable_token_rotation: true,
+                    leeway_seconds: 60,
+                },
+                enable_local_auth: true,
+                enable_oidc: true,
+                keycloak: Some(KeycloakConfig {
+                    // http:// issuer should be rejected
+                    issuer_url: "http://keycloak.example.com/realms/xzepr".to_string(),
+                    client_id: "xzepr".to_string(),
+                    client_secret: "secret".to_string(),
+                    redirect_url: "https://app.example.com/callback".to_string(),
+                }),
+            },
+            tls: TlsConfig {
+                cert_path: "/path/to/cert.pem".to_string(),
+                key_path: "/path/to/key.pem".to_string(),
+            },
+            kafka: KafkaConfig {
+                brokers: "localhost:9092".to_string(),
+                default_topic: "test.events".to_string(),
+                default_topic_partitions: 3,
+                default_topic_replication_factor: 1,
+                auth: None,
+            },
+            opa: None,
+        };
+
+        let result = settings.validate_production();
+        assert!(
+            result.is_err(),
+            "validate_production should reject an http:// OIDC issuer URL"
+        );
+        let err_msg = result.unwrap_err();
+        assert!(
+            err_msg.contains("https"),
+            "Error message should reference https: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_oidc_session_config_defaults() {
+        let yaml = "{}";
+        let config: OidcSessionConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(
+            config.session_ttl_seconds, 3600,
+            "Default TTL should be 3600 seconds"
+        );
+        assert_eq!(
+            config.max_sessions_per_user, 10,
+            "Default max sessions should be 10"
+        );
     }
 }

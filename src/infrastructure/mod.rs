@@ -7,6 +7,7 @@ pub mod database;
 pub mod messaging;
 pub mod metrics;
 pub mod monitoring;
+pub mod secrets;
 pub mod security_config;
 pub mod tracing;
 
@@ -16,6 +17,7 @@ pub use metrics::PrometheusMetrics;
 pub use monitoring::{
     ComponentHealth, HealthCheck, HealthStatus, SecurityMetrics, SecurityMonitor,
 };
+pub use secrets::RedactedSecret;
 pub use security_config::{
     CorsSecurityConfig, MonitoringConfig, RateLimitSecurityConfig, SecurityConfig,
     SecurityHeadersConfig, ValidationSecurityConfig,

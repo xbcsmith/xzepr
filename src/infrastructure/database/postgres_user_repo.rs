@@ -394,25 +394,111 @@ impl UserRepository for PostgresUserRepository {
         email: Option<String>,
         _name: Option<String>,
     ) -> UserRepoResult<User> {
-        if let Some(mut existing_user) = self.find_by_oidc_subject(&subject).await? {
-            debug!("Updating existing OIDC user: {}", subject);
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| DomainError::StorageError(format!("begin transaction: {}", e)))?;
 
+        // Lock the row for update to prevent concurrent provisioning for the same subject.
+        let existing_row = sqlx::query(
+            r#"
+            SELECT id, username, email, password_hash, auth_provider_type,
+                   auth_provider_subject, roles, enabled, created_at, updated_at
+            FROM users
+            WHERE auth_provider_type = 'keycloak' AND auth_provider_subject = $1
+            FOR UPDATE
+            "#,
+        )
+        .bind(&subject)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| DomainError::StorageError(format!("Database error: {}", e)))?;
+
+        let user = if let Some(row) = existing_row {
+            debug!(
+                "Updating existing OIDC user within transaction: {}",
+                subject
+            );
+            let mut existing_user = Self::row_to_user(&row)?;
             existing_user.username = username;
             if let Some(email_value) = email {
                 existing_user.email = email_value;
             }
+            let now = Utc::now();
+            let roles = Self::roles_to_strings(&existing_user.roles);
+            let updated_row = sqlx::query(
+                r#"
+                UPDATE users
+                SET username = $2, email = $3, roles = $4, updated_at = $5
+                WHERE id = $1
+                RETURNING id, username, email, password_hash, auth_provider_type,
+                          auth_provider_subject, roles, enabled, created_at, updated_at
+                "#,
+            )
+            .bind(existing_user.id.to_string())
+            .bind(&existing_user.username)
+            .bind(&existing_user.email)
+            .bind(&roles)
+            .bind(now)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| DomainError::StorageError(format!("Database error: {}", e)))?;
+            Self::row_to_user(&updated_row)?
+        } else {
+            debug!("Creating new OIDC user within transaction: {}", subject);
+            let email_value = email.ok_or_else(|| {
+                DomainError::InvalidData(
+                    "OIDC user provisioning requires an email address".to_string(),
+                )
+            })?;
+            let new_user = User::new_oidc(username, email_value, subject);
+            let roles = Self::roles_to_strings(&new_user.roles);
+            let auth_subject = match &new_user.auth_provider {
+                AuthProvider::Keycloak { subject } => Some(subject.clone()),
+                _ => None,
+            };
+            let username_for_error = new_user.username.clone();
+            let inserted_row = sqlx::query(
+                r#"
+                INSERT INTO users (id, username, email, password_hash, auth_provider_type,
+                                 auth_provider_subject, roles, enabled, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                RETURNING id, username, email, password_hash, auth_provider_type,
+                          auth_provider_subject, roles, enabled, created_at, updated_at
+                "#,
+            )
+            .bind(new_user.id.to_string())
+            .bind(&new_user.username)
+            .bind(&new_user.email)
+            .bind(&new_user.password_hash)
+            .bind("keycloak")
+            .bind(auth_subject)
+            .bind(&roles)
+            .bind(new_user.enabled)
+            .bind(new_user.created_at)
+            .bind(new_user.updated_at)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| {
+                if let Some(db_err) = e.as_database_error() {
+                    if db_err.is_unique_violation() {
+                        return DomainError::AlreadyExists {
+                            entity: "User".to_string(),
+                            identifier: username_for_error.clone(),
+                        };
+                    }
+                }
+                DomainError::StorageError(format!("Database error: {}", e))
+            })?;
+            Self::row_to_user(&inserted_row)?
+        };
 
-            return self.update(existing_user).await;
-        }
+        tx.commit()
+            .await
+            .map_err(|e| DomainError::StorageError(format!("commit transaction: {}", e)))?;
 
-        debug!("Creating new OIDC user: {}", subject);
-
-        let email_value = email.ok_or_else(|| {
-            DomainError::InvalidData("OIDC user provisioning requires an email address".to_string())
-        })?;
-
-        let user = User::new_oidc(username, email_value, subject);
-        self.create(user).await
+        Ok(user)
     }
 
     #[instrument(skip(self))]
@@ -525,6 +611,14 @@ impl crate::auth::api_key::AuthUserRepository for PostgresUserRepository {
             _ => None,
         };
 
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| crate::error::AuthError::OidcError {
+                message: format!("begin transaction: {}", e),
+            })?;
+
         sqlx::query(
             r#"
             INSERT INTO users (id, username, email, password_hash, auth_provider_type, auth_provider_subject, enabled, created_at, updated_at)
@@ -548,16 +642,17 @@ impl crate::auth::api_key::AuthUserRepository for PostgresUserRepository {
         .bind(user.enabled())
         .bind(user.created_at())
         .bind(user.updated_at())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| crate::error::AuthError::OidcError {
             message: format!("save user: {}", e),
         })?;
 
-        // Sync roles
+        // Sync roles atomically within the transaction to prevent a window
+        // where the user exists without any assigned roles.
         sqlx::query("DELETE FROM user_roles WHERE user_id = $1")
             .bind(user.id().as_ulid().to_string())
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(|e| crate::error::AuthError::OidcError {
                 message: format!("delete roles: {}", e),
@@ -567,12 +662,18 @@ impl crate::auth::api_key::AuthUserRepository for PostgresUserRepository {
             sqlx::query("INSERT INTO user_roles (user_id, role) VALUES ($1, $2)")
                 .bind(user.id().as_ulid().to_string())
                 .bind(role.to_string())
-                .execute(&self.pool)
+                .execute(&mut *tx)
                 .await
                 .map_err(|e| crate::error::AuthError::OidcError {
                     message: format!("insert role: {}", e),
                 })?;
         }
+
+        tx.commit()
+            .await
+            .map_err(|e| crate::error::AuthError::OidcError {
+                message: format!("commit transaction: {}", e),
+            })?;
 
         Ok(())
     }
@@ -643,5 +744,14 @@ mod tests {
         let strings = PostgresUserRepository::roles_to_strings(&roles);
 
         assert_eq!(strings.len(), 0);
+    }
+
+    /// Structural compilation test: verify that PostgresUserRepository implements
+    /// the UserRepository trait, which includes create_or_update_oidc_user.
+    /// No live database connection is required; this is a compile-time assertion.
+    #[test]
+    fn test_create_or_update_oidc_user_logic_is_isolated() {
+        fn _assert_user_repository_impl<T: UserRepository>() {}
+        _assert_user_repository_impl::<PostgresUserRepository>();
     }
 }

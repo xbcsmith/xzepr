@@ -21,14 +21,15 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Create a new local user
+    /// Create a new local user.
+    /// The password is read interactively from stdin to avoid exposure in
+    /// process listings and shell history.
     CreateUser {
         #[arg(short, long)]
         username: String,
         #[arg(short, long)]
         email: String,
-        #[arg(short, long)]
-        password: String,
+        // password is now read from stdin
         #[arg(short, long)]
         role: String,
     },
@@ -88,9 +89,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::CreateUser {
             username,
             email,
-            password,
             role,
         } => {
+            // Read password from stdin to avoid exposing it in process listing or shell history
+            eprintln!("Enter password for user '{}': ", username);
+            let mut password = String::new();
+            std::io::stdin()
+                .read_line(&mut password)
+                .map_err(|e| format!("Failed to read password: {}", e))?;
+            let password = password.trim_end_matches(['\n', '\r']).to_string();
+            if password.is_empty() {
+                return Err("Password cannot be empty".into());
+            }
+
             let role = Role::from_str(&role).map_err(|err| -> Box<dyn std::error::Error> {
                 Box::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, err))
             })?;
@@ -121,7 +132,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     user_repo.add_role(user.id(), role).await?;
                 }
 
-                println!("✓ User created successfully!");
+                println!("[OK] User created successfully.");
                 println!("  ID: {}", user.id());
                 println!("  Username: {}", user.username());
                 println!(
@@ -163,7 +174,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let role = Role::from_str(&role)?;
 
             user_repo.add_role(user.id(), role).await?;
-            println!("✓ Role '{}' added to user '{}'", role, username);
+            println!("[OK] Role '{}' added to user '{}'", role, username);
         }
 
         Commands::RemoveRole { username, role } => {
@@ -174,7 +185,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let role = Role::from_str(&role)?;
 
             user_repo.remove_role(user.id(), role).await?;
-            println!("✓ Role '{}' removed from user '{}'", role, username);
+            println!("[OK] Role '{}' removed from user '{}'", role, username);
         }
 
         Commands::GenerateApiKey {
@@ -193,8 +204,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .generate_api_key(*user.id(), name, expires_at)
                 .await?;
 
-            println!("✓ API key generated successfully!");
-            println!("\n⚠️  IMPORTANT: Save this key now - it won't be shown again!");
+            println!("[OK] API key generated successfully.");
+            println!("\nIMPORTANT: Save this key now - it will not be shown again.");
             println!("\n  API Key: {}", key);
             println!("  Key ID:  {}", api_key.id());
             println!("  Name:    {}", api_key.name());
@@ -238,7 +249,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::RevokeApiKey { key_id } => {
             let key_id = ApiKeyId::parse(&key_id)?;
             api_key_service.revoke_key(key_id).await?;
-            println!("✓ API key revoked successfully");
+            println!("[OK] API key revoked successfully.");
         }
     }
 

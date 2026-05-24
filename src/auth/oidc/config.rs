@@ -39,6 +39,15 @@ pub enum OidcConfigError {
     /// The required 'openid' scope is missing.
     #[error("'openid' scope is required for OIDC")]
     MissingOpenIdScope,
+    /// The OIDC issuer URL must use HTTPS in production.
+    #[error("OIDC issuer URL must use HTTPS in production")]
+    HttpIssuerInProduction,
+    /// The OIDC redirect URL must use HTTPS in production.
+    #[error("OIDC redirect URL must use HTTPS in production")]
+    HttpRedirectInProduction,
+    /// The redirect host is not in the allowed list.
+    #[error("Redirect host '{host}' is not in the allowed redirect hosts list")]
+    DisallowedRedirectHost { host: String },
 }
 
 /// OIDC client configuration
@@ -76,6 +85,20 @@ pub struct OidcConfig {
     /// Additional parameters to include in authorization request
     #[serde(default)]
     pub additional_params: std::collections::HashMap<String, String>,
+
+    /// Allowed redirect URL hostname allowlist.
+    ///
+    /// When non-empty, the redirect URL's host must appear in this list.
+    /// An empty list disables host allowlist checking (not recommended in production).
+    #[serde(default)]
+    pub allowed_redirect_hosts: Vec<String>,
+
+    /// Session TTL in seconds (default: 3600 = 1 hour).
+    ///
+    /// Expired sessions should be cleaned up by a background task.
+    /// For multi-instance deployments, use a distributed store (e.g., Redis).
+    #[serde(default = "default_oidc_session_ttl")]
+    pub session_ttl_seconds: u64,
 }
 
 impl OidcConfig {
@@ -116,6 +139,8 @@ impl OidcConfig {
             role_claim_path: default_role_claim(),
             keycloak_mode: true,
             additional_params: std::collections::HashMap::new(),
+            allowed_redirect_hosts: vec![],
+            session_ttl_seconds: default_oidc_session_ttl(),
         }
     }
 
@@ -161,6 +186,8 @@ impl OidcConfig {
             role_claim_path: "realm_access.roles".to_string(),
             keycloak_mode: true,
             additional_params: std::collections::HashMap::new(),
+            allowed_redirect_hosts: vec![],
+            session_ttl_seconds: default_oidc_session_ttl(),
         }
     }
 
@@ -181,6 +208,7 @@ impl OidcConfig {
     /// Returns `OidcConfigError::InvalidRedirectUrl` if redirect URL is not HTTP(S).
     /// Returns `OidcConfigError::EmptyScopes` if no scopes are configured.
     /// Returns `OidcConfigError::MissingOpenIdScope` if 'openid' scope is absent.
+    /// Returns `OidcConfigError::DisallowedRedirectHost` if redirect host is not allowlisted.
     pub fn validate(&self) -> Result<(), OidcConfigError> {
         if !self.enabled {
             return Ok(());
@@ -220,6 +248,52 @@ impl OidcConfig {
 
         if !self.scopes.contains(&"openid".to_string()) {
             return Err(OidcConfigError::MissingOpenIdScope);
+        }
+
+        // Validate redirect URL against allowlist if configured.
+        if !self.allowed_redirect_hosts.is_empty() {
+            let host = extract_host(&self.redirect_url);
+            if !self.allowed_redirect_hosts.iter().any(|h| h == &host) {
+                return Err(OidcConfigError::DisallowedRedirectHost { host });
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Validate the configuration for production use.
+    ///
+    /// In addition to all checks in `validate()`, this method enforces:
+    /// - OIDC issuer URL must use `https://`
+    /// - Redirect URL must use `https://`
+    /// - Redirect URL host must appear in `allowed_redirect_hosts` when non-empty
+    ///
+    /// # Errors
+    ///
+    /// Returns `OidcConfigError::HttpIssuerInProduction` if the issuer URL is not HTTPS.
+    /// Returns `OidcConfigError::HttpRedirectInProduction` if the redirect URL is not HTTPS.
+    /// Returns `OidcConfigError::DisallowedRedirectHost` if the redirect host is not allowlisted.
+    pub fn validate_production(&self) -> Result<(), OidcConfigError> {
+        // Run base validation first.
+        self.validate()?;
+
+        if !self.enabled {
+            return Ok(());
+        }
+
+        if !self.issuer_url.starts_with("https://") {
+            return Err(OidcConfigError::HttpIssuerInProduction);
+        }
+
+        if !self.redirect_url.starts_with("https://") {
+            return Err(OidcConfigError::HttpRedirectInProduction);
+        }
+
+        if !self.allowed_redirect_hosts.is_empty() {
+            let host = extract_host(&self.redirect_url);
+            if !self.allowed_redirect_hosts.iter().any(|h| h == &host) {
+                return Err(OidcConfigError::DisallowedRedirectHost { host });
+            }
         }
 
         Ok(())
@@ -263,6 +337,8 @@ impl Default for OidcConfig {
             role_claim_path: default_role_claim(),
             keycloak_mode: true,
             additional_params: std::collections::HashMap::new(),
+            allowed_redirect_hosts: vec![],
+            session_ttl_seconds: default_oidc_session_ttl(),
         }
     }
 }
@@ -284,6 +360,29 @@ fn default_role_claim() -> String {
 /// Default true value for serde
 fn default_true() -> bool {
     true
+}
+
+/// Default OIDC session TTL in seconds (1 hour).
+fn default_oidc_session_ttl() -> u64 {
+    3600
+}
+
+/// Extract the host (and optional port) portion from a URL string.
+///
+/// Strips the scheme prefix (`https://` or `http://`) and returns everything
+/// up to the first path separator `/`.
+///
+/// # Examples
+///
+/// ```
+/// // Internal helper - tested via validate() and validate_production()
+/// ```
+fn extract_host(url: &str) -> String {
+    let after_scheme = url.find("://").map(|i| &url[i + 3..]).unwrap_or(url);
+    after_scheme
+        .split_once('/')
+        .map(|(host, _)| host.to_string())
+        .unwrap_or_else(|| after_scheme.to_string())
 }
 
 #[cfg(test)]
@@ -547,5 +646,71 @@ mod tests {
         assert_eq!(config.client_id, "xzepr-client");
         assert!(config.keycloak_mode);
         assert_eq!(config.role_claim_path, "realm_access.roles");
+    }
+
+    #[test]
+    fn test_validate_production_rejects_http_issuer() {
+        let config = OidcConfig::new(
+            "http://keycloak.example.com/realms/xzepr".to_string(),
+            "xzepr-client".to_string(),
+            "secret-at-least-16-chars".to_string(),
+            "https://app.example.com/callback".to_string(),
+        );
+        let result = config.validate_production();
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            OidcConfigError::HttpIssuerInProduction
+        ));
+    }
+
+    #[test]
+    fn test_validate_production_rejects_http_redirect() {
+        let config = OidcConfig::new(
+            "https://keycloak.example.com/realms/xzepr".to_string(),
+            "xzepr-client".to_string(),
+            "secret-at-least-16-chars".to_string(),
+            "http://app.example.com/callback".to_string(),
+        );
+        let result = config.validate_production();
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            OidcConfigError::HttpRedirectInProduction
+        ));
+    }
+
+    #[test]
+    fn test_validate_production_accepts_https_config() {
+        let config = OidcConfig::new(
+            "https://keycloak.example.com/realms/xzepr".to_string(),
+            "xzepr-client".to_string(),
+            "secret-at-least-16-chars".to_string(),
+            "https://app.example.com/callback".to_string(),
+        );
+        assert!(config.validate_production().is_ok());
+    }
+
+    #[test]
+    fn test_validate_redirect_host_allowlist() {
+        let mut config = OidcConfig::new(
+            "https://keycloak.example.com/realms/xzepr".to_string(),
+            "xzepr-client".to_string(),
+            "secret-at-least-16-chars".to_string(),
+            "https://app.example.com/callback".to_string(),
+        );
+        config.allowed_redirect_hosts = vec!["other.example.com".to_string()];
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            OidcConfigError::DisallowedRedirectHost { host } if host == "app.example.com"
+        ));
+    }
+
+    #[test]
+    fn test_oidc_session_ttl_default() {
+        let config = OidcConfig::default();
+        assert_eq!(config.session_ttl_seconds, 3600);
     }
 }

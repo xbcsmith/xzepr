@@ -249,12 +249,62 @@ fn log_ready(addr: SocketAddr, https_enabled: bool) {
 }
 
 async fn load_tls_config(cert_path: &str, key_path: &str) -> Result<RustlsConfig> {
-    info!("Loading TLS certificate from: {}", cert_path);
-    info!("Loading TLS private key from: {}", key_path);
+    // Canonicalize paths to resolve symlinks and make them absolute.
+    let cert_canonical = std::fs::canonicalize(cert_path)
+        .with_context(|| format!("Failed to canonicalize TLS cert path: {}", cert_path))?;
+    let key_canonical = std::fs::canonicalize(key_path)
+        .with_context(|| format!("Failed to canonicalize TLS key path: {}", key_path))?;
 
-    RustlsConfig::from_pem_file(cert_path, key_path)
+    info!("Loading TLS certificate from: {}", cert_canonical.display());
+    info!("Loading TLS private key from: {}", key_canonical.display());
+
+    // On Unix platforms, verify the private key file is not world-readable.
+    #[cfg(unix)]
+    check_private_key_permissions(&key_canonical)?;
+
+    RustlsConfig::from_pem_file(&cert_canonical, &key_canonical)
         .await
         .context("Failed to load TLS certificate and key")
+}
+
+/// Verify that a private key file is not world-readable.
+///
+/// Emits a warning if the file permissions are broader than owner-only (0o600).
+/// Returns an error if the key is readable by group or others in production.
+///
+/// # Errors
+///
+/// Returns an error on Unix if the file metadata cannot be read, or if the
+/// environment is `production` and the key file has group- or world-readable bits set.
+#[cfg(unix)]
+fn check_private_key_permissions(path: &std::path::Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let metadata = std::fs::metadata(path)
+        .with_context(|| format!("Failed to read metadata for: {}", path.display()))?;
+    let mode = metadata.permissions().mode();
+
+    // Check group-readable (0o040) or world-readable (0o004) bits.
+    if mode & 0o044 != 0 {
+        let env = std::env::var("RUST_ENV").unwrap_or_else(|_| "development".to_string());
+        if env == "production" {
+            anyhow::bail!(
+                "Private key file {} has insecure permissions ({:#o}). \
+                 Use `chmod 600` to restrict access.",
+                path.display(),
+                mode & 0o777
+            );
+        } else {
+            warn!(
+                "Private key file {} has permissive permissions ({:#o}). \
+                 Restrict with `chmod 600` before deploying to production.",
+                path.display(),
+                mode & 0o777
+            );
+        }
+    }
+
+    Ok(())
 }
 
 async fn shutdown_signal() {
