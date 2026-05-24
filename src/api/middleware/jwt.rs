@@ -133,14 +133,17 @@ pub async fn jwt_auth_middleware(
         Err(e) => {
             // Log authentication failure
             if let Some(audit_logger) = &state.audit_logger {
-                let event = crate::infrastructure::AuditEvent::builder()
+                match crate::infrastructure::AuditEvent::builder()
                     .action(AuditAction::TokenValidation)
                     .resource(&path)
                     .outcome(AuditOutcome::Failure)
                     .error_message(e.to_string())
                     .ip_address_opt(ip_address.as_deref())
-                    .build();
-                audit_logger.log_event(event);
+                    .build()
+                {
+                    Ok(event) => audit_logger.log_event(event),
+                    Err(err) => tracing::error!(error = %err, "Failed to build audit event"),
+                }
             }
 
             // Record metrics
@@ -160,14 +163,17 @@ pub async fn jwt_auth_middleware(
 
             // Log authentication failure
             if let Some(audit_logger) = &state.audit_logger {
-                let event = crate::infrastructure::AuditEvent::builder()
+                match crate::infrastructure::AuditEvent::builder()
                     .action(AuditAction::TokenValidation)
                     .resource(&path)
                     .outcome(AuditOutcome::Failure)
                     .error_message(e.to_string())
                     .ip_address_opt(ip_address.as_deref())
-                    .build();
-                audit_logger.log_event(event);
+                    .build()
+                {
+                    Ok(event) => audit_logger.log_event(event),
+                    Err(err) => tracing::error!(error = %err, "Failed to build audit event"),
+                }
             }
 
             // Record metrics
@@ -191,15 +197,18 @@ pub async fn jwt_auth_middleware(
 
     // Log successful authentication
     if let Some(audit_logger) = &state.audit_logger {
-        let event = crate::infrastructure::AuditEvent::builder()
+        match crate::infrastructure::AuditEvent::builder()
             .user_id(&user_id)
             .action(AuditAction::TokenValidation)
             .resource(&path)
             .outcome(AuditOutcome::Success)
             .ip_address_opt(ip_address.as_deref())
             .duration_ms(start.elapsed().as_millis() as u64)
-            .build();
-        audit_logger.log_event(event);
+            .build()
+        {
+            Ok(event) => audit_logger.log_event(event),
+            Err(err) => tracing::error!(error = %err, "Failed to build audit event"),
+        }
     }
 
     // Record successful authentication metrics

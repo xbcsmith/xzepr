@@ -42,6 +42,9 @@ pub enum Error {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
+    #[error("Repository error: {0}")]
+    Repository(#[from] RepositoryError),
+
     #[error("Internal server error: {message}")]
     Internal { message: String },
 
@@ -185,45 +188,57 @@ pub enum DomainError {
 /// Infrastructure-related errors
 #[derive(Error, Debug)]
 pub enum InfrastructureError {
+    /// Database connection could not be established.
     #[error("Database connection failed")]
     DatabaseConnectionFailed,
 
+    /// Kafka producer encountered an error.
     #[error("Kafka producer error: {message}")]
     KafkaProducerError { message: String },
 
+    /// Kafka consumer encountered an error.
     #[error("Kafka consumer error: {message}")]
     KafkaConsumerError { message: String },
 
+    /// TLS configuration is invalid or could not be loaded.
     #[error("TLS configuration error: {message}")]
     TlsConfigError { message: String },
 
+    /// Cache operation failed.
     #[error("Cache error: {message}")]
     CacheError { message: String },
 
+    /// An external service returned an error.
     #[error("External service error: {service}")]
     ExternalServiceError { service: String },
+
+    /// A database column could not be decoded to the expected type.
+    #[error("Column decoding failed for '{column}': {detail}")]
+    ColumnDecoding { column: String, detail: String },
+
+    /// A value stored in the database is not a valid role string.
+    #[error("Invalid role value in storage: '{value}'")]
+    InvalidRoleValue { value: String },
 }
 
 /// Repository-related errors
 #[derive(Error, Debug)]
 pub enum RepositoryError {
+    /// The requested entity does not exist.
     #[error("Entity not found: {entity}")]
     EntityNotFound { entity: String },
 
+    /// A database constraint was violated (e.g., unique key).
     #[error("Constraint violation: {constraint}")]
     ConstraintViolation { constraint: String },
 
+    /// A concurrent modification conflict was detected.
     #[error("Concurrency conflict")]
     ConcurrencyConflict,
 
+    /// A database operation failed for a non-constraint reason.
     #[error("Database operation failed: {operation}")]
     OperationFailed { operation: String },
-}
-
-impl From<RepositoryError> for Error {
-    fn from(_err: RepositoryError) -> Self {
-        Error::Infrastructure(InfrastructureError::DatabaseConnectionFailed)
-    }
 }
 
 // HTTP status code mappings for REST API responses
@@ -252,6 +267,12 @@ impl Error {
                 DomainError::ReceiverNotFound | DomainError::GroupNotFound => StatusCode::NOT_FOUND,
                 DomainError::UserAlreadyExists => StatusCode::CONFLICT,
                 _ => StatusCode::BAD_REQUEST,
+            },
+            Error::Repository(repo_err) => match repo_err {
+                RepositoryError::EntityNotFound { .. } => StatusCode::NOT_FOUND,
+                RepositoryError::ConstraintViolation { .. } => StatusCode::CONFLICT,
+                RepositoryError::ConcurrencyConflict => StatusCode::CONFLICT,
+                RepositoryError::OperationFailed { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             },
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -294,13 +315,45 @@ mod tests {
     }
 
     #[test]
-    fn test_error_conversion() {
+    fn test_error_conversion_preserves_repository_error_identity() {
         let repo_err = RepositoryError::EntityNotFound {
             entity: "User".to_string(),
         };
         let app_err: Error = repo_err.into();
+        assert!(matches!(
+            app_err,
+            Error::Repository(RepositoryError::EntityNotFound { .. })
+        ));
+    }
 
-        matches!(app_err, Error::Infrastructure(_));
+    #[test]
+    fn test_repository_not_found_maps_to_404() {
+        let err = Error::Repository(RepositoryError::EntityNotFound {
+            entity: "Event".to_string(),
+        });
+        assert_eq!(err.status_code(), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn test_repository_constraint_violation_maps_to_409() {
+        let err = Error::Repository(RepositoryError::ConstraintViolation {
+            constraint: "unique_email".to_string(),
+        });
+        assert_eq!(err.status_code(), StatusCode::CONFLICT);
+    }
+
+    #[test]
+    fn test_repository_concurrency_conflict_maps_to_409() {
+        let err = Error::Repository(RepositoryError::ConcurrencyConflict);
+        assert_eq!(err.status_code(), StatusCode::CONFLICT);
+    }
+
+    #[test]
+    fn test_repository_operation_failed_maps_to_500() {
+        let err = Error::Repository(RepositoryError::OperationFailed {
+            operation: "insert".to_string(),
+        });
+        assert_eq!(err.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 
     #[test]

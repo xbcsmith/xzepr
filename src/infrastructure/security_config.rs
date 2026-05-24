@@ -5,6 +5,21 @@
 
 use serde::Deserialize;
 use std::collections::HashMap;
+use thiserror::Error;
+
+/// Errors that can occur during security configuration validation.
+#[derive(Error, Debug, PartialEq)]
+pub enum SecurityConfigError {
+    /// CORS allowed_origins list is empty.
+    #[error("CORS allowed_origins cannot be empty in production")]
+    EmptyCorsOrigins,
+    /// Rate limit for anonymous users is configured to zero.
+    #[error("Rate limit for anonymous users cannot be 0")]
+    ZeroAnonymousRateLimit,
+    /// Redis URL is required when use_redis is enabled but was not provided.
+    #[error("Redis URL must be provided when use_redis is enabled")]
+    MissingRedisUrl,
+}
 
 /// Security configuration for production deployments
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -275,11 +290,17 @@ impl SecurityConfig {
         }
     }
 
-    /// Validates the security configuration
-    pub fn validate(&self) -> Result<(), String> {
+    /// Validates the security configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SecurityConfigError::EmptyCorsOrigins` if CORS origins list is empty.
+    /// Returns `SecurityConfigError::ZeroAnonymousRateLimit` if anonymous rate limit is 0.
+    /// Returns `SecurityConfigError::MissingRedisUrl` if Redis is enabled but no URL provided.
+    pub fn validate(&self) -> Result<(), SecurityConfigError> {
         // Validate CORS
         if self.cors.allowed_origins.is_empty() {
-            return Err("CORS allowed_origins cannot be empty in production".to_string());
+            return Err(SecurityConfigError::EmptyCorsOrigins);
         }
 
         // Check for wildcard in production
@@ -302,12 +323,12 @@ impl SecurityConfig {
 
         // Validate rate limits
         if self.rate_limit.anonymous_rpm == 0 {
-            return Err("Rate limit for anonymous users cannot be 0".to_string());
+            return Err(SecurityConfigError::ZeroAnonymousRateLimit);
         }
 
         // Validate Redis configuration if enabled
         if self.rate_limit.use_redis && self.rate_limit.redis_url.is_none() {
-            return Err("Redis URL must be provided when use_redis is enabled".to_string());
+            return Err(SecurityConfigError::MissingRedisUrl);
         }
 
         Ok(())
@@ -401,15 +422,27 @@ mod tests {
     fn test_validate_empty_cors_origins() {
         let mut config = SecurityConfig::production();
         config.cors.allowed_origins = vec![];
-        assert!(config.validate().is_err());
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            SecurityConfigError::EmptyCorsOrigins
+        ));
     }
 
     #[test]
     fn test_validate_redis_config() {
         let mut config = SecurityConfig::production();
+        // production() has empty CORS origins; set them so we reach the Redis check
+        config.cors.allowed_origins = vec!["https://app.example.com".to_string()];
         config.rate_limit.use_redis = true;
         config.rate_limit.redis_url = None;
-        assert!(config.validate().is_err());
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            SecurityConfigError::MissingRedisUrl
+        ));
     }
 
     #[test]
@@ -418,5 +451,33 @@ mod tests {
         config.cors.allowed_origins = vec!["https://app.example.com".to_string()];
         config.rate_limit.redis_url = Some("redis://localhost:6379".to_string());
         assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_zero_anonymous_rate_limit() {
+        let mut config = SecurityConfig::production();
+        config.cors.allowed_origins = vec!["https://app.example.com".to_string()];
+        config.rate_limit.redis_url = Some("redis://localhost:6379".to_string());
+        config.rate_limit.anonymous_rpm = 0;
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            SecurityConfigError::ZeroAnonymousRateLimit
+        ));
+    }
+
+    #[test]
+    fn test_validate_invalid_security_config_fails_production() {
+        // production() sets use_redis=true but no redis_url; after fixing CORS origins,
+        // validation should fail with MissingRedisUrl
+        let mut config = SecurityConfig::production();
+        config.cors.allowed_origins = vec!["https://app.example.com".to_string()];
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            SecurityConfigError::MissingRedisUrl
+        ));
     }
 }

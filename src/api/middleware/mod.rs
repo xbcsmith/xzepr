@@ -24,7 +24,9 @@ pub mod security_headers;
 pub mod tracing_middleware;
 pub mod validation;
 
-pub use cors::{cors_layer, development_cors_layer, production_cors_layer, CorsConfig};
+pub use cors::{
+    cors_layer, development_cors_layer, production_cors_layer, CorsConfig, CorsConfigError,
+};
 pub use jwt::{
     jwt_auth_middleware, optional_jwt_auth_middleware, require_permissions, require_roles,
     AuthError, AuthenticatedUser, JwtMiddlewareState,
@@ -49,7 +51,7 @@ pub use rbac_helpers::{
 };
 pub use resource_context::{
     EventContextBuilder, EventReceiverContextBuilder, EventReceiverGroupContextBuilder,
-    ResourceContextBuilder,
+    ResourceContextBuilder, ResourceContextError,
 };
 pub use security_headers::{
     security_headers_middleware, security_headers_middleware_with_config, FrameOptions,

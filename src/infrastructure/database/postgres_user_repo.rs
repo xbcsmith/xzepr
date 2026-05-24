@@ -101,16 +101,22 @@ impl PostgresUserRepository {
             }
         };
 
-        let parsed_roles: Vec<Role> = roles_vec
-            .iter()
-            .filter_map(|r| match r.as_str() {
-                "admin" => Some(Role::Admin),
-                "event_manager" => Some(Role::EventManager),
-                "event_viewer" => Some(Role::EventViewer),
-                "user" => Some(Role::User),
-                _ => None,
-            })
-            .collect();
+        let parsed_roles: Vec<Role> = if roles_vec.is_empty() {
+            // An empty roles array is valid — assign the default User role
+            vec![Role::User]
+        } else {
+            roles_vec
+                .iter()
+                .map(|r| {
+                    r.parse::<Role>().map_err(|_| {
+                        DomainError::InvalidData(format!(
+                            "Invalid role value '{}' in database storage",
+                            r
+                        ))
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        };
 
         Ok(User {
             id: user_id,
@@ -118,11 +124,7 @@ impl PostgresUserRepository {
             email,
             password_hash,
             auth_provider,
-            roles: if parsed_roles.is_empty() {
-                vec![Role::User]
-            } else {
-                parsed_roles
-            },
+            roles: parsed_roles,
             enabled,
             created_at,
             updated_at,

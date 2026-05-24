@@ -354,7 +354,10 @@ async fn log_authorization_decision(
         .metadata(metadata)
         .build();
 
-    state.audit_logger.log_event(audit_event);
+    match audit_event {
+        Ok(event) => state.audit_logger.log_event(event),
+        Err(e) => tracing::error!(error = %e, "Failed to build OPA authorization audit event"),
+    }
 }
 
 /// Authorization error

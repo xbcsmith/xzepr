@@ -11,6 +11,7 @@
 
 use async_trait::async_trait;
 use std::sync::Arc;
+use thiserror::Error;
 use tracing::debug;
 
 use crate::domain::repositories::event_receiver_group_repo::EventReceiverGroupRepository;
@@ -18,6 +19,30 @@ use crate::domain::repositories::event_receiver_repo::EventReceiverRepository;
 use crate::domain::repositories::event_repo::EventRepository;
 use crate::domain::value_objects::{EventId, EventReceiverGroupId, EventReceiverId};
 use crate::opa::types::ResourceContext;
+
+/// Errors that can occur when building an OPA resource context.
+#[derive(Error, Debug)]
+pub enum ResourceContextError {
+    /// The provided resource ID string is not a valid ID.
+    #[error("Invalid resource ID '{id}': {detail}")]
+    InvalidId {
+        /// The offending ID string.
+        id: String,
+        /// Parsing error detail.
+        detail: String,
+    },
+    /// The requested resource was not found in the repository.
+    #[error("{resource_type} with ID '{id}' was not found")]
+    NotFound {
+        /// The type of resource (e.g., "EventReceiver").
+        resource_type: String,
+        /// The resource ID.
+        id: String,
+    },
+    /// A repository query failed.
+    #[error("Repository query failed: {0}")]
+    RepositoryFailure(String),
+}
 
 /// Trait for building resource context from domain entities
 ///
@@ -45,7 +70,10 @@ pub trait ResourceContextBuilder: Send + Sync {
     /// - Resource does not exist
     /// - Repository query fails
     /// - Group membership cannot be retrieved
-    async fn build_context(&self, resource_id: &str) -> Result<ResourceContext, String>;
+    async fn build_context(
+        &self,
+        resource_id: &str,
+    ) -> Result<ResourceContext, ResourceContextError>;
 }
 
 /// Resource context builder for EventReceiver entities
@@ -71,23 +99,32 @@ impl EventReceiverContextBuilder {
 
 #[async_trait]
 impl ResourceContextBuilder for EventReceiverContextBuilder {
-    async fn build_context(&self, resource_id: &str) -> Result<ResourceContext, String> {
+    async fn build_context(
+        &self,
+        resource_id: &str,
+    ) -> Result<ResourceContext, ResourceContextError> {
         debug!(
             resource_id = %resource_id,
             "Building resource context for EventReceiver"
         );
 
         // Parse receiver ID
-        let receiver_id = EventReceiverId::parse(resource_id)
-            .map_err(|e| format!("Invalid receiver ID: {}", e))?;
+        let receiver_id =
+            EventReceiverId::parse(resource_id).map_err(|e| ResourceContextError::InvalidId {
+                id: resource_id.to_string(),
+                detail: e.to_string(),
+            })?;
 
         // Load receiver from repository
         let receiver = self
             .receiver_repo
             .find_by_id(receiver_id)
             .await
-            .map_err(|e| format!("Failed to load receiver: {}", e))?
-            .ok_or_else(|| format!("Receiver not found: {}", resource_id))?;
+            .map_err(|e| ResourceContextError::RepositoryFailure(e.to_string()))?
+            .ok_or_else(|| ResourceContextError::NotFound {
+                resource_type: "EventReceiver".to_string(),
+                id: resource_id.to_string(),
+            })?;
 
         let owner_id = Some(receiver.owner_id().to_string());
         let resource_version = receiver.resource_version();
@@ -95,7 +132,7 @@ impl ResourceContextBuilder for EventReceiverContextBuilder {
             .group_repo
             .find_by_event_receiver_id(receiver_id)
             .await
-            .map_err(|e| format!("Failed to load receiver groups: {}", e))?;
+            .map_err(|e| ResourceContextError::RepositoryFailure(e.to_string()))?;
         let group_id = groups.first().map(|group| group.id().to_string());
         let group_members = collect_group_members(self.group_repo.as_ref(), &groups).await?;
 
@@ -137,7 +174,10 @@ impl EventContextBuilder {
 
 #[async_trait]
 impl ResourceContextBuilder for EventContextBuilder {
-    async fn build_context(&self, resource_id: &str) -> Result<ResourceContext, String> {
+    async fn build_context(
+        &self,
+        resource_id: &str,
+    ) -> Result<ResourceContext, ResourceContextError> {
         debug!(
             resource_id = %resource_id,
             "Building resource context for Event"
@@ -145,15 +185,21 @@ impl ResourceContextBuilder for EventContextBuilder {
 
         // Parse event ID
         let event_id =
-            EventId::parse(resource_id).map_err(|e| format!("Invalid event ID: {}", e))?;
+            EventId::parse(resource_id).map_err(|e| ResourceContextError::InvalidId {
+                id: resource_id.to_string(),
+                detail: e.to_string(),
+            })?;
 
         // Load event from repository
         let event = self
             .event_repo
             .find_by_id(event_id)
             .await
-            .map_err(|e| format!("Failed to load event: {}", e))?
-            .ok_or_else(|| format!("Event not found: {}", resource_id))?;
+            .map_err(|e| ResourceContextError::RepositoryFailure(e.to_string()))?
+            .ok_or_else(|| ResourceContextError::NotFound {
+                resource_type: "Event".to_string(),
+                id: resource_id.to_string(),
+            })?;
 
         // Events inherit ownership from their parent receiver
         let receiver_id = event.event_receiver_id();
@@ -161,8 +207,11 @@ impl ResourceContextBuilder for EventContextBuilder {
             .receiver_repo
             .find_by_id(receiver_id)
             .await
-            .map_err(|e| format!("Failed to load event receiver: {}", e))?
-            .ok_or_else(|| format!("Event receiver not found: {}", receiver_id))?;
+            .map_err(|e| ResourceContextError::RepositoryFailure(e.to_string()))?
+            .ok_or_else(|| ResourceContextError::NotFound {
+                resource_type: "EventReceiver".to_string(),
+                id: receiver_id.to_string(),
+            })?;
 
         let owner_id = Some(receiver.owner_id().to_string());
         let resource_version = event.resource_version();
@@ -170,7 +219,7 @@ impl ResourceContextBuilder for EventContextBuilder {
             .group_repo
             .find_by_event_receiver_id(receiver_id)
             .await
-            .map_err(|e| format!("Failed to load event receiver groups: {}", e))?;
+            .map_err(|e| ResourceContextError::RepositoryFailure(e.to_string()))?;
         let group_id = groups.first().map(|group| group.id().to_string());
         let group_members = collect_group_members(self.group_repo.as_ref(), &groups).await?;
 
@@ -200,23 +249,33 @@ impl EventReceiverGroupContextBuilder {
 
 #[async_trait]
 impl ResourceContextBuilder for EventReceiverGroupContextBuilder {
-    async fn build_context(&self, resource_id: &str) -> Result<ResourceContext, String> {
+    async fn build_context(
+        &self,
+        resource_id: &str,
+    ) -> Result<ResourceContext, ResourceContextError> {
         debug!(
             resource_id = %resource_id,
             "Building resource context for EventReceiverGroup"
         );
 
         // Parse group ID
-        let group_id = EventReceiverGroupId::parse(resource_id)
-            .map_err(|e| format!("Invalid group ID: {}", e))?;
+        let group_id = EventReceiverGroupId::parse(resource_id).map_err(|e| {
+            ResourceContextError::InvalidId {
+                id: resource_id.to_string(),
+                detail: e.to_string(),
+            }
+        })?;
 
         // Load group from repository
         let group = self
             .group_repo
             .find_by_id(group_id)
             .await
-            .map_err(|e| format!("Failed to load group: {}", e))?
-            .ok_or_else(|| format!("Group not found: {}", resource_id))?;
+            .map_err(|e| ResourceContextError::RepositoryFailure(e.to_string()))?
+            .ok_or_else(|| ResourceContextError::NotFound {
+                resource_type: "EventReceiverGroup".to_string(),
+                id: resource_id.to_string(),
+            })?;
 
         let owner_id = Some(group.owner_id().to_string());
         let resource_version = group.resource_version();
@@ -224,7 +283,7 @@ impl ResourceContextBuilder for EventReceiverGroupContextBuilder {
             .group_repo
             .get_group_members(group_id)
             .await
-            .map_err(|e| format!("Failed to load group members: {}", e))?
+            .map_err(|e| ResourceContextError::RepositoryFailure(e.to_string()))?
             .into_iter()
             .map(|member_id| member_id.to_string())
             .collect();
@@ -243,14 +302,14 @@ impl ResourceContextBuilder for EventReceiverGroupContextBuilder {
 async fn collect_group_members(
     group_repo: &dyn EventReceiverGroupRepository,
     groups: &[crate::domain::entities::event_receiver_group::EventReceiverGroup],
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, ResourceContextError> {
     let mut members = Vec::new();
 
     for group in groups {
         let group_members = group_repo
             .get_group_members(group.id())
             .await
-            .map_err(|e| format!("Failed to load group members: {}", e))?;
+            .map_err(|e| ResourceContextError::RepositoryFailure(e.to_string()))?;
         members.extend(
             group_members
                 .into_iter()

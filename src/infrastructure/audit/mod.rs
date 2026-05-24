@@ -21,7 +21,9 @@
 //!     .outcome(AuditOutcome::Success)
 //!     .ip_address("192.168.1.100")
 //!     .user_agent("Mozilla/5.0")
-//!     .build();
+//!     .build()
+//!     // SAFETY: all required fields (action, resource, outcome) are set above
+//!     .expect("all required builder fields are set");
 //!
 //! logger.log_event(event);
 //! ```
@@ -29,7 +31,25 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use thiserror::Error;
 use tracing::{info, warn};
+
+/// Errors that can occur when building an audit event.
+///
+/// An `AuditEvent` requires `action`, `resource`, and `outcome` fields.
+/// These errors indicate programmer error (missing required fields in builder).
+#[derive(Error, Debug, PartialEq)]
+pub enum AuditBuildError {
+    /// The required `action` field was not set on the builder.
+    #[error("Audit event builder requires an action to be set")]
+    MissingAction,
+    /// The required `resource` field was not set on the builder.
+    #[error("Audit event builder requires a resource to be set")]
+    MissingResource,
+    /// The required `outcome` field was not set on the builder.
+    #[error("Audit event builder requires an outcome to be set")]
+    MissingOutcome,
+}
 
 /// Audit event action types
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -171,8 +191,12 @@ impl AuditEvent {
         AuditEventBuilder::default()
     }
 
-    /// Create a login event
-    pub fn login_success(user_id: &str, ip_address: Option<&str>) -> Self {
+    /// Create a login event.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AuditBuildError` if required builder fields are missing.
+    pub fn login_success(user_id: &str, ip_address: Option<&str>) -> Result<Self, AuditBuildError> {
         Self::builder()
             .user_id(user_id)
             .action(AuditAction::Login)
@@ -182,8 +206,12 @@ impl AuditEvent {
             .build()
     }
 
-    /// Create a login failure event
-    pub fn login_failure(reason: &str, ip_address: Option<&str>) -> Self {
+    /// Create a login failure event.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AuditBuildError` if required builder fields are missing.
+    pub fn login_failure(reason: &str, ip_address: Option<&str>) -> Result<Self, AuditBuildError> {
         Self::builder()
             .action(AuditAction::Login)
             .resource("/auth/login")
@@ -193,8 +221,16 @@ impl AuditEvent {
             .build()
     }
 
-    /// Create a permission denied event
-    pub fn permission_denied(user_id: &str, resource: &str, permission: &str) -> Self {
+    /// Create a permission denied event.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AuditBuildError` if required builder fields are missing.
+    pub fn permission_denied(
+        user_id: &str,
+        resource: &str,
+        permission: &str,
+    ) -> Result<Self, AuditBuildError> {
         let mut metadata = HashMap::new();
         metadata.insert("permission".to_string(), permission.to_string());
 
@@ -207,8 +243,16 @@ impl AuditEvent {
             .build()
     }
 
-    /// Create a permission granted event
-    pub fn permission_granted(user_id: &str, resource: &str, permission: &str) -> Self {
+    /// Create a permission granted event.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AuditBuildError` if required builder fields are missing.
+    pub fn permission_granted(
+        user_id: &str,
+        resource: &str,
+        permission: &str,
+    ) -> Result<Self, AuditBuildError> {
         let mut metadata = HashMap::new();
         metadata.insert("permission".to_string(), permission.to_string());
 
@@ -347,14 +391,23 @@ impl AuditEventBuilder {
         self
     }
 
-    /// Build the audit event
-    pub fn build(self) -> AuditEvent {
-        AuditEvent {
+    /// Build the audit event.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AuditBuildError::MissingAction` if `action()` was not called.
+    /// Returns `AuditBuildError::MissingResource` if `resource()` was not called.
+    /// Returns `AuditBuildError::MissingOutcome` if `outcome()` was not called.
+    pub fn build(self) -> Result<AuditEvent, AuditBuildError> {
+        let action = self.action.ok_or(AuditBuildError::MissingAction)?;
+        let resource = self.resource.ok_or(AuditBuildError::MissingResource)?;
+        let outcome = self.outcome.ok_or(AuditBuildError::MissingOutcome)?;
+        Ok(AuditEvent {
             timestamp: Utc::now(),
             user_id: self.user_id,
-            action: self.action.expect("action is required"),
-            resource: self.resource.expect("resource is required"),
-            outcome: self.outcome.expect("outcome is required"),
+            action,
+            resource,
+            outcome,
             metadata: self.metadata,
             ip_address: self.ip_address,
             user_agent: self.user_agent,
@@ -362,7 +415,7 @@ impl AuditEventBuilder {
             request_id: self.request_id,
             error_message: self.error_message,
             duration_ms: self.duration_ms,
-        }
+        })
     }
 }
 
@@ -471,7 +524,7 @@ impl AuditLogger {
         reason: Option<&str>,
         ip_address: Option<&str>,
     ) {
-        let event = if success {
+        let result = if success {
             AuditEvent::builder()
                 .user_id_opt(user_id)
                 .action(AuditAction::Login)
@@ -489,8 +542,10 @@ impl AuditLogger {
                 .ip_address_opt(ip_address)
                 .build()
         };
-
-        self.log_event(event);
+        match result {
+            Ok(event) => self.log_event(event),
+            Err(e) => tracing::error!(error = %e, "Failed to build auth attempt audit event"),
+        }
     }
 
     /// Log permission check
@@ -501,13 +556,15 @@ impl AuditLogger {
         permission: &str,
         granted: bool,
     ) {
-        let event = if granted {
+        let result = if granted {
             AuditEvent::permission_granted(user_id, resource, permission)
         } else {
             AuditEvent::permission_denied(user_id, resource, permission)
         };
-
-        self.log_event(event);
+        match result {
+            Ok(event) => self.log_event(event),
+            Err(e) => tracing::error!(error = %e, "Failed to build permission check audit event"),
+        }
     }
 
     /// Log OIDC authentication
@@ -521,7 +578,7 @@ impl AuditLogger {
         let mut metadata = HashMap::new();
         metadata.insert("provider".to_string(), provider.to_string());
 
-        let event = AuditEvent::builder()
+        let result = AuditEvent::builder()
             .user_id(user_id)
             .action(AuditAction::OidcAuth)
             .resource("/auth/oidc/callback")
@@ -533,8 +590,10 @@ impl AuditLogger {
             .metadata(metadata)
             .ip_address_opt(ip_address)
             .build();
-
-        self.log_event(event);
+        match result {
+            Ok(event) => self.log_event(event),
+            Err(e) => tracing::error!(error = %e, "Failed to build OIDC auth audit event"),
+        }
     }
 
     /// Log authorization decision (OPA/RBAC)
@@ -616,7 +675,7 @@ impl AuditLogger {
             AuditOutcome::Denied
         };
 
-        let event = AuditEvent::builder()
+        let result = AuditEvent::builder()
             .user_id(user_id)
             .action(audit_action)
             .resource(&resource_path)
@@ -626,8 +685,12 @@ impl AuditLogger {
             .request_id_opt(request_id)
             .error_message_opt(reason)
             .build();
-
-        self.log_event(event);
+        match result {
+            Ok(event) => self.log_event(event),
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to build authorization decision audit event")
+            }
+        }
     }
 }
 
@@ -649,7 +712,8 @@ mod tests {
             .resource("/auth/login")
             .outcome(AuditOutcome::Success)
             .ip_address("192.168.1.1")
-            .build();
+            .build()
+            .unwrap();
 
         assert_eq!(event.user_id, Some("user123".to_string()));
         assert_eq!(event.action, AuditAction::Login);
@@ -660,7 +724,7 @@ mod tests {
 
     #[test]
     fn test_login_success_event() {
-        let event = AuditEvent::login_success("user123", Some("192.168.1.1"));
+        let event = AuditEvent::login_success("user123", Some("192.168.1.1")).unwrap();
 
         assert_eq!(event.user_id, Some("user123".to_string()));
         assert_eq!(event.action, AuditAction::Login);
@@ -670,7 +734,7 @@ mod tests {
 
     #[test]
     fn test_login_failure_event() {
-        let event = AuditEvent::login_failure("Invalid credentials", Some("192.168.1.1"));
+        let event = AuditEvent::login_failure("Invalid credentials", Some("192.168.1.1")).unwrap();
 
         assert_eq!(event.action, AuditAction::Login);
         assert_eq!(event.outcome, AuditOutcome::Failure);
@@ -680,7 +744,7 @@ mod tests {
 
     #[test]
     fn test_permission_denied_event() {
-        let event = AuditEvent::permission_denied("user123", "/api/admin", "admin:write");
+        let event = AuditEvent::permission_denied("user123", "/api/admin", "admin:write").unwrap();
 
         assert_eq!(event.user_id, Some("user123".to_string()));
         assert_eq!(event.action, AuditAction::PermissionCheck);
@@ -694,7 +758,7 @@ mod tests {
 
     #[test]
     fn test_permission_granted_event() {
-        let event = AuditEvent::permission_granted("user123", "/api/events", "event:read");
+        let event = AuditEvent::permission_granted("user123", "/api/events", "event:read").unwrap();
 
         assert_eq!(event.user_id, Some("user123".to_string()));
         assert_eq!(event.action, AuditAction::PermissionCheck);
@@ -721,8 +785,7 @@ mod tests {
     #[test]
     fn test_audit_logger_log_event() {
         let logger = AuditLogger::new();
-        let event = AuditEvent::login_success("user123", Some("192.168.1.1"));
-
+        let event = AuditEvent::login_success("user123", Some("192.168.1.1")).unwrap();
         logger.log_event(event);
     }
 
@@ -759,7 +822,8 @@ mod tests {
             .outcome(AuditOutcome::Success)
             .ip_address("192.168.1.1")
             .user_agent("Mozilla/5.0")
-            .build();
+            .build()
+            .unwrap();
 
         let json = serde_json::to_string(&event).unwrap();
         assert!(json.contains("user123"));
@@ -777,7 +841,8 @@ mod tests {
             .add_metadata("field", "email")
             .add_metadata("old_value", "old@example.com")
             .add_metadata("new_value", "new@example.com")
-            .build();
+            .build()
+            .unwrap();
 
         assert_eq!(event.metadata.len(), 3);
         assert_eq!(event.metadata.get("field"), Some(&"email".to_string()));

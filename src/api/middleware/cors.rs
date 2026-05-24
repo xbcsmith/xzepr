@@ -5,7 +5,24 @@
 
 use axum::http::{header, HeaderValue, Method};
 use std::time::Duration;
+use thiserror::Error;
 use tower_http::cors::{AllowOrigin, CorsLayer};
+
+/// Errors that can occur during CORS configuration validation.
+#[derive(Error, Debug, PartialEq)]
+pub enum CorsConfigError {
+    /// Wildcard origin (*) is not allowed in production deployments.
+    #[error(
+        "Wildcard origins not allowed in production. Set XZEPR__SECURITY__CORS__ALLOWED_ORIGINS"
+    )]
+    WildcardOrigin,
+    /// A non-HTTPS origin was found (not localhost).
+    #[error("Non-HTTPS origin not allowed in production: {origin}")]
+    NonHttpsOrigin {
+        /// The offending origin URL.
+        origin: String,
+    },
+}
 
 /// Configuration for CORS (Cross-Origin Resource Sharing)
 ///
@@ -80,23 +97,25 @@ impl CorsConfig {
     /// Creates a production-ready CORS configuration
     ///
     /// Requires explicit list of allowed origins from environment
-    pub fn production() -> Result<Self, String> {
+    ///
+    /// # Errors
+    ///
+    /// Returns `CorsConfigError::WildcardOrigin` if a wildcard origin is configured.
+    /// Returns `CorsConfigError::NonHttpsOrigin` if a non-HTTPS, non-localhost origin is found.
+    pub fn production() -> Result<Self, CorsConfigError> {
         let config = Self::from_env();
 
         // Validate that we don't have wildcard in production
         if config.allowed_origins.contains(&"*".to_string()) {
-            return Err(
-                "Wildcard origins not allowed in production. Set XZEPR__SECURITY__CORS__ALLOWED_ORIGINS".to_string()
-            );
+            return Err(CorsConfigError::WildcardOrigin);
         }
 
         // Validate that all origins are HTTPS in production
         for origin in &config.allowed_origins {
             if !origin.starts_with("https://") && !origin.starts_with("http://localhost") {
-                return Err(format!(
-                    "Non-HTTPS origin not allowed in production: {}",
-                    origin
-                ));
+                return Err(CorsConfigError::NonHttpsOrigin {
+                    origin: origin.clone(),
+                });
             }
         }
 
@@ -163,7 +182,8 @@ pub fn cors_layer(config: &CorsConfig) -> CorsLayer {
             Err(e) => {
                 tracing::error!("Failed to parse CORS origins: {}", e);
                 // Fallback to localhost only
-                cors = cors.allow_origin("http://localhost:3000".parse::<HeaderValue>().unwrap());
+                // SAFETY: "http://localhost:3000" is a valid ASCII header value constant.
+                cors = cors.allow_origin(HeaderValue::from_static("http://localhost:3000"));
             }
         }
     }
@@ -215,7 +235,7 @@ pub fn development_cors_layer() -> CorsLayer {
 /// # Ok(())
 /// # }
 /// ```
-pub fn production_cors_layer() -> Result<CorsLayer, String> {
+pub fn production_cors_layer() -> Result<CorsLayer, CorsConfigError> {
     let config = CorsConfig::production()?;
     Ok(cors_layer(&config))
 }
@@ -246,7 +266,10 @@ mod tests {
         std::env::set_var("XZEPR__SECURITY__CORS__ALLOWED_ORIGINS", "*");
         let result = CorsConfig::production();
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Wildcard origins not allowed"));
+        assert!(matches!(
+            result.unwrap_err(),
+            CorsConfigError::WildcardOrigin
+        ));
     }
 
     #[test]
@@ -257,7 +280,21 @@ mod tests {
         );
         let result = CorsConfig::production();
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Non-HTTPS origin not allowed"));
+        assert!(matches!(
+            result.unwrap_err(),
+            CorsConfigError::NonHttpsOrigin { .. }
+        ));
+    }
+
+    #[test]
+    fn test_cors_config_error_display() {
+        let err = CorsConfigError::WildcardOrigin;
+        assert!(err.to_string().contains("Wildcard"));
+
+        let err = CorsConfigError::NonHttpsOrigin {
+            origin: "http://example.com".to_string(),
+        };
+        assert!(err.to_string().contains("http://example.com"));
     }
 
     #[test]

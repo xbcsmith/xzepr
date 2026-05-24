@@ -4,6 +4,27 @@
 use super::permissions::Permission;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
+use thiserror::Error;
+
+/// Error returned when parsing a role string fails.
+///
+/// Used by `Role`'s `FromStr` implementation.
+///
+/// # Examples
+///
+/// ```
+/// use std::str::FromStr;
+/// use xzepr::auth::rbac::roles::{Role, RoleParseError};
+///
+/// let err = Role::from_str("superadmin").unwrap_err();
+/// assert!(matches!(err, RoleParseError::UnknownRole(_)));
+/// ```
+#[derive(Error, Debug, PartialEq, Clone)]
+pub enum RoleParseError {
+    /// The string did not match any known role variant.
+    #[error("Unknown role: '{0}'")]
+    UnknownRole(String),
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Role {
@@ -69,7 +90,7 @@ impl std::fmt::Display for Role {
 }
 
 impl FromStr for Role {
-    type Err = String;
+    type Err = RoleParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
@@ -77,7 +98,7 @@ impl FromStr for Role {
             "event_manager" => Ok(Role::EventManager),
             "event_viewer" => Ok(Role::EventViewer),
             "user" => Ok(Role::User),
-            _ => Err(format!("Invalid role: {}", s)),
+            _ => Err(RoleParseError::UnknownRole(s.to_string())),
         }
     }
 }
@@ -251,6 +272,13 @@ mod tests {
     fn test_role_from_str_invalid() {
         let role = Role::from_str("invalid_role");
         assert!(role.is_err());
+        assert!(matches!(role.unwrap_err(), RoleParseError::UnknownRole(_)));
+    }
+
+    #[test]
+    fn test_role_parse_error_display() {
+        let err = RoleParseError::UnknownRole("superadmin".to_string());
+        assert!(err.to_string().contains("superadmin"));
     }
 
     #[test]

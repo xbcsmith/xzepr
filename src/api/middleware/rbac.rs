@@ -206,12 +206,16 @@ pub async fn rbac_enforcement_middleware_with_state(
 
         // Log permission denial
         if let Some(audit_logger) = &state.audit_logger {
-            let event = crate::infrastructure::AuditEvent::permission_denied(
+            match crate::infrastructure::AuditEvent::permission_denied(
                 &user_id,
                 &path,
                 &permission_str,
-            );
-            audit_logger.log_event(event);
+            ) {
+                Ok(event) => audit_logger.log_event(event),
+                Err(e) => {
+                    tracing::error!(error = %e, "Failed to build permission denied audit event")
+                }
+            }
         }
 
         // Record metrics
@@ -235,10 +239,18 @@ pub async fn rbac_enforcement_middleware_with_state(
 
     // Log permission granted
     if let Some(audit_logger) = &state.audit_logger {
-        let mut event =
-            crate::infrastructure::AuditEvent::permission_granted(&user_id, &path, &permission_str);
-        event.duration_ms = Some(start.elapsed().as_millis() as u64);
-        audit_logger.log_event(event);
+        let duration = start.elapsed().as_millis() as u64;
+        match crate::infrastructure::AuditEvent::permission_granted(
+            &user_id,
+            &path,
+            &permission_str,
+        ) {
+            Ok(mut event) => {
+                event.duration_ms = Some(duration);
+                audit_logger.log_event(event);
+            }
+            Err(e) => tracing::error!(error = %e, "Failed to build permission granted audit event"),
+        }
     }
 
     // Record metrics

@@ -7,6 +7,39 @@
 //! authentication, with specific support for Keycloak providers.
 
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+/// Errors that can occur during OIDC configuration validation.
+#[derive(Error, Debug, PartialEq)]
+pub enum OidcConfigError {
+    /// The OIDC issuer URL is empty.
+    #[error("Issuer URL cannot be empty")]
+    EmptyIssuerUrl,
+    /// The OIDC issuer URL does not start with http:// or https://.
+    #[error("Issuer URL must be a valid HTTP(S) URL")]
+    InvalidIssuerUrl,
+    /// The OAuth2 client ID is empty.
+    #[error("Client ID cannot be empty")]
+    EmptyClientId,
+    /// The OAuth2 client secret is empty.
+    #[error("Client secret cannot be empty")]
+    EmptyClientSecret,
+    /// The OAuth2 client secret is too short (minimum 16 characters).
+    #[error("Client secret must be at least 16 characters")]
+    ClientSecretTooShort,
+    /// The redirect URL is empty.
+    #[error("Redirect URL cannot be empty")]
+    EmptyRedirectUrl,
+    /// The redirect URL does not start with http:// or https://.
+    #[error("Redirect URL must be a valid HTTP(S) URL")]
+    InvalidRedirectUrl,
+    /// No scopes are configured.
+    #[error("At least one scope must be configured")]
+    EmptyScopes,
+    /// The required 'openid' scope is missing.
+    #[error("'openid' scope is required for OIDC")]
+    MissingOpenIdScope,
+}
 
 /// OIDC client configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,58 +164,62 @@ impl OidcConfig {
         }
     }
 
-    /// Validate the configuration
+    /// Validate the configuration.
     ///
     /// # Returns
     ///
-    /// Returns `Ok(())` if the configuration is valid, otherwise returns an error message.
+    /// Returns `Ok(())` if the configuration is valid.
     ///
     /// # Errors
     ///
-    /// Returns error if:
-    /// - Issuer URL is empty or invalid
-    /// - Client ID is empty
-    /// - Client secret is empty
-    /// - Redirect URL is empty or invalid
-    pub fn validate(&self) -> Result<(), String> {
+    /// Returns `OidcConfigError::EmptyIssuerUrl` if issuer URL is empty.
+    /// Returns `OidcConfigError::InvalidIssuerUrl` if issuer URL is not HTTP(S).
+    /// Returns `OidcConfigError::EmptyClientId` if client ID is empty.
+    /// Returns `OidcConfigError::EmptyClientSecret` if client secret is empty.
+    /// Returns `OidcConfigError::ClientSecretTooShort` if secret is under 16 characters.
+    /// Returns `OidcConfigError::EmptyRedirectUrl` if redirect URL is empty.
+    /// Returns `OidcConfigError::InvalidRedirectUrl` if redirect URL is not HTTP(S).
+    /// Returns `OidcConfigError::EmptyScopes` if no scopes are configured.
+    /// Returns `OidcConfigError::MissingOpenIdScope` if 'openid' scope is absent.
+    pub fn validate(&self) -> Result<(), OidcConfigError> {
         if !self.enabled {
             return Ok(());
         }
 
         if self.issuer_url.is_empty() {
-            return Err("Issuer URL cannot be empty".to_string());
+            return Err(OidcConfigError::EmptyIssuerUrl);
         }
 
         if !self.issuer_url.starts_with("https://") && !self.issuer_url.starts_with("http://") {
-            return Err("Issuer URL must be a valid HTTP(S) URL".to_string());
+            return Err(OidcConfigError::InvalidIssuerUrl);
         }
 
         if self.client_id.is_empty() {
-            return Err("Client ID cannot be empty".to_string());
+            return Err(OidcConfigError::EmptyClientId);
         }
 
         if self.client_secret.is_empty() {
-            return Err("Client secret cannot be empty".to_string());
+            return Err(OidcConfigError::EmptyClientSecret);
         }
 
         if self.client_secret.len() < 16 {
-            return Err("Client secret must be at least 16 characters".to_string());
+            return Err(OidcConfigError::ClientSecretTooShort);
         }
 
         if self.redirect_url.is_empty() {
-            return Err("Redirect URL cannot be empty".to_string());
+            return Err(OidcConfigError::EmptyRedirectUrl);
         }
 
         if !self.redirect_url.starts_with("https://") && !self.redirect_url.starts_with("http://") {
-            return Err("Redirect URL must be a valid HTTP(S) URL".to_string());
+            return Err(OidcConfigError::InvalidRedirectUrl);
         }
 
         if self.scopes.is_empty() {
-            return Err("At least one scope must be configured".to_string());
+            return Err(OidcConfigError::EmptyScopes);
         }
 
         if !self.scopes.contains(&"openid".to_string()) {
-            return Err("'openid' scope is required for OIDC".to_string());
+            return Err(OidcConfigError::MissingOpenIdScope);
         }
 
         Ok(())
@@ -324,10 +361,12 @@ mod tests {
             "https://app.example.com/callback".to_string(),
         );
         config.issuer_url = String::new();
-
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Issuer URL cannot be empty"));
+        assert!(matches!(
+            result.unwrap_err(),
+            OidcConfigError::EmptyIssuerUrl
+        ));
     }
 
     #[test]
@@ -339,10 +378,12 @@ mod tests {
             "https://app.example.com/callback".to_string(),
         );
         config.issuer_url = "not-a-url".to_string();
-
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("valid HTTP(S) URL"));
+        assert!(matches!(
+            result.unwrap_err(),
+            OidcConfigError::InvalidIssuerUrl
+        ));
     }
 
     #[test]
@@ -354,10 +395,12 @@ mod tests {
             "https://app.example.com/callback".to_string(),
         );
         config.client_id = String::new();
-
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Client ID cannot be empty"));
+        assert!(matches!(
+            result.unwrap_err(),
+            OidcConfigError::EmptyClientId
+        ));
     }
 
     #[test]
@@ -369,12 +412,12 @@ mod tests {
             "https://app.example.com/callback".to_string(),
         );
         config.client_secret = String::new();
-
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("Client secret cannot be empty"));
+        assert!(matches!(
+            result.unwrap_err(),
+            OidcConfigError::EmptyClientSecret
+        ));
     }
 
     #[test]
@@ -386,10 +429,12 @@ mod tests {
             "https://app.example.com/callback".to_string(),
         );
         config.client_secret = "short".to_string();
-
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("at least 16 characters"));
+        assert!(matches!(
+            result.unwrap_err(),
+            OidcConfigError::ClientSecretTooShort
+        ));
     }
 
     #[test]
@@ -401,10 +446,12 @@ mod tests {
             "https://app.example.com/callback".to_string(),
         );
         config.redirect_url = String::new();
-
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Redirect URL cannot be empty"));
+        assert!(matches!(
+            result.unwrap_err(),
+            OidcConfigError::EmptyRedirectUrl
+        ));
     }
 
     #[test]
@@ -416,10 +463,12 @@ mod tests {
             "https://app.example.com/callback".to_string(),
         );
         config.scopes = vec!["profile".to_string(), "email".to_string()];
-
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("'openid' scope is required"));
+        assert!(matches!(
+            result.unwrap_err(),
+            OidcConfigError::MissingOpenIdScope
+        ));
     }
 
     #[test]
@@ -431,12 +480,22 @@ mod tests {
             "https://app.example.com/callback".to_string(),
         );
         config.scopes = vec![];
-
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("At least one scope must be configured"));
+        assert!(matches!(result.unwrap_err(), OidcConfigError::EmptyScopes));
+    }
+
+    #[test]
+    fn test_oidc_config_error_display() {
+        assert!(OidcConfigError::EmptyIssuerUrl
+            .to_string()
+            .contains("Issuer URL"));
+        assert!(OidcConfigError::ClientSecretTooShort
+            .to_string()
+            .contains("16"));
+        assert!(OidcConfigError::MissingOpenIdScope
+            .to_string()
+            .contains("openid"));
     }
 
     #[test]

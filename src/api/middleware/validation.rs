@@ -150,7 +150,9 @@ impl IntoResponse for ValidationErrorResponse {
             .status(StatusCode::BAD_REQUEST)
             .header("Content-Type", "application/json")
             .body(body)
-            .unwrap()
+            // SAFETY: StatusCode::BAD_REQUEST is valid and the body is a valid JSON string;
+            // this response builder call cannot fail.
+            .expect("Building validation error response with known-good status cannot fail")
     }
 }
 
@@ -239,6 +241,18 @@ pub async fn body_size_limit_middleware(
 /// String sanitization helpers
 pub mod sanitize {
     use regex::Regex;
+    use thiserror::Error;
+
+    /// Errors returned by URL sanitization and validation.
+    #[derive(Error, Debug, PartialEq)]
+    pub enum UrlSanitizeError {
+        /// The URL does not use an http:// or https:// scheme.
+        #[error("URL must start with http:// or https://")]
+        InvalidScheme,
+        /// The URL contains a potentially dangerous protocol.
+        #[error("URL contains a potentially dangerous protocol")]
+        DangerousProtocol,
+    }
 
     /// Sanitizes a string by removing control characters and trimming whitespace
     pub fn sanitize_string(input: &str) -> String {
@@ -262,17 +276,23 @@ pub mod sanitize {
     }
 
     /// Validates and sanitizes a URL
-    pub fn sanitize_url(input: &str) -> Result<String, String> {
+    ///
+    /// # Errors
+    ///
+    /// Returns `UrlSanitizeError::InvalidScheme` if the URL does not start with `http://` or `https://`.
+    /// Returns `UrlSanitizeError::DangerousProtocol` if the URL contains a dangerous protocol.
+    pub fn sanitize_url(input: &str) -> Result<String, UrlSanitizeError> {
         let url = input.trim();
+
+        // Check for common injection patterns before scheme validation so that
+        // dangerous-protocol inputs produce the most specific error variant.
+        if url.contains("javascript:") || url.contains("data:") || url.contains("vbscript:") {
+            return Err(UrlSanitizeError::DangerousProtocol);
+        }
 
         // Basic URL validation
         if !url.starts_with("http://") && !url.starts_with("https://") {
-            return Err("URL must start with http:// or https://".to_string());
-        }
-
-        // Check for common injection patterns
-        if url.contains("javascript:") || url.contains("data:") || url.contains("vbscript:") {
-            return Err("URL contains potentially dangerous protocol".to_string());
+            return Err(UrlSanitizeError::InvalidScheme);
         }
 
         Ok(url.to_string())
@@ -432,9 +452,28 @@ mod tests {
 
     #[test]
     fn test_sanitize_url_invalid() {
-        assert!(sanitize::sanitize_url("javascript:alert('XSS')").is_err());
-        assert!(sanitize::sanitize_url("data:text/html,<script>alert('XSS')</script>").is_err());
-        assert!(sanitize::sanitize_url("ftp://example.com").is_err());
+        assert!(matches!(
+            sanitize::sanitize_url("javascript:alert('XSS')").unwrap_err(),
+            sanitize::UrlSanitizeError::DangerousProtocol
+        ));
+        assert!(matches!(
+            sanitize::sanitize_url("data:text/html,<h1>hi</h1>").unwrap_err(),
+            sanitize::UrlSanitizeError::DangerousProtocol
+        ));
+        assert!(matches!(
+            sanitize::sanitize_url("ftp://example.com").unwrap_err(),
+            sanitize::UrlSanitizeError::InvalidScheme
+        ));
+    }
+
+    #[test]
+    fn test_url_sanitize_error_display() {
+        assert!(sanitize::UrlSanitizeError::InvalidScheme
+            .to_string()
+            .contains("http"));
+        assert!(sanitize::UrlSanitizeError::DangerousProtocol
+            .to_string()
+            .contains("dangerous"));
     }
 
     #[test]

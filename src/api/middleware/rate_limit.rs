@@ -301,7 +301,10 @@ impl RateLimitStore for RedisRateLimitStore {
 
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "System clock is before UNIX epoch; using zero duration for rate limiting");
+                std::time::Duration::ZERO
+            })
             .as_secs();
 
         let result: Vec<i64> = script
@@ -461,10 +464,12 @@ pub async fn rate_limit_middleware(
             monitor.record_rate_limit_rejection(&rate_limit_key, path, limit);
         }
 
+        // SAFETY: TOO_MANY_REQUESTS is a valid status code and "Rate limit exceeded"
+        // is a valid body; this builder call cannot fail.
         let mut response = Response::builder()
             .status(StatusCode::TOO_MANY_REQUESTS)
             .body(Body::from("Rate limit exceeded"))
-            .unwrap();
+            .expect("Building rate limit exceeded response cannot fail");
 
         let headers = response.headers_mut();
         headers.insert("X-RateLimit-Limit", status.limit.into());
