@@ -97,36 +97,44 @@ database:
 
 ```yaml
 auth:
-  jwt_secret: "your-secret-key-min-32-chars"
-  jwt_expiration_hours: 24
   enable_local_auth: true
   enable_oidc: false
+  jwt:
+    access_token_expiration_seconds: 900
+    refresh_token_expiration_seconds: 604800
+    issuer: "xzepr"
+    audience: "xzepr-api"
+    algorithm: "RS256"
+    private_key_path: null
+    public_key_path: null
+    secret_key: null
+    enable_token_rotation: true
+    leeway_seconds: 60
   keycloak:
     issuer_url: "http://localhost:8080/realms/xzepr"
     client_id: "xzepr-client"
     client_secret: "change-me-in-production"
     redirect_url: "https://localhost:8443/auth/callback"
+    allowed_redirect_hosts:
+      - "localhost:8443"
+    session_ttl_seconds: 3600
+    max_sessions_per_user: 10
 ```
 
-#### auth.jwt_secret
+#### auth.jwt.secret_key
 
-- **Type:** String
-- **Required:** Yes
-- **Description:** Secret key for signing JWT tokens
+- **Type:** String or null
+- **Required:** Required only when `auth.jwt.algorithm` is `HS256`
+- **Description:** Symmetric signing secret for development-only HS256 tokens
 - **Minimum length:** 32 characters
-- **Security:** Must be cryptographically random in production
-- **Generation:** `openssl rand -base64 32`
-- **Important:** Never commit to version control
+- **Security:** Use `RS256` with key files for production
 
-#### auth.jwt_expiration_hours
+#### auth.jwt.access_token_expiration_seconds
 
 - **Type:** Integer
-- **Default:** `24`
-- **Description:** JWT token lifetime in hours
-- **Range:** 1-168 (1 hour to 7 days)
-- **Recommended:**
-  - Development: 168 (7 days)
-  - Production: 24 (1 day)
+- **Default:** `900`
+- **Description:** Access token lifetime in seconds
+- **Recommended:** 900 seconds (15 minutes) in production
 
 #### auth.enable_local_auth
 
@@ -237,8 +245,11 @@ export XZEPR__SERVER__ENABLE_HTTPS="true"
 export XZEPR__DATABASE__URL="postgres://user:pass@db:5432/xzepr"
 
 # Authentication configuration
-export XZEPR__AUTH__JWT_SECRET="my-super-secret-key-at-least-32-chars"
-export XZEPR__AUTH__JWT_EXPIRATION_HOURS="48"
+export XZEPR__AUTH__JWT__ALGORITHM="RS256"
+export XZEPR__AUTH__JWT__PRIVATE_KEY_PATH="/etc/xzepr/keys/jwt_rsa"
+export XZEPR__AUTH__JWT__PUBLIC_KEY_PATH="/etc/xzepr/keys/jwt_rsa.pub"
+export XZEPR__AUTH__JWT__ACCESS_TOKEN_EXPIRATION_SECONDS="900"
+export XZEPR__AUTH__JWT__REFRESH_TOKEN_EXPIRATION_SECONDS="604800"
 export XZEPR__AUTH__ENABLE_LOCAL_AUTH="true"
 export XZEPR__AUTH__ENABLE_OIDC="true"
 
@@ -302,10 +313,15 @@ database:
   url: "postgres://xzepr:password@localhost:5432/xzepr"
 
 auth:
-  jwt_secret: "dev-secret-not-for-production-use"
-  jwt_expiration_hours: 168 # 7 days for convenience
   enable_local_auth: true
   enable_oidc: true
+  jwt:
+    access_token_expiration_seconds: 900
+    refresh_token_expiration_seconds: 604800
+    issuer: "xzepr-dev"
+    audience: "xzepr-api-dev"
+    algorithm: "HS256"
+    secret_key: "dev-secret-key-min-32-characters-long"
 
 tls:
   cert_path: "certs/cert.pem"
@@ -329,10 +345,16 @@ database:
   url: "postgres://xzepr:CHANGE_ME@postgres:5432/xzepr"
 
 auth:
-  jwt_secret: "CHANGE_ME_TO_SECURE_RANDOM_STRING"
-  jwt_expiration_hours: 24
   enable_local_auth: true
   enable_oidc: true
+  jwt:
+    access_token_expiration_seconds: 900
+    refresh_token_expiration_seconds: 604800
+    issuer: "xzepr-production"
+    audience: "xzepr-api"
+    algorithm: "RS256"
+    private_key_path: "/etc/xzepr/keys/jwt_rsa"
+    public_key_path: "/etc/xzepr/keys/jwt_rsa.pub"
   keycloak:
     issuer_url: "https://keycloak.example.com/realms/xzepr"
     client_id: "xzepr-client"
@@ -353,7 +375,7 @@ kafka:
 
 Never commit secrets to version control:
 
-- JWT secret
+- JWT signing keys
 - Database passwords
 - Keycloak client secrets
 - TLS private keys
@@ -362,16 +384,17 @@ Use environment variables or secrets management:
 
 ```bash
 # Read from secrets management system
-export XZEPR__AUTH__JWT_SECRET=$(vault read -field=value secret/xzepr/jwt_secret)
+export XZEPR__AUTH__JWT__PRIVATE_KEY_PATH="/run/secrets/jwt_rsa"
 export XZEPR__DATABASE__URL=$(vault read -field=value secret/xzepr/db_url)
 ```
 
-### JWT Secret
+### JWT Signing Keys
 
-Generate secure JWT secret:
+Generate an RSA key pair for production JWT signing:
 
 ```bash
-openssl rand -base64 32
+openssl genrsa -out jwt_rsa 4096
+openssl rsa -in jwt_rsa -pubout -out jwt_rsa.pub
 ```
 
 Requirements:
@@ -407,10 +430,11 @@ Configuration is validated on startup. Common errors:
 ### Missing Required Fields
 
 ```text
-Error: missing field `jwt_secret`
+Error: RS256 requires auth.jwt.private_key_path in production
 ```
 
-**Solution:** Set `XZEPR__AUTH__JWT_SECRET` environment variable
+**Solution:** Set `XZEPR__AUTH__JWT__PRIVATE_KEY_PATH` and
+`XZEPR__AUTH__JWT__PUBLIC_KEY_PATH` environment variables
 
 ### Invalid Values
 
@@ -485,8 +509,9 @@ export XZEPR__SERVER__ENABLE_HTTPS="true"
 export XZEPR__DATABASE__URL="postgres://xzepr:${DB_PASSWORD}@postgres.prod:5432/xzepr"
 
 # Authentication
-export XZEPR__AUTH__JWT_SECRET="${JWT_SECRET}"
-export XZEPR__AUTH__JWT_EXPIRATION_HOURS="24"
+export XZEPR__AUTH__JWT__ALGORITHM="RS256"
+export XZEPR__AUTH__JWT__PRIVATE_KEY_PATH="/etc/xzepr/keys/jwt_rsa"
+export XZEPR__AUTH__JWT__PUBLIC_KEY_PATH="/etc/xzepr/keys/jwt_rsa.pub"
 export XZEPR__AUTH__ENABLE_LOCAL_AUTH="true"
 export XZEPR__AUTH__ENABLE_OIDC="true"
 

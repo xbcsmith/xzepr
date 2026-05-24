@@ -89,7 +89,8 @@ async fn main() -> Result<()> {
     let jwt_state = JwtMiddlewareState::new(jwt_service.as_ref().clone());
     let provisioning_service = Arc::new(UserProvisioningService::new(user_repo));
     let auth_state = AuthState::new(jwt_service, None, None, provisioning_service);
-    let router_config = RouterConfig::production().context("Failed to build router config")?;
+    let router_config = RouterConfig::from_settings(&settings)
+        .context("Failed to build router config from runtime settings")?;
     let app = build_production_router(api_state, auth_state, jwt_state, router_config).await;
 
     let addr = SocketAddr::from((
@@ -214,8 +215,10 @@ fn jwt_config_from_settings(settings: &Settings) -> Result<JwtConfig> {
 
 fn validate_runtime_security(settings: &Settings) -> Result<()> {
     let env = std::env::var("RUST_ENV").unwrap_or_else(|_| "development".to_string());
-    if env == "production" && !settings.server.enable_https {
-        bail!("HTTPS must be enabled when RUST_ENV=production");
+    if env == "production" {
+        settings
+            .validate_production()
+            .context("Production configuration validation failed")?;
     }
 
     Ok(())

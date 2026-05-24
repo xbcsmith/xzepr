@@ -59,7 +59,9 @@ export XZEPR__SERVER__PORT="8443"
 export XZEPR__SERVER__ENABLE_HTTPS="true"
 
 # Authentication
-export XZEPR__AUTH__JWT_SECRET="your-secret-key-min-32-chars"
+export XZEPR__AUTH__JWT__ALGORITHM="RS256"
+export XZEPR__AUTH__JWT__PRIVATE_KEY_PATH="/etc/xzepr/keys/jwt_rsa"
+export XZEPR__AUTH__JWT__PUBLIC_KEY_PATH="/etc/xzepr/keys/jwt_rsa.pub"
 export XZEPR__AUTH__ENABLE_LOCAL_AUTH="true"
 export XZEPR__AUTH__ENABLE_OIDC="true"
 
@@ -445,7 +447,8 @@ INFO request{method=GET uri=/health}: finished processing request latency=0 ms s
 
 ## Next Steps
 
-- [JWT Authentication Setup](jwt_authentication_setup.md) - Configure JWT authentication
+- [JWT Authentication Setup](jwt_authentication_setup.md) - Configure JWT
+  authentication
 - [API Usage](../reference/api.md) - API endpoint documentation
 - [Deployment Guide](deployment.md) - Production deployment
 - [Getting Started Tutorial](../tutorials/getting_started.md) - First steps

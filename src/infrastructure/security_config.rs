@@ -3,8 +3,8 @@
 
 // src/infrastructure/security_config.rs
 
-use serde::Deserialize;
-use std::collections::HashMap;
+use serde::{de, Deserialize, Deserializer};
+use std::{collections::HashMap, fmt};
 use thiserror::Error;
 
 /// Errors that can occur during security configuration validation.
@@ -13,33 +13,83 @@ pub enum SecurityConfigError {
     /// CORS allowed_origins list is empty.
     #[error("CORS allowed_origins cannot be empty in production")]
     EmptyCorsOrigins,
+    /// Wildcard CORS origins are not permitted in production.
+    #[error("Wildcard CORS origin is not allowed in production")]
+    WildcardCorsOrigin,
+    /// A CORS origin is not HTTPS and is therefore unsafe for production.
+    #[error("CORS origin must use HTTPS in production: {origin}")]
+    NonHttpsCorsOrigin {
+        /// The offending origin.
+        origin: String,
+    },
     /// Rate limit for anonymous users is configured to zero.
     #[error("Rate limit for anonymous users cannot be 0")]
     ZeroAnonymousRateLimit,
+    /// Rate limit for authenticated users is configured to zero.
+    #[error("Rate limit for authenticated users cannot be 0")]
+    ZeroAuthenticatedRateLimit,
+    /// Rate limit for admin users is configured to zero.
+    #[error("Rate limit for admin users cannot be 0")]
+    ZeroAdminRateLimit,
     /// Redis URL is required when use_redis is enabled but was not provided.
     #[error("Redis URL must be provided when use_redis is enabled")]
     MissingRedisUrl,
+    /// Redis URL does not use a supported scheme.
+    #[error("Redis URL must use redis:// or rediss://: {url}")]
+    InvalidRedisUrl {
+        /// The offending Redis URL.
+        url: String,
+    },
+    /// Maximum request body size is zero.
+    #[error("Maximum request body size cannot be 0")]
+    ZeroMaxBodySize,
+    /// Maximum string length is zero.
+    #[error("Maximum string length cannot be 0")]
+    ZeroMaxStringLength,
+    /// Maximum array length is zero.
+    #[error("Maximum array length cannot be 0")]
+    ZeroMaxArrayLength,
+    /// Strict validation is disabled in production.
+    #[error("Strict request validation must be enabled in production")]
+    StrictValidationDisabled,
+    /// HSTS headers are disabled in production.
+    #[error("HSTS must be enabled in production")]
+    HstsDisabled,
+    /// Monitoring log level is not one of the supported tracing levels.
+    #[error("Invalid monitoring log level: {level}")]
+    InvalidLogLevel {
+        /// The configured log level.
+        level: String,
+    },
 }
 
 /// Security configuration for production deployments
 #[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SecurityConfig {
     /// CORS configuration
+    #[serde(default)]
     pub cors: CorsSecurityConfig,
     /// Rate limiting configuration
+    #[serde(default)]
     pub rate_limit: RateLimitSecurityConfig,
     /// Input validation configuration
+    #[serde(default)]
     pub validation: ValidationSecurityConfig,
     /// Security headers configuration
+    #[serde(default)]
     pub headers: SecurityHeadersConfig,
     /// Monitoring configuration
+    #[serde(default)]
     pub monitoring: MonitoringConfig,
 }
 
 /// CORS security configuration
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CorsSecurityConfig {
     /// List of allowed origins
+    #[serde(default, deserialize_with = "deserialize_string_or_vec")]
     pub allowed_origins: Vec<String>,
     /// Whether to allow credentials
     #[serde(default = "default_allow_credentials")]
@@ -51,6 +101,7 @@ pub struct CorsSecurityConfig {
 
 /// Rate limiting security configuration
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RateLimitSecurityConfig {
     /// Requests per minute for anonymous users
     #[serde(default = "default_anonymous_rpm")]
@@ -73,6 +124,7 @@ pub struct RateLimitSecurityConfig {
 
 /// Input validation security configuration
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ValidationSecurityConfig {
     /// Maximum request body size in bytes
     #[serde(default = "default_max_body_size")]
@@ -90,6 +142,7 @@ pub struct ValidationSecurityConfig {
 
 /// Security headers configuration
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SecurityHeadersConfig {
     /// Enable Content Security Policy
     #[serde(default = "default_true")]
@@ -112,6 +165,7 @@ pub struct SecurityHeadersConfig {
 
 /// Monitoring configuration
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MonitoringConfig {
     /// Enable metrics collection
     #[serde(default = "default_true")]
@@ -298,40 +352,148 @@ impl SecurityConfig {
     /// Returns `SecurityConfigError::ZeroAnonymousRateLimit` if anonymous rate limit is 0.
     /// Returns `SecurityConfigError::MissingRedisUrl` if Redis is enabled but no URL provided.
     pub fn validate(&self) -> Result<(), SecurityConfigError> {
-        // Validate CORS
+        self.validate_shared()?;
+
         if self.cors.allowed_origins.is_empty() {
             return Err(SecurityConfigError::EmptyCorsOrigins);
         }
 
-        // Check for wildcard in production
-        if self.cors.allowed_origins.contains(&"*".to_string()) {
-            tracing::warn!("Wildcard CORS origin detected - not recommended for production");
-        }
-
-        // Validate non-HTTPS origins in production
-        for origin in &self.cors.allowed_origins {
-            if origin != "*"
-                && !origin.starts_with("https://")
-                && !origin.starts_with("http://localhost")
-            {
-                tracing::warn!(
-                    "Non-HTTPS origin detected: {} - not recommended for production",
-                    origin
-                );
-            }
-        }
-
-        // Validate rate limits
-        if self.rate_limit.anonymous_rpm == 0 {
-            return Err(SecurityConfigError::ZeroAnonymousRateLimit);
-        }
-
-        // Validate Redis configuration if enabled
-        if self.rate_limit.use_redis && self.rate_limit.redis_url.is_none() {
-            return Err(SecurityConfigError::MissingRedisUrl);
+        if self.rate_limit.use_redis {
+            validate_redis_url(self.rate_limit.redis_url.as_deref())?;
         }
 
         Ok(())
+    }
+
+    /// Validates the security configuration for production use.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SecurityConfigError` when any production-only invariant is
+    /// violated, including wildcard CORS, non-HTTPS origins, disabled strict
+    /// validation, disabled HSTS, or incomplete distributed rate limiting.
+    pub fn validate_production(&self) -> Result<(), SecurityConfigError> {
+        self.validate_shared()?;
+
+        if self.cors.allowed_origins.is_empty() {
+            return Err(SecurityConfigError::EmptyCorsOrigins);
+        }
+
+        if self.cors.allowed_origins.iter().any(|origin| origin == "*") {
+            return Err(SecurityConfigError::WildcardCorsOrigin);
+        }
+
+        for origin in &self.cors.allowed_origins {
+            if !origin.starts_with("https://") {
+                return Err(SecurityConfigError::NonHttpsCorsOrigin {
+                    origin: origin.clone(),
+                });
+            }
+        }
+
+        if self.rate_limit.use_redis {
+            validate_redis_url(self.rate_limit.redis_url.as_deref())?;
+        }
+
+        if !self.validation.strict_mode {
+            return Err(SecurityConfigError::StrictValidationDisabled);
+        }
+
+        if !self.headers.enable_hsts {
+            return Err(SecurityConfigError::HstsDisabled);
+        }
+
+        validate_log_level(&self.monitoring.log_level)?;
+
+        Ok(())
+    }
+
+    fn validate_shared(&self) -> Result<(), SecurityConfigError> {
+        if self.rate_limit.anonymous_rpm == 0 {
+            return Err(SecurityConfigError::ZeroAnonymousRateLimit);
+        }
+        if self.rate_limit.authenticated_rpm == 0 {
+            return Err(SecurityConfigError::ZeroAuthenticatedRateLimit);
+        }
+        if self.rate_limit.admin_rpm == 0 {
+            return Err(SecurityConfigError::ZeroAdminRateLimit);
+        }
+        if self.validation.max_body_size == 0 {
+            return Err(SecurityConfigError::ZeroMaxBodySize);
+        }
+        if self.validation.max_string_length == 0 {
+            return Err(SecurityConfigError::ZeroMaxStringLength);
+        }
+        if self.validation.max_array_length == 0 {
+            return Err(SecurityConfigError::ZeroMaxArrayLength);
+        }
+
+        validate_log_level(&self.monitoring.log_level)?;
+
+        Ok(())
+    }
+}
+
+fn deserialize_string_or_vec<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct StringOrVecVisitor;
+
+    impl<'de> de::Visitor<'de> for StringOrVecVisitor {
+        type Value = Vec<String>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("a comma-separated string or a list of strings")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(value
+                .split(',')
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+                .map(ToOwned::to_owned)
+                .collect())
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: de::SeqAccess<'de>,
+        {
+            let mut values = Vec::new();
+            while let Some(value) = seq.next_element::<String>()? {
+                values.push(value);
+            }
+            Ok(values)
+        }
+    }
+
+    deserializer.deserialize_any(StringOrVecVisitor)
+}
+
+fn validate_redis_url(redis_url: Option<&str>) -> Result<(), SecurityConfigError> {
+    let redis_url = redis_url
+        .filter(|url| !url.trim().is_empty())
+        .ok_or(SecurityConfigError::MissingRedisUrl)?;
+
+    if redis_url.starts_with("redis://") || redis_url.starts_with("rediss://") {
+        Ok(())
+    } else {
+        Err(SecurityConfigError::InvalidRedisUrl {
+            url: redis_url.to_string(),
+        })
+    }
+}
+
+fn validate_log_level(level: &str) -> Result<(), SecurityConfigError> {
+    match level {
+        "trace" | "debug" | "info" | "warn" | "error" => Ok(()),
+        _ => Err(SecurityConfigError::InvalidLogLevel {
+            level: level.to_string(),
+        }),
     }
 }
 

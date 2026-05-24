@@ -1,6 +1,6 @@
 # XZEPR Production Configuration
 # Settings for production deployment
-# ⚠️  IMPORTANT: Override sensitive values with environment variables
+# IMPORTANT: Override sensitive values with environment variables
 
 server:
   host: "0.0.0.0"
@@ -16,9 +16,6 @@ database:
   connection_timeout_seconds: 30
 
 auth:
-  # ⚠️  CRITICAL: Set XZEPR__AUTH__JWT_SECRET to a secure random string (min 32 chars)
-  jwt_secret: "CHANGE_ME_TO_SECURE_RANDOM_STRING_AT_LEAST_32_CHARACTERS_LONG"
-  jwt_expiration_hours: 24
   enable_local_auth: true
   enable_oidc: true
   jwt:
@@ -27,9 +24,10 @@ auth:
     issuer: "xzepr-production"
     audience: "xzepr-api"
     algorithm: "RS256"
-    # ⚠️  CRITICAL: Set these paths to your RSA key files
+    # CRITICAL: Set these paths to your RSA key files
     private_key_path: "/etc/xzepr/keys/jwt_rsa"
     public_key_path: "/etc/xzepr/keys/jwt_rsa.pub"
+    secret_key: null
     enable_token_rotation: true
     leeway_seconds: 60
   keycloak:
@@ -42,6 +40,10 @@ auth:
     client_id: "xzepr-client"
     client_secret: "CHANGE_ME_TO_KEYCLOAK_CLIENT_SECRET"
     redirect_url: "https://xzepr.example.com/auth/callback"
+    allowed_redirect_hosts:
+      - "xzepr.example.com"
+    session_ttl_seconds: 3600
+    max_sessions_per_user: 10
 
 tls:
   cert_path: "/etc/xzepr/tls/cert.pem"
@@ -52,18 +54,20 @@ kafka:
 
 opa:
   enabled: true
-  url: "http://opa:8181"
+  url: "https://opa.example.com:8181"
   timeout_seconds: 5
   policy_path: "/v1/data/xzepr/rbac/allow"
-  bundle_url: "http://bundle-server:8080/bundles/xzepr-rbac.tar.gz"
+  bundle_url: "https://bundle-server.example.com/bundles/xzepr-rbac.tar.gz"
   cache_ttl_seconds: 300
-  topic: "xzepr-events"
-  producer_timeout_ms: 5000
+  allowed_hosts:
+    - "opa.example.com:8181"
+    - "bundle-server.example.com"
+  fail_safe_mode: "fail_closed"
 
 # Security Configuration
 security:
   cors:
-    # ⚠️  CRITICAL: Set to your actual frontend origins
+    # CRITICAL: Set to your actual frontend origins
     # Override with XZEPR__SECURITY__CORS__ALLOWED_ORIGINS
     allowed_origins:
       - "https://app.example.com"
@@ -77,9 +81,8 @@ security:
     admin_rpm: 1000
     # Per-endpoint limits for critical paths
     per_endpoint:
-      /auth/login: 5
-      /auth/register: 3
-      /auth/refresh: 10
+      /api/v1/auth/login: 5
+      /api/v1/auth/refresh: 10
     # Enable Redis for distributed rate limiting
     use_redis: true
     # Override with XZEPR__SECURITY__RATE_LIMIT__REDIS_URL

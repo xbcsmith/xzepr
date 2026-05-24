@@ -6,6 +6,7 @@
 use async_graphql::*;
 use std::sync::Arc;
 
+use crate::api::graphql::guards::ComplexityConfig;
 use crate::api::graphql::types::*;
 use crate::api::middleware::jwt::AuthenticatedUser;
 use crate::application::handlers::event_receiver_group_handler::CreateEventReceiverGroupParams;
@@ -439,15 +440,48 @@ impl Mutation {
 
 pub type Schema = async_graphql::Schema<Query, Mutation, EmptySubscription>;
 
-/// Creates a new GraphQL schema with the provided handlers
+/// Creates a new GraphQL schema with the provided handlers.
 pub fn create_schema(
     event_handler: Arc<EventHandler>,
     event_receiver_handler: Arc<EventReceiverHandler>,
     event_receiver_group_handler: Arc<EventReceiverGroupHandler>,
 ) -> Schema {
-    Schema::build(Query, Mutation, EmptySubscription)
+    create_schema_with_config(
+        event_handler,
+        event_receiver_handler,
+        event_receiver_group_handler,
+        ComplexityConfig::default(),
+    )
+}
+
+/// Creates a new GraphQL schema with runtime complexity and depth settings.
+///
+/// # Arguments
+///
+/// * `event_handler` - Application handler for event operations.
+/// * `event_receiver_handler` - Application handler for receiver operations.
+/// * `event_receiver_group_handler` - Application handler for group operations.
+/// * `complexity_config` - Runtime GraphQL complexity and depth configuration.
+///
+/// # Returns
+///
+/// Returns an executable GraphQL schema configured with runtime limits.
+pub fn create_schema_with_config(
+    event_handler: Arc<EventHandler>,
+    event_receiver_handler: Arc<EventReceiverHandler>,
+    event_receiver_group_handler: Arc<EventReceiverGroupHandler>,
+    complexity_config: ComplexityConfig,
+) -> Schema {
+    let mut builder = Schema::build(Query, Mutation, EmptySubscription)
         .data(event_handler)
         .data(event_receiver_handler)
-        .data(event_receiver_group_handler)
-        .finish()
+        .data(event_receiver_group_handler);
+
+    if complexity_config.enforce {
+        builder = builder
+            .limit_complexity(complexity_config.max_complexity)
+            .limit_depth(complexity_config.max_depth);
+    }
+
+    builder.finish()
 }

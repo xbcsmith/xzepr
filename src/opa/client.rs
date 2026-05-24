@@ -34,6 +34,7 @@ use std::time::Duration as StdDuration;
 ///     policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
 ///     bundle_url: None,
 ///     cache_ttl_seconds: 300,
+///     ..OpaConfig::default()
 /// };
 ///
 /// let client = OpaClient::new(config);
@@ -93,6 +94,7 @@ impl OpaClient {
     ///     policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
     ///     bundle_url: None,
     ///     cache_ttl_seconds: 300,
+    ///     ..OpaConfig::default()
     /// };
     ///
     /// let client = OpaClient::new(config);
@@ -148,6 +150,7 @@ impl OpaClient {
     /// #     policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
     /// #     bundle_url: None,
     /// #     cache_ttl_seconds: 300,
+    /// #     ..OpaConfig::default()
     /// # };
     /// let client = OpaClient::new(config);
     ///
@@ -307,6 +310,7 @@ impl OpaClient {
     /// #     policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
     /// #     bundle_url: None,
     /// #     cache_ttl_seconds: 300,
+    /// #     ..OpaConfig::default()
     /// # };
     /// let client = OpaClient::new(config);
     ///
@@ -335,6 +339,7 @@ impl OpaClient {
     /// #     policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
     /// #     bundle_url: None,
     /// #     cache_ttl_seconds: 300,
+    /// #     ..OpaConfig::default()
     /// # };
     /// let client = OpaClient::new(config);
     ///
@@ -360,6 +365,7 @@ impl OpaClient {
     ///     policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
     ///     bundle_url: None,
     ///     cache_ttl_seconds: 300,
+    ///     ..OpaConfig::default()
     /// };
     ///
     /// let client = OpaClient::new(config);
@@ -384,6 +390,7 @@ mod tests {
             policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
             bundle_url: None,
             cache_ttl_seconds: 300,
+            ..OpaConfig::default()
         };
 
         let client = OpaClient::new(config);
@@ -399,6 +406,7 @@ mod tests {
             policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
             bundle_url: None,
             cache_ttl_seconds: 300,
+            ..OpaConfig::default()
         };
 
         let client = OpaClient::new(config);
@@ -414,6 +422,7 @@ mod tests {
             policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
             bundle_url: None,
             cache_ttl_seconds: 300,
+            ..OpaConfig::default()
         };
 
         let client = OpaClient::new(config);
@@ -429,6 +438,7 @@ mod tests {
             policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
             bundle_url: None,
             cache_ttl_seconds: 300,
+            ..OpaConfig::default()
         };
 
         let client = OpaClient::new(config);
@@ -444,6 +454,7 @@ mod tests {
             policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
             bundle_url: None,
             cache_ttl_seconds: 300,
+            ..OpaConfig::default()
         };
 
         let client = OpaClient::new(config);

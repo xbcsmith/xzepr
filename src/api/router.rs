@@ -19,7 +19,10 @@ use serde_json::json;
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 
-use crate::api::graphql::{create_schema, graphql_handler, graphql_health, graphql_playground};
+use crate::api::graphql::{
+    create_schema_with_config, graphql_handler, graphql_health, graphql_playground,
+    ComplexityConfig,
+};
 use crate::api::middleware::rate_limit::RedisRateLimitStore;
 use crate::api::middleware::{
     cors::CorsConfig,
@@ -42,15 +45,20 @@ use crate::api::rest::group_membership::{
 };
 use crate::domain::repositories::user_repo::UserRepository;
 use crate::infrastructure::{PrometheusMetrics, SecurityConfig, SecurityMonitor};
+use crate::Settings;
 
 /// Router configuration.
 pub struct RouterConfig {
     /// Security configuration.
     pub security: SecurityConfig,
+    /// GraphQL complexity and depth configuration.
+    pub graphql: ComplexityConfig,
     /// Security monitor.
     pub monitor: Arc<SecurityMonitor>,
     /// Prometheus metrics registry.
     pub metrics: Option<Arc<PrometheusMetrics>>,
+    /// Whether Redis rate-limit initialization failures should deny requests.
+    pub redis_fail_closed: bool,
 }
 
 impl RouterConfig {
@@ -58,8 +66,10 @@ impl RouterConfig {
     pub fn new(security: SecurityConfig, monitor: Arc<SecurityMonitor>) -> Self {
         Self {
             security,
+            graphql: ComplexityConfig::default(),
             monitor,
             metrics: None,
+            redis_fail_closed: false,
         }
     }
 
@@ -76,8 +86,10 @@ impl RouterConfig {
         let monitor = Arc::new(SecurityMonitor::new_with_metrics(metrics.clone()));
         Ok(Self {
             security,
+            graphql: ComplexityConfig::production(),
             monitor,
             metrics: Some(metrics),
+            redis_fail_closed: true,
         })
     }
 
@@ -88,8 +100,43 @@ impl RouterConfig {
         let monitor = Arc::new(SecurityMonitor::new_with_metrics(metrics.clone()));
         Ok(Self {
             security,
+            graphql: ComplexityConfig::permissive(),
             monitor,
             metrics: Some(metrics),
+            redis_fail_closed: false,
+        })
+    }
+
+    /// Creates a router configuration from validated runtime settings.
+    ///
+    /// # Arguments
+    ///
+    /// * `settings` - Runtime settings loaded from configuration files and the
+    ///   environment.
+    ///
+    /// # Errors
+    ///
+    /// Returns `prometheus::Error` if the Prometheus registry cannot be
+    /// initialized when metrics are enabled.
+    pub fn from_settings(settings: &Settings) -> Result<Self, prometheus::Error> {
+        let metrics = if settings.security.monitoring.metrics_enabled {
+            Some(Arc::new(PrometheusMetrics::new()?))
+        } else {
+            None
+        };
+
+        let monitor = metrics
+            .as_ref()
+            .map(|metrics| Arc::new(SecurityMonitor::new_with_metrics(metrics.clone())))
+            .unwrap_or_else(|| Arc::new(SecurityMonitor::new()));
+
+        Ok(Self {
+            security: settings.security.clone(),
+            graphql: ComplexityConfig::from(&settings.graphql),
+            monitor,
+            metrics,
+            redis_fail_closed: is_production_environment()
+                && settings.security.rate_limit.use_redis,
         })
     }
 }
@@ -122,10 +169,11 @@ where
 {
     tracing::info!("Building canonical production router");
 
-    let schema = create_schema(
+    let schema = create_schema_with_config(
         Arc::new(state.event_handler.clone()),
         Arc::new(state.event_receiver_handler.clone()),
         Arc::new(state.event_receiver_group_handler.clone()),
+        config.graphql.clone(),
     );
     let group_membership_state = GroupMembershipState {
         group_handler: state.event_receiver_group_handler.clone(),
@@ -270,24 +318,37 @@ async fn build_rate_limiter(config: &RouterConfig) -> RateLimiterState {
             .rate_limit
             .redis_url
             .clone()
-            .or_else(|| std::env::var("XZEPR__REDIS_URL").ok())
-            .unwrap_or_else(|| "redis://127.0.0.1:6379".to_string());
+            .or_else(|| std::env::var("XZEPR__REDIS_URL").ok());
 
-        match RedisRateLimitStore::new(&redis_url).await {
-            Ok(redis_store) => {
-                tracing::info!("Using Redis-backed rate limiting");
-                return RateLimiterState::new_with_monitor(
-                    rate_limit_config,
-                    Arc::new(redis_store),
-                    config.monitor.clone(),
-                );
+        if let Some(redis_url) = redis_url {
+            match RedisRateLimitStore::new(&redis_url).await {
+                Ok(redis_store) => {
+                    tracing::info!("Using Redis-backed rate limiting");
+                    return RateLimiterState::new_with_monitor(
+                        rate_limit_config,
+                        Arc::new(redis_store),
+                        config.monitor.clone(),
+                    );
+                }
+                Err(e) if config.redis_fail_closed => {
+                    tracing::error!(
+                        error = %e,
+                        "Failed to connect to Redis; rate limiting will fail closed"
+                    );
+                    return RateLimiterState::fail_closed_with_config(rate_limit_config)
+                        .with_monitor(config.monitor.clone());
+                }
+                Err(e) => {
+                    tracing::error!(
+                        error = %e,
+                        "Failed to connect to Redis, falling back to in-memory rate limiting"
+                    );
+                }
             }
-            Err(e) => {
-                tracing::error!(
-                    error = %e,
-                    "Failed to connect to Redis, falling back to in-memory rate limiting"
-                );
-            }
+        } else if config.redis_fail_closed {
+            tracing::error!("Redis rate limiting is enabled without a Redis URL; failing closed");
+            return RateLimiterState::fail_closed_with_config(rate_limit_config)
+                .with_monitor(config.monitor.clone());
         }
     }
 
@@ -309,6 +370,12 @@ fn build_cors_layer(config: &RouterConfig) -> tower_http::cors::CorsLayer {
     );
 
     crate::api::middleware::cors::cors_layer(&cors_config)
+}
+
+fn is_production_environment() -> bool {
+    std::env::var("RUST_ENV")
+        .map(|env| env == "production")
+        .unwrap_or(false)
 }
 
 fn build_security_headers_config(config: &RouterConfig) -> SecurityHeadersConfig {
@@ -377,6 +444,94 @@ async fn metrics_handler(config: State<Arc<PrometheusMetrics>>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+    use std::time::Duration;
+
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    fn router_test_settings() -> Settings {
+        serde_yaml::from_str(
+            r#"
+server:
+  host: "0.0.0.0"
+  port: 8443
+  enable_https: true
+  request_timeout_seconds: 30
+
+database:
+  url: "postgres://xzepr:secure@localhost:5432/xzepr"
+  max_connections: 10
+  min_connections: 1
+  connection_timeout_seconds: 30
+
+auth:
+  enable_local_auth: true
+  enable_oidc: false
+  jwt:
+    access_token_expiration_seconds: 900
+    refresh_token_expiration_seconds: 604800
+    issuer: "xzepr"
+    audience: "xzepr-api"
+    algorithm: "RS256"
+    private_key_path: "/keys/private.pem"
+    public_key_path: "/keys/public.pem"
+    secret_key: null
+    enable_token_rotation: true
+    leeway_seconds: 60
+
+tls:
+  cert_path: "/tls/cert.pem"
+  key_path: "/tls/key.pem"
+
+kafka:
+  brokers: "localhost:9092"
+  default_topic: "xzepr.test.events"
+  default_topic_partitions: 3
+  default_topic_replication_factor: 1
+
+security:
+  cors:
+    allowed_origins:
+      - "https://runtime.example.com"
+    allow_credentials: true
+    max_age_seconds: 900
+  rate_limit:
+    anonymous_rpm: 77
+    authenticated_rpm: 177
+    admin_rpm: 277
+    per_endpoint:
+      /api/v1/auth/login: 9
+    use_redis: false
+    redis_url: null
+  validation:
+    max_body_size: 12345
+    max_string_length: 5000
+    max_array_length: 500
+    strict_mode: true
+  headers:
+    enable_csp: true
+    csp_directives: "default-src 'self'"
+    enable_hsts: true
+    hsts_max_age: 63072000
+    hsts_include_subdomains: true
+    hsts_preload: true
+  monitoring:
+    metrics_enabled: false
+    tracing_enabled: true
+    structured_logging: true
+    log_level: "info"
+    json_logs: false
+    jaeger_endpoint: null
+    metrics_port: 9090
+
+graphql:
+  max_complexity: 42
+  max_depth: 6
+  enforce_complexity: true
+"#,
+        )
+        .expect("router test settings should deserialize")
+    }
 
     #[test]
     fn test_router_config_production() {
@@ -403,5 +558,71 @@ mod tests {
         assert_eq!(config.security.cors.allowed_origins, vec!["*"]);
         assert!(!config.security.headers.enable_hsts);
         assert!(config.metrics.is_some());
+    }
+
+    #[test]
+    fn test_router_config_from_settings_uses_runtime_values() {
+        let settings = router_test_settings();
+        let config = RouterConfig::from_settings(&settings)
+            .expect("router config should build from runtime settings");
+
+        assert_eq!(
+            config.security.cors.allowed_origins,
+            vec!["https://runtime.example.com"]
+        );
+        assert_eq!(config.security.rate_limit.anonymous_rpm, 77);
+        assert_eq!(config.security.validation.max_body_size, 12345);
+        assert_eq!(config.graphql.max_complexity, 42);
+        assert_eq!(config.graphql.max_depth, 6);
+        assert!(!config.redis_fail_closed);
+        assert!(config.metrics.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_redis_rate_limit_failure_fails_closed_in_production() {
+        let mut settings = router_test_settings();
+        settings.security.rate_limit.use_redis = true;
+        settings.security.rate_limit.redis_url = Some("invalid-redis-url".to_string());
+
+        let config = {
+            let _lock = ENV_MUTEX.lock().expect("env mutex should not be poisoned");
+            std::env::set_var("RUST_ENV", "production");
+            let config = RouterConfig::from_settings(&settings)
+                .expect("router config should build from runtime settings");
+            std::env::remove_var("RUST_ENV");
+            config
+        };
+        assert!(config.redis_fail_closed);
+
+        let limiter = build_rate_limiter(&config).await;
+        let status = limiter
+            .check_rate_limit_for_test("test", 10, Duration::from_secs(60))
+            .await
+            .expect("fail-closed store should return a status");
+        assert!(!status.allowed);
+    }
+
+    #[tokio::test]
+    async fn test_redis_rate_limit_failure_falls_back_in_development() {
+        let mut settings = router_test_settings();
+        settings.security.rate_limit.use_redis = true;
+        settings.security.rate_limit.redis_url = Some("invalid-redis-url".to_string());
+
+        let config = {
+            let _lock = ENV_MUTEX.lock().expect("env mutex should not be poisoned");
+            std::env::set_var("RUST_ENV", "development");
+            let config = RouterConfig::from_settings(&settings)
+                .expect("router config should build from runtime settings");
+            std::env::remove_var("RUST_ENV");
+            config
+        };
+        assert!(!config.redis_fail_closed);
+
+        let limiter = build_rate_limiter(&config).await;
+        let status = limiter
+            .check_rate_limit_for_test("test", 10, Duration::from_secs(60))
+            .await
+            .expect("development fallback store should return a status");
+        assert!(status.allowed);
     }
 }

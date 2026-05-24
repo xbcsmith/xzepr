@@ -1,10 +1,14 @@
 # How to Use RBAC in XZepr
 
-This guide explains how to use the Role-Based Access Control (RBAC) system in XZepr for authentication and authorization.
+This guide explains how to use the Role-Based Access Control (RBAC) system in
+XZepr for authentication and authorization.
 
 ## Overview
 
-XZepr uses JWT-based authentication with role and permission-based authorization. GraphQL endpoints are available through the HTTPS server, and the examples in this guide use the current local GraphQL endpoint at `https://localhost:8443/graphql`.
+XZepr uses JWT-based authentication with role and permission-based
+authorization. GraphQL endpoints are available through the HTTPS server, and the
+examples in this guide use the current local GraphQL endpoint at
+`https://localhost:8443/graphql`.
 
 ## Quick Start
 
@@ -210,7 +214,9 @@ helpers::require_user(ctx)?;
 
 ## REST API Usage
 
-REST API routes are protected by JWT authentication and RBAC middleware in the current application. The example below shows the intended route protection pattern using the current `/api/v1/*` route structure.
+REST API routes are protected by JWT authentication and RBAC middleware in the
+current application. The example below shows the intended route protection
+pattern using the current `/api/v1/*` route structure.
 
 ### Planned Usage
 
@@ -348,11 +354,13 @@ let config = JwtConfig {
 
 ```bash
 # JWT settings
-JWT_SECRET=your-secret-key-here
-JWT_ISSUER=xzepr
-JWT_AUDIENCE=xzepr-api
-JWT_ACCESS_TOKEN_EXPIRATION_HOURS=1
-JWT_REFRESH_TOKEN_EXPIRATION_DAYS=7
+XZEPR__AUTH__JWT__ALGORITHM=RS256
+XZEPR__AUTH__JWT__ISSUER=xzepr
+XZEPR__AUTH__JWT__AUDIENCE=xzepr-api
+XZEPR__AUTH__JWT__PRIVATE_KEY_PATH=/etc/xzepr/keys/jwt_rsa
+XZEPR__AUTH__JWT__PUBLIC_KEY_PATH=/etc/xzepr/keys/jwt_rsa.pub
+XZEPR__AUTH__JWT__ACCESS_TOKEN_EXPIRATION_SECONDS=900
+XZEPR__AUTH__JWT__REFRESH_TOKEN_EXPIRATION_SECONDS=604800
 
 # Server settings
 SERVER_HOST=0.0.0.0
@@ -531,5 +539,5 @@ For issues or questions:
 
 ---
 
-**Last Updated**: 2025-01-14
-**Status**: GraphQL RBAC fully functional, REST API integration pending
+**Last Updated**: 2025-01-14 **Status**: GraphQL RBAC fully functional, REST API
+integration pending

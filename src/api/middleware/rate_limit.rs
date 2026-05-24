@@ -237,6 +237,27 @@ impl RateLimitStore for InMemoryRateLimitStore {
     }
 }
 
+/// Rate limit store that denies every request when backing storage is required.
+#[derive(Clone, Default)]
+pub struct FailClosedRateLimitStore;
+
+#[async_trait::async_trait]
+impl RateLimitStore for FailClosedRateLimitStore {
+    async fn check_rate_limit(
+        &self,
+        _key: &str,
+        limit: u32,
+        window: Duration,
+    ) -> Result<RateLimitStatus, String> {
+        Ok(RateLimitStatus {
+            allowed: false,
+            limit,
+            remaining: 0,
+            reset_after: window,
+        })
+    }
+}
+
 /// Redis-backed rate limit store using Lua scripts
 #[derive(Clone)]
 pub struct RedisRateLimitStore {
@@ -363,6 +384,22 @@ impl RateLimiterState {
     /// Creates a default rate limiter with in-memory store
     pub fn default_with_config(config: RateLimitConfig) -> Self {
         Self::new(config, Arc::new(InMemoryRateLimitStore::new()))
+    }
+
+    /// Creates a rate limiter that fails closed by denying all requests.
+    pub fn fail_closed_with_config(config: RateLimitConfig) -> Self {
+        Self::new(config, Arc::new(FailClosedRateLimitStore))
+    }
+
+    /// Checks a key directly in tests without going through HTTP middleware.
+    #[cfg(test)]
+    pub(crate) async fn check_rate_limit_for_test(
+        &self,
+        key: &str,
+        limit: u32,
+        window: Duration,
+    ) -> Result<RateLimitStatus, String> {
+        self.store.check_rate_limit(key, limit, window).await
     }
 
     /// Sets the security monitor

@@ -27,6 +27,7 @@
 //!     policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
 //!     bundle_url: None,
 //!     cache_ttl_seconds: 300,
+//!     ..OpaConfig::default()
 //! };
 //!
 //! let client = OpaClient::new(config);

@@ -175,6 +175,16 @@ impl Default for ComplexityConfig {
     }
 }
 
+impl From<&crate::infrastructure::config::GraphqlConfig> for ComplexityConfig {
+    fn from(config: &crate::infrastructure::config::GraphqlConfig) -> Self {
+        Self {
+            max_complexity: config.max_complexity,
+            max_depth: config.max_depth,
+            enforce: config.enforce_complexity,
+        }
+    }
+}
+
 impl ComplexityConfig {
     /// Creates a complexity config from environment variables
     pub fn from_env() -> Self {

@@ -4,7 +4,9 @@
 
 ### Overview
 
-The RBAC (Role-Based Access Control) system is **partially implemented**. The core components are complete and well-tested, but enforcement middleware is not yet wired up to REST API routes.
+The RBAC (Role-Based Access Control) system is **partially implemented**. The
+core components are complete and well-tested, but enforcement middleware is not
+yet wired up to REST API routes.
 
 ### Implementation Status Summary
 
@@ -40,7 +42,8 @@ The RBAC (Role-Based Access Control) system is **partially implemented**. The co
 
 - Claims structure includes roles and permissions
 - Role checking: `has_role()`, `has_any_role()`, `has_all_roles()`
-- Permission checking: `has_permission()`, `has_any_permission()`, `has_all_permissions()`
+- Permission checking: `has_permission()`, `has_any_permission()`,
+  `has_all_permissions()`
 - Full JWT middleware with `AuthenticatedUser` extraction
 - Token validation and expiration handling
 - All tests passing
@@ -130,7 +133,10 @@ All implemented RBAC components have:
 
 ### Conclusion
 
-**The RBAC system is ~80% complete.** The hard parts (role/permission design, JWT integration, user entity) are done and tested. The remaining work is integration: applying existing middleware to REST routes and fixing the RBAC middleware module.
+**The RBAC system is ~80% complete.** The hard parts (role/permission design,
+JWT integration, user entity) are done and tested. The remaining work is
+integration: applying existing middleware to REST routes and fixing the RBAC
+middleware module.
 
 ---
 
@@ -702,7 +708,7 @@ pub fn record_token_validation(valid: bool) {
 
 ### Prometheus Metrics Example
 
-```
+```text
 # HELP auth_login_attempts_total Total number of login attempts
 # TYPE auth_login_attempts_total counter
 auth_login_attempts_total{provider="local",result="success"} 1523
@@ -869,7 +875,11 @@ server:
 auth:
   enable_local_auth: true
   enable_oidc: false # Use local auth for dev
-  jwt_expiration_hours: 168 # 1 week for convenience
+  jwt:
+    access_token_expiration_seconds: 900
+    refresh_token_expiration_seconds: 604800
+    algorithm: "HS256"
+    secret_key: "dev-secret-key-min-32-characters-long"
 
 tls:
   cert_path: "./certs/dev-server.crt"
@@ -891,7 +901,12 @@ server:
 auth:
   enable_local_auth: true
   enable_oidc: true
-  jwt_expiration_hours: 24
+  jwt:
+    access_token_expiration_seconds: 900
+    refresh_token_expiration_seconds: 604800
+    algorithm: "RS256"
+    private_key_path: "/etc/xzepr/keys/jwt_rsa"
+    public_key_path: "/etc/xzepr/keys/jwt_rsa.pub"
 
 tls:
   cert_path: "/etc/xzepr/tls/server.crt"
@@ -1035,7 +1050,7 @@ The system supports **three authentication methods**:
 
 ### Architecture Diagram
 
-```
+```text
 ┌─────────────────────────────────────────────────┐
 │              API Gateway (TLS 1.3)              │
 ├─────────────────────────────────────────────────┤
@@ -1262,7 +1277,7 @@ pub struct Claims {
 
 pub struct LocalAuthService {
     user_repo: Arc<dyn UserRepository>,
-    jwt_secret: String,
+    jwt_service: Arc<JwtService>,
 }
 
 impl LocalAuthService {
@@ -1302,20 +1317,17 @@ impl LocalAuthService {
             iat: Utc::now().timestamp(),
         };
 
-        encode(
-            &Header::default(),
-            &claims,
-            &EncodingKey::from_secret(self.jwt_secret.as_bytes()),
-        )
-        .map_err(|e| AuthError::TokenGenerationFailed(e.to_string()))
+        self.jwt_service
+            .generate_access_token(
+                user.id().to_string(),
+                user.roles().iter().map(|r| r.to_string()).collect(),
+                user.permissions().iter().map(|p| p.to_string()).collect(),
+            )
+            .map_err(|e| AuthError::TokenGenerationFailed(e.to_string()))
     }
 
     pub fn verify_token(&self, token: &str) -> Result<Claims, AuthError> {
-        decode::<Claims>(
-            token,
-            &DecodingKey::from_secret(self.jwt_secret.as_bytes()),
-            &Validation::default(),
-        )
+        self.jwt_service.validate_access_token(token)
         .map(|data| data.claims)
         .map_err(|e| AuthError::InvalidToken(e.to_string()))
     }
@@ -2091,8 +2103,7 @@ pub struct ServerConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct AuthConfig {
-    pub jwt_secret: String,
-    pub jwt_expiration_hours: i64,
+    pub jwt: JwtAuthConfig,
     pub enable_local_auth: bool,
     pub enable_oidc: bool,
     pub keycloak: Option<KeycloakConfig>,
@@ -2121,7 +2132,8 @@ impl Settings {
             .set_default("server.enable_https", true)?
             .set_default("auth.enable_local_auth", true)?
             .set_default("auth.enable_oidc", false)?
-            .set_default("auth.jwt_expiration_hours", 24)?;
+            .set_default("auth.jwt.access_token_expiration_seconds", 900)?
+            .set_default("auth.jwt.refresh_token_expiration_seconds", 604800)?;
 
         // Add configuration file if it exists
         builder = builder.add_source(
@@ -2161,8 +2173,9 @@ XZEPR__DATABASE__URL=postgres://xzepr:password@localhost:5432/xzepr
 XZEPR__DATABASE__MAX_CONNECTIONS=20
 
 # Authentication
-XZEPR__AUTH__JWT_SECRET=your-super-secret-key-change-in-production
-XZEPR__AUTH__JWT_EXPIRATION_HOURS=24
+XZEPR__AUTH__JWT__ALGORITHM=RS256
+XZEPR__AUTH__JWT__PRIVATE_KEY_PATH=/etc/xzepr/keys/jwt_rsa
+XZEPR__AUTH__JWT__PUBLIC_KEY_PATH=/etc/xzepr/keys/jwt_rsa.pub
 XZEPR__AUTH__ENABLE_LOCAL_AUTH=true
 XZEPR__AUTH__ENABLE_OIDC=true
 
@@ -2326,7 +2339,9 @@ async fn test_rbac_enforcement() {
 
 ## 📚 RBAC Completion Roadmap
 
-**Note**: A detailed phased implementation plan for completing RBAC is available in `docs/explanation/rbac_completion_plan.md`. The roadmap below represents the original full-stack implementation plan.
+**Note**: A detailed phased implementation plan for completing RBAC is available
+in `docs/explanation/rbac_completion_plan.md`. The roadmap below represents the
+original full-stack implementation plan.
 
 ### Phase 1: Foundation (Week 1-2)
 
@@ -2433,7 +2448,7 @@ chain.
 
 ### Layered Architecture
 
-```
+```text
 ┌─────────────────────────────────────────┐
 │         API Layer (REST + GraphQL)      │
 │         (axum, async-graphql)           │
@@ -2451,9 +2466,9 @@ chain.
 
 ---
 
-## 📦 Project Structure
+## Project Structure
 
-```
+```text
 xzepr/
 ├── Cargo.toml
 ├── .cargo/

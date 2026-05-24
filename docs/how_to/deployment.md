@@ -141,8 +141,10 @@ REDPANDA_CONSOLE_VERSION=latest
 #### Security Configuration
 
 ```env
-XZEPR__AUTH__JWT_SECRET=your-super-secure-jwt-secret-256-bits-minimum
-XZEPR__CORS__ALLOWED_ORIGINS=https://xzepr.example.com
+XZEPR__AUTH__JWT__ALGORITHM=RS256
+XZEPR__AUTH__JWT__PRIVATE_KEY_PATH=/etc/xzepr/keys/jwt_rsa
+XZEPR__AUTH__JWT__PUBLIC_KEY_PATH=/etc/xzepr/keys/jwt_rsa.pub
+XZEPR__SECURITY__CORS__ALLOWED_ORIGINS=https://xzepr.example.com
 ```
 
 ### TLS Certificates
@@ -542,7 +544,7 @@ networks:
 ```yaml
 # Use Docker secrets
 secrets:
-  jwt_secret:
+  jwt_rsa_private:
     external: true
   db_password:
     external: true
@@ -550,7 +552,7 @@ secrets:
 services:
   xzepr:
     secrets:
-      - jwt_secret
+      - jwt_rsa_private
       - db_password
 ```
 

@@ -10,6 +10,17 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
 
+/// OPA fail-safe behavior when policy evaluation is unavailable.
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum OpaFailSafeMode {
+    /// Deny requests when OPA cannot produce a decision.
+    #[default]
+    FailClosed,
+    /// Allow development fallback behavior when OPA is unavailable.
+    FailOpenDevelopment,
+}
+
 /// OPA client configuration
 ///
 /// Configuration for connecting to and interacting with an OPA server.
@@ -17,7 +28,7 @@ use thiserror::Error;
 /// # Examples
 ///
 /// ```
-/// use xzepr::opa::types::OpaConfig;
+/// use xzepr::opa::types::{OpaConfig, OpaFailSafeMode};
 ///
 /// let config = OpaConfig {
 ///     enabled: true,
@@ -26,11 +37,14 @@ use thiserror::Error;
 ///     policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
 ///     bundle_url: None,
 ///     cache_ttl_seconds: 300,
+///     allowed_hosts: vec!["localhost:8181".to_string()],
+///     fail_safe_mode: OpaFailSafeMode::FailClosed,
 /// };
 ///
 /// assert_eq!(config.url, "http://localhost:8181");
 /// ```
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct OpaConfig {
     /// Whether OPA authorization is enabled
     #[serde(default)]
@@ -53,6 +67,14 @@ pub struct OpaConfig {
     /// Cache TTL in seconds
     #[serde(default = "default_cache_ttl")]
     pub cache_ttl_seconds: u64,
+
+    /// Allowed OPA and bundle server hosts for production deployments.
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
+
+    /// Fail-safe behavior when OPA is unavailable.
+    #[serde(default)]
+    pub fail_safe_mode: OpaFailSafeMode,
 }
 
 fn default_timeout() -> u64 {
@@ -61,6 +83,21 @@ fn default_timeout() -> u64 {
 
 fn default_cache_ttl() -> u64 {
     300
+}
+
+impl Default for OpaConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            url: "http://localhost:8181".to_string(),
+            timeout_seconds: default_timeout(),
+            policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
+            bundle_url: None,
+            cache_ttl_seconds: default_cache_ttl(),
+            allowed_hosts: Vec::new(),
+            fail_safe_mode: OpaFailSafeMode::FailClosed,
+        }
+    }
 }
 
 impl OpaConfig {
@@ -73,7 +110,7 @@ impl OpaConfig {
     /// # Examples
     ///
     /// ```
-    /// use xzepr::opa::types::OpaConfig;
+    /// use xzepr::opa::types::{OpaConfig, OpaFailSafeMode};
     ///
     /// let config = OpaConfig {
     ///     enabled: true,
@@ -82,6 +119,8 @@ impl OpaConfig {
     ///     policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
     ///     bundle_url: None,
     ///     cache_ttl_seconds: 300,
+    ///     allowed_hosts: vec!["localhost:8181".to_string()],
+    ///     fail_safe_mode: OpaFailSafeMode::FailClosed,
     /// };
     ///
     /// assert!(config.validate().is_ok());
@@ -105,9 +144,85 @@ impl OpaConfig {
                     "OPA timeout must be greater than 0".to_string(),
                 ));
             }
+
+            if self.cache_ttl_seconds == 0 {
+                return Err(OpaError::ConfigurationError(
+                    "OPA cache TTL must be greater than 0".to_string(),
+                ));
+            }
         }
 
         Ok(())
+    }
+
+    /// Validates the OPA configuration for production use.
+    ///
+    /// # Errors
+    ///
+    /// Returns `OpaError::ConfigurationError` if OPA is enabled with insecure
+    /// URLs, missing host allowlists, or fail-open behavior in production.
+    pub fn validate_production(&self) -> Result<(), OpaError> {
+        self.validate()?;
+
+        if !self.enabled {
+            return Ok(());
+        }
+
+        if !self.url.starts_with("https://") {
+            return Err(OpaError::ConfigurationError(
+                "OPA URL must use HTTPS in production".to_string(),
+            ));
+        }
+
+        if self.allowed_hosts.is_empty() {
+            return Err(OpaError::ConfigurationError(
+                "OPA allowed_hosts cannot be empty in production".to_string(),
+            ));
+        }
+
+        validate_allowed_host(&self.url, &self.allowed_hosts, "OPA URL")?;
+
+        if let Some(bundle_url) = &self.bundle_url {
+            if !bundle_url.starts_with("https://") {
+                return Err(OpaError::ConfigurationError(
+                    "OPA bundle URL must use HTTPS in production".to_string(),
+                ));
+            }
+            validate_allowed_host(bundle_url, &self.allowed_hosts, "OPA bundle URL")?;
+        }
+
+        if self.fail_safe_mode != OpaFailSafeMode::FailClosed {
+            return Err(OpaError::ConfigurationError(
+                "OPA fail_safe_mode must be fail_closed in production".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+fn validate_allowed_host(url: &str, allowed_hosts: &[String], label: &str) -> Result<(), OpaError> {
+    let host = extract_host(url).ok_or_else(|| {
+        OpaError::ConfigurationError(format!("{} must include a valid host", label))
+    })?;
+
+    if allowed_hosts.iter().any(|allowed| allowed == &host) {
+        Ok(())
+    } else {
+        Err(OpaError::ConfigurationError(format!(
+            "{} host '{}' is not in allowed_hosts",
+            label, host
+        )))
+    }
+}
+
+fn extract_host(url: &str) -> Option<String> {
+    let (_, rest) = url.split_once("://")?;
+    let host = rest.split('/').next()?.trim();
+    if host.is_empty() {
+        None
+    } else {
+        Some(host.to_string())
     }
 }
 
@@ -297,6 +412,7 @@ mod tests {
             policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
             bundle_url: None,
             cache_ttl_seconds: 300,
+            ..OpaConfig::default()
         };
 
         assert!(config.validate().is_ok());
@@ -311,6 +427,7 @@ mod tests {
             policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
             bundle_url: None,
             cache_ttl_seconds: 300,
+            ..OpaConfig::default()
         };
 
         assert!(config.validate().is_err());
@@ -325,6 +442,7 @@ mod tests {
             policy_path: "".to_string(),
             bundle_url: None,
             cache_ttl_seconds: 300,
+            ..OpaConfig::default()
         };
 
         assert!(config.validate().is_err());
@@ -339,6 +457,7 @@ mod tests {
             policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
             bundle_url: None,
             cache_ttl_seconds: 300,
+            ..OpaConfig::default()
         };
 
         assert!(config.validate().is_err());
@@ -353,6 +472,7 @@ mod tests {
             policy_path: "".to_string(),
             bundle_url: None,
             cache_ttl_seconds: 300,
+            ..OpaConfig::default()
         };
 
         // Should pass validation when disabled

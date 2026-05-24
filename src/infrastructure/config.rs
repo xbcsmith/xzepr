@@ -4,20 +4,28 @@
 use std::fmt;
 
 use serde::Deserialize;
+use thiserror::Error;
 
 use config::{Config, ConfigError, Environment, File};
 
 use crate::infrastructure::messaging::config::KafkaAuthConfig;
+use crate::infrastructure::security_config::{SecurityConfig, SecurityConfigError};
+use crate::opa::types::OpaConfig;
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Settings {
     pub server: ServerConfig,
     pub database: DatabaseConfig,
     pub auth: AuthConfig,
     pub tls: TlsConfig,
     pub kafka: KafkaConfig,
+    #[serde(default)]
+    pub security: SecurityConfig,
+    #[serde(default)]
+    pub graphql: GraphqlConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub opa: Option<crate::opa::types::OpaConfig>,
+    pub opa: Option<OpaConfig>,
 }
 
 /// Database connection configuration.
@@ -25,9 +33,19 @@ pub struct Settings {
 /// The `Debug` implementation redacts the password from the connection URL
 /// so that it cannot be accidentally exposed via logging.
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DatabaseConfig {
     /// PostgreSQL connection URL.
     pub url: String,
+    /// Maximum number of database connections.
+    #[serde(default = "default_database_max_connections")]
+    pub max_connections: u32,
+    /// Minimum number of database connections.
+    #[serde(default = "default_database_min_connections")]
+    pub min_connections: u32,
+    /// Connection timeout in seconds.
+    #[serde(default = "default_database_connection_timeout_seconds")]
+    pub connection_timeout_seconds: u64,
 }
 
 impl fmt::Debug for DatabaseConfig {
@@ -35,11 +53,18 @@ impl fmt::Debug for DatabaseConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("DatabaseConfig")
             .field("url", &mask_password(&self.url))
+            .field("max_connections", &self.max_connections)
+            .field("min_connections", &self.min_connections)
+            .field(
+                "connection_timeout_seconds",
+                &self.connection_timeout_seconds,
+            )
             .finish()
     }
 }
 
 #[derive(Debug, Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct KafkaConfig {
     pub brokers: String,
     #[serde(default = "default_kafka_topic")]
@@ -55,14 +80,18 @@ pub struct KafkaConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
     pub enable_https: bool,
+    #[serde(default = "default_request_timeout_seconds")]
+    pub request_timeout_seconds: u64,
 }
 
 /// Authentication configuration including JWT settings and provider options.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AuthConfig {
     // JWT configuration
     pub jwt: JwtAuthConfig,
@@ -74,6 +103,7 @@ pub struct AuthConfig {
 }
 
 #[derive(Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct JwtAuthConfig {
     /// Access token expiration in seconds (default: 900 = 15 minutes)
     #[serde(default = "default_access_token_expiration")]
@@ -143,11 +173,18 @@ impl fmt::Debug for JwtAuthConfig {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct KeycloakConfig {
     pub issuer_url: String,
     pub client_id: String,
     pub client_secret: String,
     pub redirect_url: String,
+    #[serde(default)]
+    pub allowed_redirect_hosts: Vec<String>,
+    #[serde(default = "default_oidc_session_ttl")]
+    pub session_ttl_seconds: u64,
+    #[serde(default = "default_oidc_max_sessions")]
+    pub max_sessions_per_user: usize,
 }
 
 impl fmt::Debug for KeycloakConfig {
@@ -158,6 +195,9 @@ impl fmt::Debug for KeycloakConfig {
             .field("client_id", &self.client_id)
             .field("client_secret", &"[REDACTED]")
             .field("redirect_url", &self.redirect_url)
+            .field("allowed_redirect_hosts", &self.allowed_redirect_hosts)
+            .field("session_ttl_seconds", &self.session_ttl_seconds)
+            .field("max_sessions_per_user", &self.max_sessions_per_user)
             .finish()
     }
 }
@@ -166,6 +206,7 @@ impl fmt::Debug for KeycloakConfig {
 ///
 /// Controls the lifetime and concurrency limits for OIDC-authenticated sessions.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OidcSessionConfig {
     /// Session time-to-live in seconds (default: 3600 = 1 hour).
     #[serde(default = "default_oidc_session_ttl")]
@@ -176,9 +217,134 @@ pub struct OidcSessionConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TlsConfig {
     pub cert_path: String,
     pub key_path: String,
+}
+
+/// GraphQL security configuration loaded from runtime settings.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GraphqlConfig {
+    /// Maximum GraphQL query complexity.
+    #[serde(default = "default_graphql_max_complexity")]
+    pub max_complexity: usize,
+    /// Maximum GraphQL query depth.
+    #[serde(default = "default_graphql_max_depth")]
+    pub max_depth: usize,
+    /// Whether GraphQL complexity and depth limits are enforced.
+    #[serde(default = "default_graphql_enforce_complexity")]
+    pub enforce_complexity: bool,
+}
+
+impl Default for GraphqlConfig {
+    fn default() -> Self {
+        Self {
+            max_complexity: default_graphql_max_complexity(),
+            max_depth: default_graphql_max_depth(),
+            enforce_complexity: default_graphql_enforce_complexity(),
+        }
+    }
+}
+
+/// Errors produced by GraphQL runtime configuration validation.
+#[derive(Error, Debug)]
+pub enum GraphqlConfigError {
+    /// Maximum query complexity is zero.
+    #[error("GraphQL max_complexity cannot be 0")]
+    ZeroMaxComplexity,
+    /// Maximum query depth is zero.
+    #[error("GraphQL max_depth cannot be 0")]
+    ZeroMaxDepth,
+    /// GraphQL complexity enforcement is disabled in production.
+    #[error("GraphQL complexity enforcement must be enabled in production")]
+    EnforcementDisabled,
+}
+
+impl GraphqlConfig {
+    /// Validates GraphQL settings for production use.
+    ///
+    /// # Errors
+    ///
+    /// Returns `GraphqlConfigError` if complexity limits are zero or disabled.
+    pub fn validate_production(&self) -> Result<(), GraphqlConfigError> {
+        if self.max_complexity == 0 {
+            return Err(GraphqlConfigError::ZeroMaxComplexity);
+        }
+        if self.max_depth == 0 {
+            return Err(GraphqlConfigError::ZeroMaxDepth);
+        }
+        if !self.enforce_complexity {
+            return Err(GraphqlConfigError::EnforcementDisabled);
+        }
+        Ok(())
+    }
+}
+
+/// Errors produced when validating production runtime settings.
+#[derive(Error, Debug)]
+pub enum SettingsValidationError {
+    /// HTTPS is disabled for the production server.
+    #[error("HTTPS must be enabled in production")]
+    HttpsRequired,
+    /// The database URL contains an insecure default or placeholder password.
+    #[error("Database URL contains an insecure default or placeholder password")]
+    InsecureDatabaseUrl,
+    /// The configured JWT algorithm is not supported.
+    #[error("Unsupported JWT algorithm: {algorithm}")]
+    UnsupportedJwtAlgorithm {
+        /// The unsupported algorithm value.
+        algorithm: String,
+    },
+    /// HS256 is not allowed for production signing.
+    #[error("JWT algorithm HS256 is not allowed in production")]
+    Hs256NotAllowed,
+    /// RS256 is missing a private key path.
+    #[error("RS256 requires auth.jwt.private_key_path in production")]
+    MissingJwtPrivateKey,
+    /// RS256 is missing a public key path.
+    #[error("RS256 requires auth.jwt.public_key_path in production")]
+    MissingJwtPublicKey,
+    /// OIDC is enabled without a provider configuration.
+    #[error("OIDC is enabled but auth.keycloak is not configured")]
+    OidcMissingProvider,
+    /// OIDC issuer URL does not use HTTPS.
+    #[error("OIDC issuer URL must use HTTPS in production")]
+    OidcIssuerNotHttps,
+    /// OIDC redirect URL does not use HTTPS.
+    #[error("OIDC redirect URL must use HTTPS in production")]
+    OidcRedirectNotHttps,
+    /// OIDC redirect host allowlist is empty.
+    #[error("OIDC allowed_redirect_hosts cannot be empty in production")]
+    OidcRedirectAllowlistEmpty,
+    /// OIDC redirect host is not allowlisted.
+    #[error("OIDC redirect host '{host}' is not in allowed_redirect_hosts")]
+    OidcRedirectHostNotAllowed {
+        /// The redirect URL host.
+        host: String,
+    },
+    /// OIDC client ID is empty.
+    #[error("OIDC client_id cannot be empty in production")]
+    OidcClientIdEmpty,
+    /// OIDC client secret is empty or placeholder text.
+    #[error("OIDC client_secret cannot be empty or a placeholder in production")]
+    OidcClientSecretInvalid,
+    /// TLS certificate path is empty.
+    #[error("TLS cert_path cannot be empty in production")]
+    EmptyTlsCertPath,
+    /// TLS private key path is empty.
+    #[error("TLS key_path cannot be empty in production")]
+    EmptyTlsKeyPath,
+    /// Security configuration is invalid.
+    #[error(transparent)]
+    Security(#[from] SecurityConfigError),
+    /// OPA configuration is invalid.
+    #[error("OPA configuration error: {0}")]
+    Opa(String),
+    /// GraphQL configuration is invalid.
+    #[error(transparent)]
+    Graphql(#[from] GraphqlConfigError),
 }
 
 impl Settings {
@@ -208,6 +374,7 @@ impl Settings {
             .set_default("server.host", "0.0.0.0")?
             .set_default("server.port", 8443)?
             .set_default("server.enable_https", true)?
+            .set_default("server.request_timeout_seconds", 30)?
             .set_default("auth.enable_local_auth", true)?
             .set_default("auth.enable_oidc", false)?
             .set_default("auth.jwt.access_token_expiration_seconds", 900)?
@@ -221,6 +388,9 @@ impl Settings {
                 "database.url",
                 "postgres://xzepr:password@localhost:5432/xzepr",
             )?
+            .set_default("database.max_connections", 10)?
+            .set_default("database.min_connections", 1)?
+            .set_default("database.connection_timeout_seconds", 30)?
             .set_default("kafka.brokers", "localhost:9092")?
             .set_default("kafka.default_topic", "xzepr.dev.events")?
             .set_default("kafka.default_topic_partitions", 3)?
@@ -229,7 +399,11 @@ impl Settings {
             .set_default("opa.url", "http://localhost:8181")?
             .set_default("opa.timeout_seconds", 5)?
             .set_default("opa.policy_path", "/v1/data/xzepr/rbac/allow")?
-            .set_default("opa.cache_ttl_seconds", 300)?;
+            .set_default("opa.cache_ttl_seconds", 300)?
+            .set_default("opa.fail_safe_mode", "fail_closed")?
+            .set_default("graphql.max_complexity", 100)?
+            .set_default("graphql.max_depth", 10)?
+            .set_default("graphql.enforce_complexity", true)?;
 
         // Add configuration file if it exists
         builder = builder.add_source(File::with_name("config/default").required(false));
@@ -260,8 +434,8 @@ impl Settings {
     ///
     /// # Errors
     ///
-    /// Returns `Err(String)` with a descriptive message when a critical
-    /// misconfiguration is detected.
+    /// Returns `SettingsValidationError` when a critical misconfiguration is
+    /// detected.
     ///
     /// # Examples
     ///
@@ -273,54 +447,156 @@ impl Settings {
     ///     .validate_production()
     ///     .expect("production checks should pass");
     /// ```
-    pub fn validate_production(&self) -> Result<(), String> {
-        let env = std::env::var("RUST_ENV").unwrap_or_else(|_| "development".into());
-
-        // Hard error: HTTPS must be enabled in production.
-        if env == "production" && !self.server.enable_https {
-            return Err(
-                "HTTPS must be enabled in production. Set server.enable_https = true.".to_string(),
-            );
+    pub fn validate_production(&self) -> Result<(), SettingsValidationError> {
+        if !self.server.enable_https {
+            return Err(SettingsValidationError::HttpsRequired);
         }
 
-        // Advisory: warn about default or insecure database passwords.
-        if self.database.url.contains(":password@") {
-            tracing::warn!(
-                "Database URL appears to use a default password. \
-                 Update the database password before deploying to production."
-            );
+        if self.database.url.contains(":password@") || self.database.url.contains("CHANGE_ME") {
+            return Err(SettingsValidationError::InsecureDatabaseUrl);
         }
 
-        // Advisory: warn when using the HS256 symmetric algorithm.
-        if self.auth.jwt.algorithm == "HS256" {
-            tracing::warn!(
-                "JWT algorithm is HS256. RS256 with asymmetric keys is recommended \
-                 for production deployments."
-            );
+        self.validate_production_jwt()?;
+        self.validate_production_oidc()?;
+        self.validate_production_tls()?;
+        self.security.validate_production()?;
+        self.graphql.validate_production()?;
+
+        if let Some(opa) = &self.opa {
+            opa.validate_production()
+                .map_err(|e| SettingsValidationError::Opa(e.to_string()))?;
         }
 
-        // Hard error: all OIDC endpoints must use HTTPS.
-        if self.auth.enable_oidc {
-            if let Some(keycloak) = &self.auth.keycloak {
-                if !keycloak.issuer_url.starts_with("https://") {
-                    return Err(format!(
-                        "OIDC issuer URL must use https:// when OIDC is enabled. \
-                         Got: {}",
-                        keycloak.issuer_url
-                    ));
+        Ok(())
+    }
+
+    fn validate_production_jwt(&self) -> Result<(), SettingsValidationError> {
+        match self.auth.jwt.algorithm.to_uppercase().as_str() {
+            "RS256" => {
+                if self
+                    .auth
+                    .jwt
+                    .private_key_path
+                    .as_deref()
+                    .is_none_or(str::is_empty)
+                {
+                    return Err(SettingsValidationError::MissingJwtPrivateKey);
                 }
-                if !keycloak.redirect_url.starts_with("https://") {
-                    return Err(format!(
-                        "OIDC redirect URL must use https:// when OIDC is enabled. \
-                         Got: {}",
-                        keycloak.redirect_url
-                    ));
+                if self
+                    .auth
+                    .jwt
+                    .public_key_path
+                    .as_deref()
+                    .is_none_or(str::is_empty)
+                {
+                    return Err(SettingsValidationError::MissingJwtPublicKey);
                 }
+            }
+            "HS256" => return Err(SettingsValidationError::Hs256NotAllowed),
+            algorithm => {
+                return Err(SettingsValidationError::UnsupportedJwtAlgorithm {
+                    algorithm: algorithm.to_string(),
+                })
             }
         }
 
         Ok(())
     }
+
+    fn validate_production_oidc(&self) -> Result<(), SettingsValidationError> {
+        if !self.auth.enable_oidc {
+            return Ok(());
+        }
+
+        let keycloak = self
+            .auth
+            .keycloak
+            .as_ref()
+            .ok_or(SettingsValidationError::OidcMissingProvider)?;
+
+        if keycloak.client_id.trim().is_empty() {
+            return Err(SettingsValidationError::OidcClientIdEmpty);
+        }
+        if keycloak.client_secret.trim().is_empty() || keycloak.client_secret.contains("CHANGE_ME")
+        {
+            return Err(SettingsValidationError::OidcClientSecretInvalid);
+        }
+        if !keycloak.issuer_url.starts_with("https://") {
+            return Err(SettingsValidationError::OidcIssuerNotHttps);
+        }
+        if !keycloak.redirect_url.starts_with("https://") {
+            return Err(SettingsValidationError::OidcRedirectNotHttps);
+        }
+        if keycloak.allowed_redirect_hosts.is_empty() {
+            return Err(SettingsValidationError::OidcRedirectAllowlistEmpty);
+        }
+
+        let redirect_host = extract_host(&keycloak.redirect_url).ok_or_else(|| {
+            SettingsValidationError::OidcRedirectHostNotAllowed {
+                host: keycloak.redirect_url.clone(),
+            }
+        })?;
+
+        if !keycloak
+            .allowed_redirect_hosts
+            .iter()
+            .any(|allowed| allowed == &redirect_host)
+        {
+            return Err(SettingsValidationError::OidcRedirectHostNotAllowed {
+                host: redirect_host,
+            });
+        }
+
+        Ok(())
+    }
+
+    fn validate_production_tls(&self) -> Result<(), SettingsValidationError> {
+        if self.tls.cert_path.trim().is_empty() {
+            return Err(SettingsValidationError::EmptyTlsCertPath);
+        }
+        if self.tls.key_path.trim().is_empty() {
+            return Err(SettingsValidationError::EmptyTlsKeyPath);
+        }
+        Ok(())
+    }
+}
+
+fn extract_host(url: &str) -> Option<String> {
+    let (_, rest) = url.split_once("://")?;
+    let host = rest.split('/').next()?.trim();
+    if host.is_empty() {
+        None
+    } else {
+        Some(host.to_string())
+    }
+}
+
+fn default_request_timeout_seconds() -> u64 {
+    30
+}
+
+fn default_database_max_connections() -> u32 {
+    10
+}
+
+fn default_database_min_connections() -> u32 {
+    1
+}
+
+fn default_database_connection_timeout_seconds() -> u64 {
+    30
+}
+
+fn default_graphql_max_complexity() -> usize {
+    100
+}
+
+fn default_graphql_max_depth() -> usize {
+    10
+}
+
+fn default_graphql_enforce_complexity() -> bool {
+    true
 }
 
 // Default value functions for JWT config
@@ -412,6 +688,121 @@ mod tests {
 
     // Mutex to prevent concurrent test execution that modifies environment variables
     static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    fn valid_production_security_config() -> SecurityConfig {
+        let mut security = SecurityConfig::default();
+        security.cors.allowed_origins = vec!["https://app.example.com".to_string()];
+        security.rate_limit.use_redis = true;
+        security.rate_limit.redis_url = Some("redis://redis:6379".to_string());
+        security
+    }
+
+    fn valid_production_settings_yaml() -> &'static str {
+        r#"
+server:
+  host: "0.0.0.0"
+  port: 8443
+  enable_https: true
+  request_timeout_seconds: 30
+
+database:
+  url: "postgres://xzepr:secure-password@postgres:5432/xzepr"
+  max_connections: 20
+  min_connections: 5
+  connection_timeout_seconds: 30
+
+auth:
+  enable_local_auth: true
+  enable_oidc: true
+  jwt:
+    access_token_expiration_seconds: 900
+    refresh_token_expiration_seconds: 604800
+    issuer: "xzepr-production"
+    audience: "xzepr-api"
+    algorithm: "RS256"
+    private_key_path: "/etc/xzepr/keys/jwt_rsa"
+    public_key_path: "/etc/xzepr/keys/jwt_rsa.pub"
+    secret_key: null
+    enable_token_rotation: true
+    leeway_seconds: 60
+  keycloak:
+    issuer_url: "https://keycloak.example.com/realms/xzepr"
+    client_id: "xzepr-client"
+    client_secret: "real-client-secret"
+    redirect_url: "https://xzepr.example.com/auth/callback"
+    allowed_redirect_hosts:
+      - "xzepr.example.com"
+    session_ttl_seconds: 3600
+    max_sessions_per_user: 10
+
+tls:
+  cert_path: "/etc/xzepr/tls/cert.pem"
+  key_path: "/etc/xzepr/tls/key.pem"
+
+kafka:
+  brokers: "redpanda-0:9092"
+  default_topic: "xzepr.prod.events"
+  default_topic_partitions: 3
+  default_topic_replication_factor: 1
+
+opa:
+  enabled: true
+  url: "https://opa.example.com:8181"
+  timeout_seconds: 5
+  policy_path: "/v1/data/xzepr/rbac/allow"
+  bundle_url: "https://bundle-server.example.com/bundles/xzepr-rbac.tar.gz"
+  cache_ttl_seconds: 300
+  allowed_hosts:
+    - "opa.example.com:8181"
+    - "bundle-server.example.com"
+  fail_safe_mode: "fail_closed"
+
+security:
+  cors:
+    allowed_origins:
+      - "https://app.example.com"
+    allow_credentials: true
+    max_age_seconds: 3600
+  rate_limit:
+    anonymous_rpm: 10
+    authenticated_rpm: 100
+    admin_rpm: 1000
+    per_endpoint:
+      /api/v1/auth/login: 5
+    use_redis: true
+    redis_url: "redis://redis:6379"
+  validation:
+    max_body_size: 1048576
+    max_string_length: 5000
+    max_array_length: 500
+    strict_mode: true
+  headers:
+    enable_csp: true
+    csp_directives: "default-src 'self'"
+    enable_hsts: true
+    hsts_max_age: 63072000
+    hsts_include_subdomains: true
+    hsts_preload: true
+  monitoring:
+    metrics_enabled: true
+    tracing_enabled: true
+    structured_logging: true
+    log_level: "info"
+    json_logs: true
+    jaeger_endpoint: "http://jaeger:14268/api/traces"
+    metrics_port: 9090
+
+graphql:
+  max_complexity: 50
+  max_depth: 8
+  enforce_complexity: true
+"#
+    }
+
+    fn valid_production_settings() -> Settings {
+        serde_yaml::from_str(valid_production_settings_yaml())
+            .expect("valid production settings test fixture should deserialize")
+    }
 
     /// Clean up environment variables used in tests
     fn cleanup_env_vars() {
@@ -656,6 +1047,9 @@ mod tests {
     fn test_debug_database_config_redacts_password() {
         let config = DatabaseConfig {
             url: "postgres://user:pass@host/db".to_string(),
+            max_connections: 10,
+            min_connections: 1,
+            connection_timeout_seconds: 30,
         };
         let debug_str = format!("{:?}", config);
         assert!(
@@ -700,6 +1094,9 @@ mod tests {
             client_id: "xzepr".to_string(),
             client_secret: "my-super-secret".to_string(),
             redirect_url: "https://app.example.com/callback".to_string(),
+            allowed_redirect_hosts: vec!["app.example.com".to_string()],
+            session_ttl_seconds: 3600,
+            max_sessions_per_user: 10,
         };
         let debug_str = format!("{:?}", config);
         assert!(
@@ -719,9 +1116,13 @@ mod tests {
                 host: "0.0.0.0".to_string(),
                 port: 8443,
                 enable_https: true,
+                request_timeout_seconds: 30,
             },
             database: DatabaseConfig {
                 url: "postgres://user:securepass@host/db".to_string(),
+                max_connections: 10,
+                min_connections: 1,
+                connection_timeout_seconds: 30,
             },
             auth: AuthConfig {
                 jwt: JwtAuthConfig {
@@ -730,8 +1131,8 @@ mod tests {
                     issuer: "xzepr".to_string(),
                     audience: "xzepr-api".to_string(),
                     algorithm: "RS256".to_string(),
-                    private_key_path: None,
-                    public_key_path: None,
+                    private_key_path: Some("/keys/private.pem".to_string()),
+                    public_key_path: Some("/keys/public.pem".to_string()),
                     secret_key: None,
                     enable_token_rotation: true,
                     leeway_seconds: 60,
@@ -744,6 +1145,9 @@ mod tests {
                     client_id: "xzepr".to_string(),
                     client_secret: "secret".to_string(),
                     redirect_url: "https://app.example.com/callback".to_string(),
+                    allowed_redirect_hosts: vec!["app.example.com".to_string()],
+                    session_ttl_seconds: 3600,
+                    max_sessions_per_user: 10,
                 }),
             },
             tls: TlsConfig {
@@ -757,6 +1161,8 @@ mod tests {
                 default_topic_replication_factor: 1,
                 auth: None,
             },
+            security: valid_production_security_config(),
+            graphql: GraphqlConfig::default(),
             opa: None,
         };
 
@@ -765,12 +1171,265 @@ mod tests {
             result.is_err(),
             "validate_production should reject an http:// OIDC issuer URL"
         );
-        let err_msg = result.unwrap_err();
+        let err_msg = result.unwrap_err().to_string();
         assert!(
-            err_msg.contains("https"),
-            "Error message should reference https: {}",
+            err_msg.contains("HTTPS"),
+            "Error message should reference HTTPS: {}",
             err_msg
         );
+    }
+
+    #[test]
+    fn test_config_yaml_files_do_not_contain_legacy_jwt_fields() {
+        let files = [
+            include_str!("../../config/default.yaml"),
+            include_str!("../../config/development.yaml"),
+            include_str!("../../config/production.yaml"),
+        ];
+
+        for contents in files {
+            assert!(!contents.contains("jwt_secret"));
+            assert!(!contents.contains("jwt_expiration_hours"));
+        }
+    }
+
+    #[test]
+    fn test_config_yaml_files_deserialize_into_settings() {
+        let files = [
+            include_str!("../../config/default.yaml"),
+            include_str!("../../config/development.yaml"),
+            include_str!("../../config/production.yaml"),
+        ];
+
+        for contents in files {
+            let settings: Settings = serde_yaml::from_str(contents)
+                .expect("configuration file should deserialize into Settings");
+            assert!(settings.graphql.max_complexity > 0);
+        }
+    }
+
+    #[test]
+    fn test_production_yaml_deserializes_authoritative_sections() {
+        let settings: Settings = serde_yaml::from_str(include_str!("../../config/production.yaml"))
+            .expect("production YAML should deserialize");
+
+        assert_eq!(settings.security.cors.allowed_origins.len(), 2);
+        assert_eq!(settings.graphql.max_complexity, 50);
+        assert_eq!(settings.graphql.max_depth, 8);
+        assert!(settings.graphql.enforce_complexity);
+        let keycloak = settings.auth.keycloak.as_ref().unwrap();
+        assert_eq!(keycloak.allowed_redirect_hosts, vec!["xzepr.example.com"]);
+        let opa = settings.opa.as_ref().unwrap();
+        assert!(!opa.allowed_hosts.is_empty());
+    }
+
+    #[test]
+    fn test_production_yaml_rejects_unknown_keys() {
+        let yaml = format!("{}\nunknown_key: true\n", valid_production_settings_yaml());
+        let result = serde_yaml::from_str::<Settings>(&yaml);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_production_accepts_valid_settings() {
+        let settings = valid_production_settings();
+        assert!(settings.validate_production().is_ok());
+    }
+
+    #[test]
+    fn test_validate_production_rejects_hs256() {
+        let mut settings = valid_production_settings();
+        settings.auth.jwt.algorithm = "HS256".to_string();
+        let result = settings.validate_production();
+        assert!(matches!(
+            result,
+            Err(SettingsValidationError::Hs256NotAllowed)
+        ));
+    }
+
+    #[test]
+    fn test_validate_production_rejects_rs256_without_private_key() {
+        let mut settings = valid_production_settings();
+        settings.auth.jwt.private_key_path = None;
+        let result = settings.validate_production();
+        assert!(matches!(
+            result,
+            Err(SettingsValidationError::MissingJwtPrivateKey)
+        ));
+    }
+
+    #[test]
+    fn test_validate_production_rejects_wildcard_cors() {
+        let mut settings = valid_production_settings();
+        settings.security.cors.allowed_origins = vec!["*".to_string()];
+        let result = settings.validate_production();
+        assert!(matches!(
+            result,
+            Err(SettingsValidationError::Security(
+                SecurityConfigError::WildcardCorsOrigin
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_validate_production_rejects_non_https_cors() {
+        let mut settings = valid_production_settings();
+        settings.security.cors.allowed_origins = vec!["http://app.example.com".to_string()];
+        let result = settings.validate_production();
+        assert!(matches!(
+            result,
+            Err(SettingsValidationError::Security(
+                SecurityConfigError::NonHttpsCorsOrigin { .. }
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_validate_production_rejects_missing_redis_url_when_required() {
+        let mut settings = valid_production_settings();
+        settings.security.rate_limit.redis_url = None;
+        let result = settings.validate_production();
+        assert!(matches!(
+            result,
+            Err(SettingsValidationError::Security(
+                SecurityConfigError::MissingRedisUrl
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_validate_production_rejects_rs256_without_public_key() {
+        let mut settings = valid_production_settings();
+        settings.auth.jwt.public_key_path = None;
+        let result = settings.validate_production();
+        assert!(matches!(
+            result,
+            Err(SettingsValidationError::MissingJwtPublicKey)
+        ));
+    }
+
+    #[test]
+    fn test_validate_production_rejects_oidc_http_redirect() {
+        let mut settings = valid_production_settings();
+        let keycloak = settings.auth.keycloak.as_mut().unwrap();
+        keycloak.redirect_url = "http://xzepr.example.com/auth/callback".to_string();
+        let result = settings.validate_production();
+        assert!(matches!(
+            result,
+            Err(SettingsValidationError::OidcRedirectNotHttps)
+        ));
+    }
+
+    #[test]
+    fn test_validate_production_rejects_missing_oidc_redirect_allowlist() {
+        let mut settings = valid_production_settings();
+        let keycloak = settings.auth.keycloak.as_mut().unwrap();
+        keycloak.allowed_redirect_hosts.clear();
+        let result = settings.validate_production();
+        assert!(matches!(
+            result,
+            Err(SettingsValidationError::OidcRedirectAllowlistEmpty)
+        ));
+    }
+
+    #[test]
+    fn test_validate_production_rejects_redirect_host_not_allowlisted() {
+        let mut settings = valid_production_settings();
+        let keycloak = settings.auth.keycloak.as_mut().unwrap();
+        keycloak.allowed_redirect_hosts = vec!["other.example.com".to_string()];
+        let result = settings.validate_production();
+        assert!(matches!(
+            result,
+            Err(SettingsValidationError::OidcRedirectHostNotAllowed { .. })
+        ));
+    }
+
+    #[test]
+    fn test_validate_production_rejects_insecure_opa_url() {
+        let mut settings = valid_production_settings();
+        let opa = settings.opa.as_mut().unwrap();
+        opa.url = "http://opa.example.com:8181".to_string();
+        let result = settings.validate_production();
+        assert!(matches!(result, Err(SettingsValidationError::Opa(_))));
+    }
+
+    #[test]
+    fn test_validate_production_rejects_opa_host_not_allowlisted() {
+        let mut settings = valid_production_settings();
+        let opa = settings.opa.as_mut().unwrap();
+        opa.allowed_hosts = vec!["other.example.com".to_string()];
+        let result = settings.validate_production();
+        assert!(matches!(result, Err(SettingsValidationError::Opa(_))));
+    }
+
+    #[test]
+    fn test_validate_production_rejects_opa_fail_open() {
+        let mut settings = valid_production_settings();
+        let opa = settings.opa.as_mut().unwrap();
+        opa.fail_safe_mode = crate::opa::types::OpaFailSafeMode::FailOpenDevelopment;
+        let result = settings.validate_production();
+        assert!(matches!(result, Err(SettingsValidationError::Opa(_))));
+    }
+
+    #[test]
+    fn test_validate_production_rejects_empty_tls_cert_path() {
+        let mut settings = valid_production_settings();
+        settings.tls.cert_path.clear();
+        let result = settings.validate_production();
+        assert!(matches!(
+            result,
+            Err(SettingsValidationError::EmptyTlsCertPath)
+        ));
+    }
+
+    #[test]
+    fn test_validate_production_rejects_empty_tls_key_path() {
+        let mut settings = valid_production_settings();
+        settings.tls.key_path.clear();
+        let result = settings.validate_production();
+        assert!(matches!(
+            result,
+            Err(SettingsValidationError::EmptyTlsKeyPath)
+        ));
+    }
+
+    #[test]
+    fn test_validate_production_rejects_zero_graphql_complexity() {
+        let mut settings = valid_production_settings();
+        settings.graphql.max_complexity = 0;
+        let result = settings.validate_production();
+        assert!(matches!(
+            result,
+            Err(SettingsValidationError::Graphql(
+                GraphqlConfigError::ZeroMaxComplexity
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_validate_production_rejects_zero_graphql_depth() {
+        let mut settings = valid_production_settings();
+        settings.graphql.max_depth = 0;
+        let result = settings.validate_production();
+        assert!(matches!(
+            result,
+            Err(SettingsValidationError::Graphql(
+                GraphqlConfigError::ZeroMaxDepth
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_validate_production_rejects_disabled_graphql_enforcement() {
+        let mut settings = valid_production_settings();
+        settings.graphql.enforce_complexity = false;
+        let result = settings.validate_production();
+        assert!(matches!(
+            result,
+            Err(SettingsValidationError::Graphql(
+                GraphqlConfigError::EnforcementDisabled
+            ))
+        ));
     }
 
     #[test]

@@ -11,15 +11,28 @@ database:
   url: "postgres://xzepr:password@localhost:5432/xzepr"
 
 auth:
-  jwt_secret: "development-secret-change-in-production-use-at-least-32-characters"
-  jwt_expiration_hours: 24
   enable_local_auth: true
   enable_oidc: false
+  jwt:
+    access_token_expiration_seconds: 900
+    refresh_token_expiration_seconds: 604800
+    issuer: "xzepr"
+    audience: "xzepr-api"
+    algorithm: "RS256"
+    private_key_path: null
+    public_key_path: null
+    secret_key: null
+    enable_token_rotation: true
+    leeway_seconds: 60
   keycloak:
     issuer_url: "http://localhost:8080/realms/xzepr"
     client_id: "xzepr-client"
     client_secret: "change-me-in-production"
     redirect_url: "https://localhost:8443/auth/callback"
+    allowed_redirect_hosts:
+      - "localhost:8443"
+    session_ttl_seconds: 3600
+    max_sessions_per_user: 10
 
 tls:
   cert_path: "certs/cert.pem"
@@ -33,4 +46,49 @@ opa:
   url: "http://localhost:8181"
   timeout_seconds: 5
   policy_path: "/v1/data/xzepr/rbac/allow"
+  bundle_url: null
   cache_ttl_seconds: 300
+  allowed_hosts:
+    - "localhost:8181"
+  fail_safe_mode: "fail_closed"
+
+security:
+  cors:
+    allowed_origins:
+      - "http://localhost:3000"
+    allow_credentials: true
+    max_age_seconds: 3600
+  rate_limit:
+    anonymous_rpm: 10
+    authenticated_rpm: 100
+    admin_rpm: 1000
+    per_endpoint:
+      /api/v1/auth/login: 5
+      /api/v1/auth/refresh: 10
+    use_redis: false
+    redis_url: null
+  validation:
+    max_body_size: 1048576
+    max_string_length: 10000
+    max_array_length: 1000
+    strict_mode: true
+  headers:
+    enable_csp: true
+    csp_directives: "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https:; connect-src 'self'"
+    enable_hsts: true
+    hsts_max_age: 31536000
+    hsts_include_subdomains: true
+    hsts_preload: false
+  monitoring:
+    metrics_enabled: true
+    tracing_enabled: true
+    structured_logging: true
+    log_level: "info"
+    json_logs: false
+    jaeger_endpoint: null
+    metrics_port: 9090
+
+graphql:
+  max_complexity: 100
+  max_depth: 10
+  enforce_complexity: true

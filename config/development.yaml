@@ -10,15 +10,28 @@ database:
   url: "postgres://xzepr:password@localhost:5432/xzepr"
 
 auth:
-  jwt_secret: "dev-secret-not-for-production-use"
-  jwt_expiration_hours: 168 # 7 days for convenience
   enable_local_auth: true
   enable_oidc: true
+  jwt:
+    access_token_expiration_seconds: 900
+    refresh_token_expiration_seconds: 604800
+    issuer: "xzepr-dev"
+    audience: "xzepr-api-dev"
+    algorithm: "HS256"
+    private_key_path: null
+    public_key_path: null
+    secret_key: "dev-secret-key-min-32-characters-long"
+    enable_token_rotation: true
+    leeway_seconds: 60
   keycloak:
     issuer_url: "http://localhost:8080/realms/xzepr"
     client_id: "xzepr-client"
     client_secret: "dev-client-secret"
     redirect_url: "https://localhost:8443/auth/callback"
+    allowed_redirect_hosts:
+      - "localhost:8443"
+    session_ttl_seconds: 3600
+    max_sessions_per_user: 10
 
 tls:
   cert_path: "certs/cert.pem"
@@ -32,4 +45,47 @@ opa:
   url: "http://localhost:8181"
   timeout_seconds: 5
   policy_path: "/v1/data/xzepr/rbac/allow"
+  bundle_url: null
   cache_ttl_seconds: 300
+  allowed_hosts:
+    - "localhost:8181"
+  fail_safe_mode: "fail_open_development"
+
+security:
+  cors:
+    allowed_origins:
+      - "*"
+    allow_credentials: false
+    max_age_seconds: 3600
+  rate_limit:
+    anonymous_rpm: 10000
+    authenticated_rpm: 10000
+    admin_rpm: 10000
+    per_endpoint: {}
+    use_redis: false
+    redis_url: null
+  validation:
+    max_body_size: 10485760
+    max_string_length: 100000
+    max_array_length: 10000
+    strict_mode: false
+  headers:
+    enable_csp: false
+    csp_directives: null
+    enable_hsts: false
+    hsts_max_age: 0
+    hsts_include_subdomains: false
+    hsts_preload: false
+  monitoring:
+    metrics_enabled: true
+    tracing_enabled: true
+    structured_logging: true
+    log_level: "debug"
+    json_logs: false
+    jaeger_endpoint: null
+    metrics_port: 9090
+
+graphql:
+  max_complexity: 1000
+  max_depth: 20
+  enforce_complexity: false
