@@ -1,7 +1,21 @@
 // SPDX-FileCopyrightText: 2025 Brett Smith <xbcsmith@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-// src/lib.rs
+//! XZepr event tracking server library.
+//!
+//! This crate provides the core XZepr functionality including domain entities,
+//! application services, authentication, and infrastructure adapters.
+//!
+//! # Public API
+//!
+//! The canonical public API is re-exported at the crate root for convenience:
+//!
+//! - Domain entities: [`domain::entities`]
+//! - Value objects: [`domain::value_objects`]
+//! - Application handlers: [`application::handlers`]
+//! - Configuration: [`infrastructure::config::Settings`]
+//! - Error types: [`error::Error`], [`error::Result`]
+//! - GraphQL schema: [`api::graphql::create_schema`]
 
 pub mod api;
 pub mod application;
@@ -28,7 +42,6 @@ pub use domain::validation::{
 pub use domain::value_objects::{ApiKeyId, EventId, EventReceiverGroupId, EventReceiverId, UserId};
 pub use error::{Error, Result};
 pub use infrastructure::config::Settings;
-pub use infrastructure::database::repo_helpers::require_entity;
 pub use infrastructure::database::{PostgresApiKeyRepository, PostgresUserRepository};
 pub use infrastructure::messaging::TopicManager;
 
@@ -37,9 +50,3 @@ pub use application::handlers::{EventHandler, EventReceiverGroupHandler, EventRe
 
 // GraphQL
 pub use api::graphql::{create_schema, Schema};
-
-// Common types
-pub use chrono::{DateTime, Utc};
-pub use serde_json::Value as JsonValue;
-pub use std::sync::Arc;
-pub use ulid::Ulid;

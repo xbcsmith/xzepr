@@ -17,7 +17,9 @@ use crate::api::rest::dtos::{
     EventReceiverGroupResponse, EventReceiverQueryParams, EventReceiverResponse, EventResponse,
     PaginatedResponse, PaginationMeta, UpdateEventReceiverGroupRequest, UpdateEventReceiverRequest,
 };
-use crate::application::handlers::event_receiver_group_handler::UpdateEventReceiverGroupParams;
+use crate::application::handlers::event_receiver_group_handler::{
+    CreateEventReceiverGroupParams, UpdateEventReceiverGroupParams,
+};
 use crate::application::handlers::event_receiver_handler::UpdateEventReceiverParams;
 use crate::application::handlers::{EventHandler, EventReceiverGroupHandler, EventReceiverHandler};
 use crate::domain::entities::event::CreateEventParams;
@@ -535,15 +537,15 @@ pub async fn create_event_receiver_group(
     // Create event receiver group
     match state
         .event_receiver_group_handler
-        .create_event_receiver_group(
-            request.name,
-            request.group_type,
-            request.version,
-            request.description,
-            request.enabled,
-            receiver_ids,
+        .create_event_receiver_group(CreateEventReceiverGroupParams {
+            name: request.name,
+            group_type: request.group_type,
+            version: request.version,
+            description: request.description,
+            enabled: request.enabled,
+            event_receiver_ids: receiver_ids,
             owner_id,
-        )
+        })
         .await
     {
         Ok(group_id) => {

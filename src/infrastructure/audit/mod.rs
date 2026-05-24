@@ -419,6 +419,55 @@ impl AuditEventBuilder {
     }
 }
 
+/// Parameters for recording an authorization decision in the audit log.
+///
+/// Bundles all inputs to [`AuditLogger::log_authorization_decision`] into a
+/// single value so the call site is readable and the implementation is free
+/// of clippy argument-count suppressions.
+///
+/// # Examples
+///
+/// ```rust
+/// use xzepr::infrastructure::audit::{AuditLogger, AuthorizationDecisionParams};
+///
+/// let logger = AuditLogger::new();
+/// logger.log_authorization_decision(&AuthorizationDecisionParams {
+///     user_id: "user123".to_string(),
+///     action: "read".to_string(),
+///     resource_type: "event_receiver".to_string(),
+///     resource_id: "recv456".to_string(),
+///     decision: true,
+///     duration_ms: 25,
+///     fallback_used: false,
+///     policy_version: Some("1.0.0".to_string()),
+///     reason: None,
+///     request_id: Some("req789".to_string()),
+/// });
+/// ```
+#[derive(Debug, Clone)]
+pub struct AuthorizationDecisionParams {
+    /// Identifier of the user whose access is being decided.
+    pub user_id: String,
+    /// Action being authorized (e.g., "read", "write", "delete").
+    pub action: String,
+    /// Type of the resource (e.g., "event_receiver", "event").
+    pub resource_type: String,
+    /// Identifier of the specific resource instance.
+    pub resource_id: String,
+    /// `true` if access was granted, `false` if denied.
+    pub decision: bool,
+    /// Time taken for the authorization decision in milliseconds.
+    pub duration_ms: u64,
+    /// Whether the decision fell back to legacy RBAC instead of OPA.
+    pub fallback_used: bool,
+    /// OPA policy version, if available.
+    pub policy_version: Option<String>,
+    /// Reason for denial, if applicable.
+    pub reason: Option<String>,
+    /// Request identifier for correlation, if available.
+    pub request_id: Option<String>,
+}
+
 /// Audit logger that emits structured JSON logs
 #[derive(Debug, Clone)]
 pub struct AuditLogger {
@@ -596,94 +645,74 @@ impl AuditLogger {
         }
     }
 
-    /// Log authorization decision (OPA/RBAC)
+    /// Records an authorization decision in the audit log.
     ///
     /// Records authorization decisions including user, action, resource,
     /// decision outcome, duration, and whether fallback was used.
     ///
     /// # Arguments
     ///
-    /// * `user_id` - User identifier
-    /// * `action` - Action being authorized (e.g., "read", "write", "delete")
-    /// * `resource_type` - Type of resource (e.g., "event_receiver", "event")
-    /// * `resource_id` - Resource identifier
-    /// * `decision` - Whether access was granted
-    /// * `duration_ms` - Time taken for authorization decision in milliseconds
-    /// * `fallback_used` - Whether fallback to legacy RBAC was used
-    /// * `policy_version` - OPA policy version (if available)
-    /// * `reason` - Optional reason for denial
-    /// * `request_id` - Optional request identifier for correlation
+    /// * `params` - Authorization decision parameters.
     ///
     /// # Examples
     ///
-    /// ```
-    /// use xzepr::infrastructure::audit::AuditLogger;
+    /// ```rust
+    /// use xzepr::infrastructure::audit::{AuditLogger, AuthorizationDecisionParams};
     ///
     /// let logger = AuditLogger::new();
-    /// logger.log_authorization_decision(
-    ///     "user123",
-    ///     "read",
-    ///     "event_receiver",
-    ///     "receiver456",
-    ///     true,
-    ///     25,
-    ///     false,
-    ///     Some("1.0.0"),
-    ///     None,
-    ///     Some("req789"),
-    /// );
+    /// logger.log_authorization_decision(&AuthorizationDecisionParams {
+    ///     user_id: "user123".to_string(),
+    ///     action: "read".to_string(),
+    ///     resource_type: "event_receiver".to_string(),
+    ///     resource_id: "recv456".to_string(),
+    ///     decision: true,
+    ///     duration_ms: 25,
+    ///     fallback_used: false,
+    ///     policy_version: Some("1.0.0".to_string()),
+    ///     reason: None,
+    ///     request_id: Some("req789".to_string()),
+    /// });
     /// ```
-    #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::format_in_format_args)]
-    pub fn log_authorization_decision(
-        &self,
-        user_id: &str,
-        action: &str,
-        resource_type: &str,
-        resource_id: &str,
-        decision: bool,
-        duration_ms: u64,
-        fallback_used: bool,
-        policy_version: Option<&str>,
-        reason: Option<&str>,
-        request_id: Option<&str>,
-    ) {
+    pub fn log_authorization_decision(&self, params: &AuthorizationDecisionParams) {
         let mut metadata = HashMap::new();
-        metadata.insert("action".to_string(), action.to_string());
-        metadata.insert("resource_type".to_string(), resource_type.to_string());
-        metadata.insert("resource_id".to_string(), resource_id.to_string());
-        metadata.insert("fallback_used".to_string(), fallback_used.to_string());
+        metadata.insert("action".to_string(), params.action.clone());
+        metadata.insert("resource_type".to_string(), params.resource_type.clone());
+        metadata.insert("resource_id".to_string(), params.resource_id.clone());
+        metadata.insert(
+            "fallback_used".to_string(),
+            params.fallback_used.to_string(),
+        );
 
-        if let Some(version) = policy_version {
-            metadata.insert("policy_version".to_string(), version.to_string());
+        if let Some(ref version) = params.policy_version {
+            metadata.insert("policy_version".to_string(), version.clone());
         }
 
-        if let Some(reason_text) = reason {
-            metadata.insert("denial_reason".to_string(), reason_text.to_string());
+        if let Some(ref reason_text) = params.reason {
+            metadata.insert("denial_reason".to_string(), reason_text.clone());
         }
 
-        let resource_path = format!("/{}/{}", resource_type, resource_id);
-        let audit_action = if decision {
+        let resource_path = format!("/{}/{}", params.resource_type, params.resource_id);
+        let audit_action = if params.decision {
             AuditAction::AuthorizationDecision
         } else {
             AuditAction::AuthorizationDenial
         };
 
-        let outcome = if decision {
+        let outcome = if params.decision {
             AuditOutcome::Success
         } else {
             AuditOutcome::Denied
         };
 
         let result = AuditEvent::builder()
-            .user_id(user_id)
+            .user_id(&params.user_id)
             .action(audit_action)
             .resource(&resource_path)
             .outcome(outcome)
             .metadata(metadata)
-            .duration_ms(duration_ms)
-            .request_id_opt(request_id)
-            .error_message_opt(reason)
+            .duration_ms(params.duration_ms)
+            .request_id_opt(params.request_id.as_deref())
+            .error_message_opt(params.reason.as_deref())
             .build();
         match result {
             Ok(event) => self.log_event(event),
@@ -866,71 +895,71 @@ mod tests {
     fn test_log_authorization_decision_allowed() {
         let logger = AuditLogger::new();
 
-        logger.log_authorization_decision(
-            "user123",
-            "read",
-            "event_receiver",
-            "recv456",
-            true,
-            25,
-            false,
-            Some("1.0.0"),
-            None,
-            Some("req789"),
-        );
+        logger.log_authorization_decision(&AuthorizationDecisionParams {
+            user_id: "user123".to_string(),
+            action: "read".to_string(),
+            resource_type: "event_receiver".to_string(),
+            resource_id: "recv456".to_string(),
+            decision: true,
+            duration_ms: 25,
+            fallback_used: false,
+            policy_version: Some("1.0.0".to_string()),
+            reason: None,
+            request_id: Some("req789".to_string()),
+        });
     }
 
     #[test]
     fn test_log_authorization_decision_denied() {
         let logger = AuditLogger::new();
 
-        logger.log_authorization_decision(
-            "user123",
-            "write",
-            "event_receiver",
-            "recv456",
-            false,
-            30,
-            false,
-            Some("1.0.0"),
-            Some("insufficient_permissions"),
-            Some("req789"),
-        );
+        logger.log_authorization_decision(&AuthorizationDecisionParams {
+            user_id: "user123".to_string(),
+            action: "write".to_string(),
+            resource_type: "event_receiver".to_string(),
+            resource_id: "recv456".to_string(),
+            decision: false,
+            duration_ms: 30,
+            fallback_used: false,
+            policy_version: Some("1.0.0".to_string()),
+            reason: Some("insufficient_permissions".to_string()),
+            request_id: Some("req789".to_string()),
+        });
     }
 
     #[test]
     fn test_log_authorization_decision_with_fallback() {
         let logger = AuditLogger::new();
 
-        logger.log_authorization_decision(
-            "user123",
-            "delete",
-            "event",
-            "event789",
-            true,
-            45,
-            true,
-            None,
-            None,
-            Some("req101"),
-        );
+        logger.log_authorization_decision(&AuthorizationDecisionParams {
+            user_id: "user123".to_string(),
+            action: "delete".to_string(),
+            resource_type: "event".to_string(),
+            resource_id: "event789".to_string(),
+            decision: true,
+            duration_ms: 45,
+            fallback_used: true,
+            policy_version: None,
+            reason: None,
+            request_id: Some("req101".to_string()),
+        });
     }
 
     #[test]
     fn test_log_authorization_decision_no_policy_version() {
         let logger = AuditLogger::new();
 
-        logger.log_authorization_decision(
-            "user456",
-            "read",
-            "event_receiver_group",
-            "group123",
-            true,
-            20,
-            false,
-            None,
-            None,
-            None,
-        );
+        logger.log_authorization_decision(&AuthorizationDecisionParams {
+            user_id: "user456".to_string(),
+            action: "read".to_string(),
+            resource_type: "event_receiver_group".to_string(),
+            resource_id: "group123".to_string(),
+            decision: true,
+            duration_ms: 20,
+            fallback_used: false,
+            policy_version: None,
+            reason: None,
+            request_id: None,
+        });
     }
 }

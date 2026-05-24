@@ -342,8 +342,120 @@ mod tests {
         assert!(claims.permissions.contains(&"events:write".to_string()));
     }
 
+    fn build_test_schema_with_claims(
+        claims: Option<Claims>,
+    ) -> async_graphql::Schema<
+        QueryRoot,
+        async_graphql::EmptyMutation,
+        async_graphql::EmptySubscription,
+    > {
+        let mut builder = async_graphql::Schema::build(
+            QueryRoot,
+            async_graphql::EmptyMutation,
+            async_graphql::EmptySubscription,
+        );
+        if let Some(c) = claims {
+            builder = builder.data(c);
+        }
+        builder.finish()
+    }
+
+    #[tokio::test]
+    async fn test_require_auth_with_valid_claims_returns_data() {
+        let claims = create_test_claims(vec![], vec![]);
+        let schema = build_test_schema_with_claims(Some(claims));
+        let response = schema.execute("{ protectedField }").await;
+        assert!(
+            response.errors.is_empty(),
+            "expected no errors, got: {:?}",
+            response.errors
+        );
+        assert_eq!(
+            response.data.into_json().unwrap()["protectedField"],
+            serde_json::json!("Protected data")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_require_auth_without_claims_returns_error() {
+        let schema = build_test_schema_with_claims(None);
+        let response = schema.execute("{ protectedField }").await;
+        assert!(
+            !response.errors.is_empty(),
+            "expected an authentication error"
+        );
+        let error_msg = response.errors[0].message.to_lowercase();
+        assert!(
+            error_msg.contains("unauthorized") || error_msg.contains("authentication"),
+            "unexpected error message: {}",
+            error_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_require_roles_with_admin_role_returns_data() {
+        let claims = create_test_claims(vec!["admin".to_string()], vec![]);
+        let schema = build_test_schema_with_claims(Some(claims));
+        let response = schema.execute("{ adminField }").await;
+        assert!(
+            response.errors.is_empty(),
+            "expected no errors, got: {:?}",
+            response.errors
+        );
+        assert_eq!(
+            response.data.into_json().unwrap()["adminField"],
+            serde_json::json!("Admin data")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_require_roles_without_admin_role_returns_error() {
+        let claims = create_test_claims(vec!["user".to_string()], vec![]);
+        let schema = build_test_schema_with_claims(Some(claims));
+        let response = schema.execute("{ adminField }").await;
+        assert!(!response.errors.is_empty(), "expected a role error");
+    }
+
+    #[tokio::test]
+    async fn test_require_permissions_with_valid_permission_returns_data() {
+        let claims = create_test_claims(vec![], vec!["events:write".to_string()]);
+        let schema = build_test_schema_with_claims(Some(claims));
+        let response = schema.execute("{ eventsWriteField }").await;
+        assert!(
+            response.errors.is_empty(),
+            "expected no errors, got: {:?}",
+            response.errors
+        );
+        assert_eq!(
+            response.data.into_json().unwrap()["eventsWriteField"],
+            serde_json::json!("Events data")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_require_permissions_without_permission_returns_error() {
+        let claims = create_test_claims(vec![], vec![]);
+        let schema = build_test_schema_with_claims(Some(claims));
+        let response = schema.execute("{ eventsWriteField }").await;
+        assert!(!response.errors.is_empty(), "expected a permission error");
+    }
+
+    #[tokio::test]
+    async fn test_public_field_without_auth_returns_data() {
+        let schema = build_test_schema_with_claims(None);
+        let response = schema.execute("{ publicField }").await;
+        assert!(
+            response.errors.is_empty(),
+            "expected no errors, got: {:?}",
+            response.errors
+        );
+        assert_eq!(
+            response.data.into_json().unwrap()["publicField"],
+            serde_json::json!("Public data")
+        );
+    }
+
     // Mock schema for testing
-    #[allow(dead_code)]
     struct QueryRoot;
 
     #[Object]

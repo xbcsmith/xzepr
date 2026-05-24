@@ -42,8 +42,6 @@ pub struct PrometheusMetrics {
 
     // System metrics
     uptime_seconds: Gauge,
-    #[allow(dead_code)]
-    info: GaugeVec,
 }
 
 impl PrometheusMetrics {
@@ -246,7 +244,6 @@ impl PrometheusMetrics {
             http_request_duration_seconds,
             active_connections,
             uptime_seconds,
-            info,
             opa_authorization_requests_total,
             opa_authorization_duration_seconds,
             opa_authorization_denials_total,

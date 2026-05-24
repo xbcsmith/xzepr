@@ -17,14 +17,8 @@ pub use group_membership::{
 };
 pub use routes::build_protected_router;
 
-/// Re-export common types for convenience
-pub use axum::{
-    extract::{Path, Query, State},
-    http::StatusCode,
-    response::Json,
-    routing::{delete, get, post, put},
-    Router,
-};
+use axum::http::StatusCode;
+use axum::response::Json;
 
 /// Common result type for REST handlers
 pub type RestResult<T> = Result<T, (StatusCode, Json<ErrorResponse>)>;

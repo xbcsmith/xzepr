@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use crate::api::graphql::types::*;
 use crate::api::middleware::jwt::AuthenticatedUser;
+use crate::application::handlers::event_receiver_group_handler::CreateEventReceiverGroupParams;
 use crate::application::handlers::{EventHandler, EventReceiverGroupHandler, EventReceiverHandler};
 use crate::domain::entities::event::CreateEventParams;
 use crate::domain::repositories::event_receiver_group_repo::FindEventReceiverGroupCriteria;
@@ -269,15 +270,15 @@ impl Mutation {
         let receiver_ids = parse_event_receiver_ids(&event_receiver_group.event_receiver_ids)?;
 
         match handler
-            .create_event_receiver_group(
-                event_receiver_group.name,
-                event_receiver_group.group_type,
-                event_receiver_group.version,
-                event_receiver_group.description,
-                event_receiver_group.enabled,
-                receiver_ids,
+            .create_event_receiver_group(CreateEventReceiverGroupParams {
+                name: event_receiver_group.name,
+                group_type: event_receiver_group.group_type,
+                version: event_receiver_group.version,
+                description: event_receiver_group.description,
+                enabled: event_receiver_group.enabled,
+                event_receiver_ids: receiver_ids,
                 owner_id,
-            )
+            })
             .await
         {
             Ok(group_id) => Ok(ID(group_id.to_string())),

@@ -17,6 +17,42 @@ use crate::error::{DomainError, Result};
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
+/// Parameters for creating a new event receiver group.
+///
+/// # Examples
+///
+/// ```rust
+/// use xzepr::application::handlers::event_receiver_group_handler::CreateEventReceiverGroupParams;
+/// use xzepr::domain::value_objects::{EventReceiverId, UserId};
+///
+/// let params = CreateEventReceiverGroupParams {
+///     name: "My Group".to_string(),
+///     group_type: "webhook_group".to_string(),
+///     version: "1.0.0".to_string(),
+///     description: "A webhook event receiver group".to_string(),
+///     enabled: true,
+///     event_receiver_ids: vec![],
+///     owner_id: UserId::new(),
+/// };
+/// ```
+#[derive(Debug, Clone)]
+pub struct CreateEventReceiverGroupParams {
+    /// Human-readable name for the group.
+    pub name: String,
+    /// Logical type used to group related receivers.
+    pub group_type: String,
+    /// Semantic version of the group definition.
+    pub version: String,
+    /// Human-readable description.
+    pub description: String,
+    /// Whether the group is active.
+    pub enabled: bool,
+    /// IDs of event receivers belonging to this group.
+    pub event_receiver_ids: Vec<EventReceiverId>,
+    /// ID of the user creating the group.
+    pub owner_id: crate::domain::value_objects::UserId,
+}
+
 /// Parameters for updating an event receiver group
 #[derive(Debug, Clone, Default)]
 pub struct UpdateEventReceiverGroupParams {
@@ -98,36 +134,43 @@ impl EventReceiverGroupHandler {
         self
     }
 
-    /// Creates a new event receiver group
-    #[allow(clippy::too_many_arguments)]
+    /// Creates a new event receiver group.
+    ///
+    /// # Arguments
+    ///
+    /// * `params` - Struct containing all fields required to create the group.
+    ///
+    /// # Returns
+    ///
+    /// Returns the ID of the newly created group on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a group with the same name and type already exists,
+    /// if any referenced receiver does not exist or is not owned by the caller,
+    /// or if the domain entity fails validation.
     pub async fn create_event_receiver_group(
         &self,
-        name: String,
-        group_type: String,
-        version: String,
-        description: String,
-        enabled: bool,
-        event_receiver_ids: Vec<EventReceiverId>,
-        owner_id: crate::domain::value_objects::UserId,
+        params: CreateEventReceiverGroupParams,
     ) -> Result<EventReceiverGroupId> {
         info!(
-            name = %name,
-            group_type = %group_type,
-            version = %version,
-            enabled = %enabled,
-            receiver_count = %event_receiver_ids.len(),
+            name = %params.name,
+            group_type = %params.group_type,
+            version = %params.version,
+            enabled = %params.enabled,
+            receiver_count = %params.event_receiver_ids.len(),
             "Creating new event receiver group"
         );
 
         // Check if a group with the same name and type already exists
         if self
             .group_repository
-            .exists_by_name_and_type(&name, &group_type)
+            .exists_by_name_and_type(&params.name, &params.group_type)
             .await?
         {
             warn!(
-                name = %name,
-                group_type = %group_type,
+                name = %params.name,
+                group_type = %params.group_type,
                 "Event receiver group with same name and type already exists"
             );
             return Err(DomainError::BusinessRuleViolation {
@@ -137,7 +180,7 @@ impl EventReceiverGroupHandler {
         }
 
         // Validate that all event receivers exist and belong to the creator.
-        for receiver_id in &event_receiver_ids {
+        for receiver_id in &params.event_receiver_ids {
             let receiver = self
                 .receiver_repository
                 .find_by_id(*receiver_id)
@@ -147,10 +190,10 @@ impl EventReceiverGroupHandler {
                     crate::error::Error::from(DomainError::ReceiverNotFound)
                 })?;
 
-            if receiver.owner_id() != owner_id {
+            if receiver.owner_id() != params.owner_id {
                 warn!(
                     receiver_id = %receiver_id,
-                    owner_id = %owner_id,
+                    owner_id = %params.owner_id,
                     "User attempted to create a group with a receiver they do not own"
                 );
                 return Err(crate::error::AuthorizationError::PermissionDenied.into());
@@ -159,13 +202,13 @@ impl EventReceiverGroupHandler {
 
         // Create the domain entity
         let event_receiver_group = EventReceiverGroup::new(
-            name,
-            group_type,
-            version,
-            description,
-            enabled,
-            event_receiver_ids,
-            owner_id,
+            params.name,
+            params.group_type,
+            params.version,
+            params.description,
+            params.enabled,
+            params.event_receiver_ids,
+            params.owner_id,
         )?;
 
         let group_id = event_receiver_group.id();
@@ -1237,15 +1280,15 @@ mod tests {
         receiver_repo.add_receiver(receiver);
 
         let result = handler
-            .create_event_receiver_group(
-                "Test Group".to_string(),
-                "webhook_group".to_string(),
-                "1.0.0".to_string(),
-                "A test group".to_string(),
-                true,
-                vec![receiver_id],
+            .create_event_receiver_group(CreateEventReceiverGroupParams {
+                name: "Test Group".to_string(),
+                group_type: "webhook_group".to_string(),
+                version: "1.0.0".to_string(),
+                description: "A test group".to_string(),
+                enabled: true,
+                event_receiver_ids: vec![receiver_id],
                 owner_id,
-            )
+            })
             .await;
 
         assert!(result.is_ok());
@@ -1269,15 +1312,15 @@ mod tests {
         let nonexistent_receiver_id = EventReceiverId::new();
 
         let result = handler
-            .create_event_receiver_group(
-                "Test Group".to_string(),
-                "webhook_group".to_string(),
-                "1.0.0".to_string(),
-                "A test group".to_string(),
-                true,
-                vec![nonexistent_receiver_id],
-                crate::domain::value_objects::UserId::new(),
-            )
+            .create_event_receiver_group(CreateEventReceiverGroupParams {
+                name: "Test Group".to_string(),
+                group_type: "webhook_group".to_string(),
+                version: "1.0.0".to_string(),
+                description: "A test group".to_string(),
+                enabled: true,
+                event_receiver_ids: vec![nonexistent_receiver_id],
+                owner_id: crate::domain::value_objects::UserId::new(),
+            })
             .await;
 
         assert!(result.is_err());
@@ -1305,15 +1348,15 @@ mod tests {
 
         // Create a disabled group
         let group_id = handler
-            .create_event_receiver_group(
-                "Test Group".to_string(),
-                "webhook_group".to_string(),
-                "1.0.0".to_string(),
-                "A test group".to_string(),
-                false,
-                vec![receiver_id],
+            .create_event_receiver_group(CreateEventReceiverGroupParams {
+                name: "Test Group".to_string(),
+                group_type: "webhook_group".to_string(),
+                version: "1.0.0".to_string(),
+                description: "A test group".to_string(),
+                enabled: false,
+                event_receiver_ids: vec![receiver_id],
                 owner_id,
-            )
+            })
             .await
             .unwrap();
 

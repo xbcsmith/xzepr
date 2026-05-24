@@ -45,14 +45,9 @@ pub struct ServerConfig {
     pub enable_https: bool,
 }
 
+/// Authentication configuration including JWT settings and provider options.
 #[derive(Debug, Deserialize)]
 pub struct AuthConfig {
-    // Legacy fields (deprecated)
-    #[deprecated(note = "Use jwt.secret_key instead")]
-    pub jwt_secret: Option<String>,
-    #[deprecated(note = "Use jwt.access_token_expiration_seconds instead")]
-    pub jwt_expiration_hours: Option<i64>,
-
     // JWT configuration
     pub jwt: JwtAuthConfig,
 
@@ -117,6 +112,26 @@ pub struct TlsConfig {
 }
 
 impl Settings {
+    /// Loads configuration from files and environment variables.
+    ///
+    /// Configuration is layered in this order (later sources override earlier):
+    /// 1. Built-in defaults
+    /// 2. `config/default.yaml`
+    /// 3. `config/{RUST_ENV}.yaml` (where `RUST_ENV` defaults to `"development"`)
+    /// 4. Environment variables with prefix `XZEPR` and separator `__`
+    ///
+    /// # Errors
+    ///
+    /// Returns `ConfigError` if the configuration cannot be built or deserialized.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use xzepr::infrastructure::config::Settings;
+    ///
+    /// let settings = Settings::new().expect("configuration should load");
+    /// println!("Listening on {}:{}", settings.server.host, settings.server.port);
+    /// ```
     pub fn new() -> Result<Self, ConfigError> {
         let mut builder = Config::builder()
             // Start with default values
