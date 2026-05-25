@@ -188,6 +188,8 @@ pub struct FindEventReceiverGroupCriteria {
     pub version: Option<String>,
     pub enabled: Option<bool>,
     pub contains_receiver_id: Option<EventReceiverId>,
+    /// Owner filter; when set, only groups owned by this user are returned.
+    pub owner_id: Option<UserId>,
     pub limit: Option<usize>,
     pub offset: Option<usize>,
 }
@@ -234,6 +236,12 @@ impl FindEventReceiverGroupCriteria {
         self
     }
 
+    /// Sets the owner ID filter.
+    pub fn with_owner_id(mut self, owner_id: UserId) -> Self {
+        self.owner_id = Some(owner_id);
+        self
+    }
+
     /// Sets pagination limit
     pub fn with_limit(mut self, limit: usize) -> Self {
         self.limit = Some(limit);
@@ -254,6 +262,7 @@ impl FindEventReceiverGroupCriteria {
             && self.version.is_none()
             && self.enabled.is_none()
             && self.contains_receiver_id.is_none()
+            && self.owner_id.is_none()
     }
 }
 
@@ -294,5 +303,18 @@ mod tests {
 
         let disabled_criteria = FindEventReceiverGroupCriteria::new().with_enabled(false);
         assert_eq!(disabled_criteria.enabled, Some(false));
+    }
+
+    #[test]
+    fn test_find_event_receiver_group_criteria_with_owner_id() {
+        let owner_id = UserId::new();
+        let criteria = FindEventReceiverGroupCriteria::new().with_owner_id(owner_id);
+        assert_eq!(criteria.owner_id, Some(owner_id));
+    }
+
+    #[test]
+    fn test_find_event_receiver_group_criteria_is_not_empty_with_owner_id() {
+        let criteria = FindEventReceiverGroupCriteria::new().with_owner_id(UserId::new());
+        assert!(!criteria.is_empty());
     }
 }

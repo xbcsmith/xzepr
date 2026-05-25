@@ -11,6 +11,7 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 use crate::api::graphql::Schema;
 use crate::api::middleware::jwt::AuthenticatedUser;
@@ -120,6 +121,25 @@ pub async fn graphql_handler(
 /// The playground will be configured to send queries to `/graphql`.
 pub async fn graphql_playground(State(_schema): State<Schema>) -> impl IntoResponse {
     Html(playground_source(GraphQLPlaygroundConfig::new("/graphql")))
+}
+
+/// Returns 403 Forbidden for GraphQL Playground when disabled by configuration.
+///
+/// This handler is registered on the playground route when
+/// `graphql.playground_enabled` is `false` so that clients receive a
+/// clear HTTP response rather than an HTML 404 from the framework.
+///
+/// # Returns
+///
+/// A 403 Forbidden JSON response with a stable `"code": "FORBIDDEN"` body.
+pub async fn graphql_playground_disabled() -> impl IntoResponse {
+    (
+        StatusCode::FORBIDDEN,
+        Json(json!({
+            "error": "GraphQL Playground is disabled",
+            "code": "FORBIDDEN"
+        })),
+    )
 }
 
 /// Health check endpoint for GraphQL
@@ -597,10 +617,14 @@ mod tests {
 
     fn create_test_authenticated_user() -> AuthenticatedUser {
         use crate::auth::jwt::claims::Claims;
+        use crate::domain::value_objects::UserId;
         use chrono::Duration;
 
+        // Use a valid ULID string so parse_caller_user_id succeeds in auth-required resolvers.
+        let user_id = UserId::new().to_string();
+
         let claims = Claims::new_access_token(
-            "test-user".to_string(),
+            user_id,
             vec!["user".to_string()],
             vec!["read:events".to_string()],
             "xzepr".to_string(),
@@ -684,6 +708,23 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(json["status"], "healthy");
         assert_eq!(json["service"], "graphql");
+    }
+
+    #[tokio::test]
+    async fn test_graphql_playground_disabled_returns_403() {
+        let response = graphql_playground_disabled().await.into_response();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            response
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or_default()
+                .split(';')
+                .next(),
+            Some("application/json")
+        );
     }
 
     #[tokio::test]

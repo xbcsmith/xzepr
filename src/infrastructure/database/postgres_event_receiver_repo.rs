@@ -83,6 +83,12 @@ impl PostgresEventReceiverRepository {
         if let Some(fingerprint) = &criteria.fingerprint {
             conditions.push(format!("fingerprint = ${}", param_count));
             params.push(fingerprint.clone());
+            param_count += 1;
+        }
+
+        if let Some(owner_id) = &criteria.owner_id {
+            conditions.push(format!("owner_id = ${}", param_count));
+            params.push(owner_id.to_string());
         }
 
         let where_clause = if conditions.is_empty() {
@@ -413,6 +419,9 @@ impl EventReceiverRepository for PostgresEventReceiverRepository {
         }
         if let Some(fingerprint) = &criteria.fingerprint {
             sql_query = sql_query.bind(fingerprint);
+        }
+        if let Some(owner_id) = &criteria.owner_id {
+            sql_query = sql_query.bind(owner_id.to_string());
         }
 
         let rows = sql_query

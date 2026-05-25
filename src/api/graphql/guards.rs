@@ -6,7 +6,10 @@
 use async_graphql::*;
 use std::sync::Arc;
 
+use crate::api::graphql::error_codes;
+use crate::api::middleware::jwt::AuthenticatedUser;
 use crate::auth::jwt::claims::Claims;
+use crate::domain::value_objects::UserId;
 
 /// Authentication check for GraphQL resolvers
 ///
@@ -154,6 +157,71 @@ pub mod helpers {
     }
 }
 
+/// Extracts the authenticated user from the GraphQL context.
+///
+/// This is the correct guard to use in production resolvers because
+/// the `graphql_handler` injects `AuthenticatedUser`, not `Claims`.
+///
+/// # Arguments
+///
+/// * `ctx` - The current resolver context.
+///
+/// # Returns
+///
+/// A reference to the [`AuthenticatedUser`] stored in the context.
+///
+/// # Errors
+///
+/// Returns `UNAUTHENTICATED` if no `AuthenticatedUser` is present in the
+/// context (i.e., the request reached the resolver without a valid JWT).
+pub fn require_authenticated_user<'a>(ctx: &Context<'a>) -> Result<&'a AuthenticatedUser> {
+    ctx.data_opt::<AuthenticatedUser>()
+        .ok_or_else(|| error_codes::unauthenticated("Authentication required"))
+}
+
+/// Parses the caller's user ID from an [`AuthenticatedUser`].
+///
+/// # Arguments
+///
+/// * `user` - The authenticated user whose `sub` claim is parsed.
+///
+/// # Returns
+///
+/// The parsed [`UserId`].
+///
+/// # Errors
+///
+/// Returns `VALIDATION_ERROR` if the subject claim is not a valid [`UserId`].
+pub fn parse_caller_user_id(user: &AuthenticatedUser) -> Result<UserId> {
+    UserId::parse(user.user_id())
+        .map_err(|e| error_codes::validation_error(&format!("Invalid user ID in token: {}", e)))
+}
+
+/// Asserts that `caller` is the owner of a resource.
+///
+/// # Arguments
+///
+/// * `caller` - The [`UserId`] making the request.
+/// * `resource_owner` - The [`UserId`] that owns the resource.
+/// * `resource` - A human-readable label for the resource type (e.g., `"event"`).
+///
+/// # Returns
+///
+/// `Ok(())` when `caller == resource_owner`.
+///
+/// # Errors
+///
+/// Returns `FORBIDDEN` if `caller != resource_owner`.
+pub fn require_ownership(caller: UserId, resource_owner: UserId, resource: &str) -> Result<()> {
+    if caller != resource_owner {
+        return Err(error_codes::forbidden(&format!(
+            "You do not own this {}",
+            resource
+        )));
+    }
+    Ok(())
+}
+
 /// Query complexity configuration
 #[derive(Debug, Clone)]
 pub struct ComplexityConfig {
@@ -163,6 +231,10 @@ pub struct ComplexityConfig {
     pub max_depth: usize,
     /// Whether to enforce complexity limits
     pub enforce: bool,
+    /// Whether the GraphQL Playground IDE is exposed.
+    ///
+    /// Must be `false` in production. Defaults to `false`.
+    pub playground_enabled: bool,
 }
 
 impl Default for ComplexityConfig {
@@ -171,6 +243,7 @@ impl Default for ComplexityConfig {
             max_complexity: 100,
             max_depth: 10,
             enforce: true,
+            playground_enabled: false,
         }
     }
 }
@@ -181,6 +254,7 @@ impl From<&crate::infrastructure::config::GraphqlConfig> for ComplexityConfig {
             max_complexity: config.max_complexity,
             max_depth: config.max_depth,
             enforce: config.enforce_complexity,
+            playground_enabled: config.playground_enabled,
         }
     }
 }
@@ -207,24 +281,31 @@ impl ComplexityConfig {
             max_complexity,
             max_depth,
             enforce,
+            playground_enabled: false,
         }
     }
 
-    /// Creates a permissive config for development
+    /// Creates a permissive config for development.
+    ///
+    /// Playground is enabled in dev mode only.
     pub fn permissive() -> Self {
         Self {
             max_complexity: 1000,
             max_depth: 20,
             enforce: false,
+            playground_enabled: true,
         }
     }
 
-    /// Creates a strict config for production
+    /// Creates a strict config for production.
+    ///
+    /// Playground is disabled; all complexity limits are enforced.
     pub fn production() -> Self {
         Self {
             max_complexity: 50,
             max_depth: 8,
             enforce: true,
+            playground_enabled: false,
         }
     }
 }
@@ -306,6 +387,7 @@ mod tests {
         assert_eq!(config.max_complexity, 100);
         assert_eq!(config.max_depth, 10);
         assert!(config.enforce);
+        assert!(!config.playground_enabled);
     }
 
     #[test]
@@ -314,6 +396,10 @@ mod tests {
         assert_eq!(config.max_complexity, 1000);
         assert_eq!(config.max_depth, 20);
         assert!(!config.enforce);
+        assert!(
+            config.playground_enabled,
+            "permissive config should enable playground"
+        );
     }
 
     #[test]
@@ -322,6 +408,10 @@ mod tests {
         assert_eq!(config.max_complexity, 50);
         assert_eq!(config.max_depth, 8);
         assert!(config.enforce);
+        assert!(
+            !config.playground_enabled,
+            "production config must disable playground"
+        );
     }
 
     #[test]
@@ -465,6 +555,138 @@ mod tests {
         );
     }
 
+    /// Builds a test schema that injects the given `AuthenticatedUser` into context.
+    fn build_test_schema_with_auth_user(
+        user: Option<AuthenticatedUser>,
+    ) -> async_graphql::Schema<
+        QueryRoot,
+        async_graphql::EmptyMutation,
+        async_graphql::EmptySubscription,
+    > {
+        let mut builder = async_graphql::Schema::build(
+            QueryRoot,
+            async_graphql::EmptyMutation,
+            async_graphql::EmptySubscription,
+        );
+        if let Some(u) = user {
+            builder = builder.data(u);
+        }
+        builder.finish()
+    }
+
+    /// Creates an `AuthenticatedUser` with a custom `sub` claim.
+    fn create_user_with_sub(sub: impl Into<String>) -> AuthenticatedUser {
+        let base = create_test_claims(vec![], vec![]);
+        AuthenticatedUser {
+            claims: Claims {
+                sub: sub.into(),
+                ..base
+            },
+        }
+    }
+
+    /// Extracts the extension code string from a `ServerError`, if present.
+    fn server_error_code(err: &async_graphql::ServerError) -> Option<String> {
+        err.extensions
+            .as_ref()
+            .and_then(|ext| ext.get("code"))
+            .and_then(|v| {
+                if let async_graphql::Value::String(s) = v {
+                    Some(s.clone())
+                } else {
+                    None
+                }
+            })
+    }
+
+    #[tokio::test]
+    async fn test_require_authenticated_user_with_user_returns_user() {
+        let user = create_user_with_sub("test-user");
+        let schema = build_test_schema_with_auth_user(Some(user));
+        let response = schema.execute("{ authUserField }").await;
+        assert!(
+            response.errors.is_empty(),
+            "expected no errors, got: {:?}",
+            response.errors
+        );
+    }
+
+    #[tokio::test]
+    async fn test_require_authenticated_user_without_user_returns_unauthenticated() {
+        let schema = build_test_schema_with_auth_user(None);
+        let response = schema.execute("{ authUserField }").await;
+        assert!(
+            !response.errors.is_empty(),
+            "expected an authentication error"
+        );
+        assert_eq!(
+            server_error_code(&response.errors[0]),
+            Some(crate::api::graphql::error_codes::CODE_UNAUTHENTICATED.to_string()),
+            "expected UNAUTHENTICATED extension code"
+        );
+    }
+
+    #[test]
+    fn test_parse_caller_user_id_with_valid_id_returns_id() {
+        let valid_id = UserId::new().to_string();
+        let user = create_user_with_sub(&valid_id);
+        let result = parse_caller_user_id(&user);
+        assert!(result.is_ok(), "valid ULID should parse: {:?}", result);
+        assert_eq!(result.unwrap().to_string(), valid_id);
+    }
+
+    #[test]
+    fn test_parse_caller_user_id_with_invalid_id_returns_error() {
+        let user = create_user_with_sub("not-a-ulid");
+        let result = parse_caller_user_id(&user);
+        assert!(result.is_err(), "invalid ULID should fail");
+        let err = result.unwrap_err();
+        assert_eq!(
+            err.extensions
+                .as_ref()
+                .and_then(|e| e.get("code"))
+                .and_then(|v| {
+                    if let async_graphql::Value::String(s) = v {
+                        Some(s.as_str())
+                    } else {
+                        None
+                    }
+                }),
+            Some(crate::api::graphql::error_codes::CODE_VALIDATION_ERROR),
+            "expected VALIDATION_ERROR extension code"
+        );
+    }
+
+    #[test]
+    fn test_require_ownership_same_owner_returns_ok() {
+        let id = UserId::new();
+        let result = require_ownership(id, id, "event");
+        assert!(result.is_ok(), "same owner should succeed");
+    }
+
+    #[test]
+    fn test_require_ownership_different_owner_returns_forbidden() {
+        let caller = UserId::new();
+        let owner = UserId::new();
+        let result = require_ownership(caller, owner, "event");
+        assert!(result.is_err(), "different owner should fail");
+        let err = result.unwrap_err();
+        assert_eq!(
+            err.extensions
+                .as_ref()
+                .and_then(|e| e.get("code"))
+                .and_then(|v| {
+                    if let async_graphql::Value::String(s) = v {
+                        Some(s.as_str())
+                    } else {
+                        None
+                    }
+                }),
+            Some(crate::api::graphql::error_codes::CODE_FORBIDDEN),
+            "expected FORBIDDEN extension code"
+        );
+    }
+
     // Mock schema for testing
     struct QueryRoot;
 
@@ -487,6 +709,12 @@ mod tests {
         async fn events_write_field(&self, ctx: &Context<'_>) -> Result<String> {
             require_permissions(ctx, &["events:write"])?;
             Ok("Events data".to_string())
+        }
+
+        /// Resolver used to test `require_authenticated_user`.
+        async fn auth_user_field(&self, ctx: &Context<'_>) -> Result<String> {
+            let user = require_authenticated_user(ctx)?;
+            Ok(format!("Authenticated as: {}", user.user_id()))
         }
     }
 }

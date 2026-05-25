@@ -19,6 +19,7 @@ use serde_json::json;
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 
+use crate::api::graphql::handlers::graphql_playground_disabled;
 use crate::api::graphql::{
     create_schema_with_config, graphql_handler, graphql_health, graphql_playground,
     ComplexityConfig,
@@ -251,14 +252,23 @@ where
             jwt_auth_middleware,
         ));
 
-    let public_graphql_routes = Router::new()
-        .route("/graphql/playground", get(graphql_playground))
-        .route("/graphql/health", get(graphql_health))
-        .with_state(schema.clone())
-        .layer(middleware::from_fn_with_state(
-            rate_limiter.clone(),
-            crate::api::middleware::rate_limit::rate_limit_middleware,
-        ));
+    let playground_enabled = config.graphql.playground_enabled;
+    tracing::info!(playground_enabled, "GraphQL Playground exposure");
+
+    let public_graphql_routes = if playground_enabled {
+        Router::new()
+            .route("/graphql/playground", get(graphql_playground))
+            .route("/graphql/health", get(graphql_health))
+            .with_state(schema.clone())
+    } else {
+        Router::new()
+            .route("/graphql/playground", get(graphql_playground_disabled))
+            .route("/graphql/health", get(graphql_health))
+    };
+    let public_graphql_routes = public_graphql_routes.layer(middleware::from_fn_with_state(
+        rate_limiter.clone(),
+        crate::api::middleware::rate_limit::rate_limit_middleware,
+    ));
 
     let protected_graphql_routes = Router::new()
         .route("/graphql", post(graphql_handler))
@@ -600,6 +610,15 @@ graphql:
 "#,
         )
         .expect("router test settings should deserialize")
+    }
+
+    #[test]
+    fn test_router_config_playground_disabled_by_default() {
+        let config = RouterConfig::production().expect("production router config should build");
+        assert!(
+            !config.graphql.playground_enabled,
+            "playground must be disabled in production config"
+        );
     }
 
     #[test]

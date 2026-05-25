@@ -4,7 +4,7 @@
 // src/domain/repositories/event_receiver_repo.rs
 
 use crate::domain::entities::event_receiver::EventReceiver;
-use crate::domain::value_objects::EventReceiverId;
+use crate::domain::value_objects::{EventReceiverId, UserId};
 use crate::error::Result;
 use async_trait::async_trait;
 
@@ -87,6 +87,8 @@ pub struct FindEventReceiverCriteria {
     pub receiver_type: Option<String>,
     pub version: Option<String>,
     pub fingerprint: Option<String>,
+    /// Owner filter; when set, only receivers owned by this user are returned.
+    pub owner_id: Option<UserId>,
     pub limit: Option<usize>,
     pub offset: Option<usize>,
 }
@@ -127,6 +129,12 @@ impl FindEventReceiverCriteria {
         self
     }
 
+    /// Sets the owner ID filter.
+    pub fn with_owner_id(mut self, owner_id: UserId) -> Self {
+        self.owner_id = Some(owner_id);
+        self
+    }
+
     /// Sets pagination limit
     pub fn with_limit(mut self, limit: usize) -> Self {
         self.limit = Some(limit);
@@ -146,6 +154,7 @@ impl FindEventReceiverCriteria {
             && self.receiver_type.is_none()
             && self.version.is_none()
             && self.fingerprint.is_none()
+            && self.owner_id.is_none()
     }
 }
 
@@ -172,5 +181,18 @@ mod tests {
     fn test_empty_criteria() {
         let criteria = FindEventReceiverCriteria::new();
         assert!(criteria.is_empty());
+    }
+
+    #[test]
+    fn test_find_event_receiver_criteria_with_owner_id() {
+        let owner_id = UserId::new();
+        let criteria = FindEventReceiverCriteria::new().with_owner_id(owner_id);
+        assert_eq!(criteria.owner_id, Some(owner_id));
+    }
+
+    #[test]
+    fn test_find_event_receiver_criteria_is_not_empty_with_owner_id() {
+        let criteria = FindEventReceiverCriteria::new().with_owner_id(UserId::new());
+        assert!(!criteria.is_empty());
     }
 }

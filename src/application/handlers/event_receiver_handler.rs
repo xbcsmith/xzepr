@@ -231,6 +231,41 @@ impl EventReceiverHandler {
         self.repository.find_by_criteria(criteria).await
     }
 
+    /// Finds event receivers owned by a specific user using repository criteria.
+    ///
+    /// This is the owner-scoped version of `find_by_criteria`. The `owner_id`
+    /// is always forced onto the criteria before delegation so that callers
+    /// cannot accidentally query across ownership boundaries.
+    ///
+    /// # Arguments
+    ///
+    /// * `criteria` - Search criteria; `owner_id` is replaced by `owner_id` arg.
+    /// * `owner_id` - ID of the authenticated user making the request.
+    ///
+    /// # Returns
+    ///
+    /// Returns all event receivers matching the criteria that belong to `owner_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error` if the repository query fails.
+    pub async fn find_event_receivers_for_user(
+        &self,
+        mut criteria: FindEventReceiverCriteria,
+        owner_id: UserId,
+    ) -> Result<Vec<EventReceiver>> {
+        criteria = criteria.with_owner_id(owner_id);
+
+        if criteria.limit.is_none() {
+            criteria = criteria.with_limit(50);
+        }
+        if criteria.offset.is_none() {
+            criteria = criteria.with_offset(0);
+        }
+
+        self.repository.find_by_criteria(criteria).await
+    }
+
     /// Lists all event receivers with pagination
     pub async fn list_event_receivers(
         &self,
@@ -676,5 +711,21 @@ mod tests {
         // Test valid limits
         let result3 = handler.list_event_receivers(10, 0).await;
         assert!(result3.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_find_event_receivers_for_user_scopes_by_owner() {
+        let repository = Arc::new(MockEventReceiverRepository::new());
+        let handler = EventReceiverHandler::new(repository);
+
+        let owner_id = UserId::new();
+        let criteria = FindEventReceiverCriteria::new();
+
+        let result = handler
+            .find_event_receivers_for_user(criteria, owner_id)
+            .await;
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
     }
 }

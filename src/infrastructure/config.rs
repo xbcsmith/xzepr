@@ -236,6 +236,11 @@ pub struct GraphqlConfig {
     /// Whether GraphQL complexity and depth limits are enforced.
     #[serde(default = "default_graphql_enforce_complexity")]
     pub enforce_complexity: bool,
+    /// Whether the GraphQL Playground IDE is exposed.
+    ///
+    /// Must be `false` in production. Defaults to `false`.
+    #[serde(default)]
+    pub playground_enabled: bool,
 }
 
 impl Default for GraphqlConfig {
@@ -244,6 +249,7 @@ impl Default for GraphqlConfig {
             max_complexity: default_graphql_max_complexity(),
             max_depth: default_graphql_max_depth(),
             enforce_complexity: default_graphql_enforce_complexity(),
+            playground_enabled: false,
         }
     }
 }
@@ -260,6 +266,9 @@ pub enum GraphqlConfigError {
     /// GraphQL complexity enforcement is disabled in production.
     #[error("GraphQL complexity enforcement must be enabled in production")]
     EnforcementDisabled,
+    /// GraphQL Playground is exposed in production.
+    #[error("GraphQL playground must be disabled in production")]
+    PlaygroundEnabledInProduction,
 }
 
 impl GraphqlConfig {
@@ -267,7 +276,8 @@ impl GraphqlConfig {
     ///
     /// # Errors
     ///
-    /// Returns `GraphqlConfigError` if complexity limits are zero or disabled.
+    /// Returns `GraphqlConfigError` if complexity limits are zero, enforcement
+    /// is disabled, or the Playground IDE is exposed.
     pub fn validate_production(&self) -> Result<(), GraphqlConfigError> {
         if self.max_complexity == 0 {
             return Err(GraphqlConfigError::ZeroMaxComplexity);
@@ -277,6 +287,9 @@ impl GraphqlConfig {
         }
         if !self.enforce_complexity {
             return Err(GraphqlConfigError::EnforcementDisabled);
+        }
+        if self.playground_enabled {
+            return Err(GraphqlConfigError::PlaygroundEnabledInProduction);
         }
         Ok(())
     }
@@ -1430,6 +1443,28 @@ graphql:
                 GraphqlConfigError::EnforcementDisabled
             ))
         ));
+    }
+
+    #[test]
+    fn test_validate_production_rejects_playground_enabled() {
+        let mut settings = valid_production_settings();
+        settings.graphql.playground_enabled = true;
+        let result = settings.validate_production();
+        assert!(matches!(
+            result,
+            Err(SettingsValidationError::Graphql(
+                GraphqlConfigError::PlaygroundEnabledInProduction
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_graphql_config_default_playground_disabled() {
+        let config = GraphqlConfig::default();
+        assert!(
+            !config.playground_enabled,
+            "playground must be disabled by default"
+        );
     }
 
     #[test]

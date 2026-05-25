@@ -578,6 +578,11 @@ impl EventReceiverGroupRepository for PostgresEventReceiverGroupRepository {
             param_count += 1;
         }
 
+        if criteria.owner_id.is_some() {
+            conditions.push(format!("g.owner_id = ${}", param_count));
+            param_count += 1;
+        }
+
         let where_clause = if conditions.is_empty() {
             String::new()
         } else {
@@ -639,6 +644,9 @@ impl EventReceiverGroupRepository for PostgresEventReceiverGroupRepository {
         }
         if let Some(enabled) = criteria.enabled {
             sql_query = sql_query.bind(enabled);
+        }
+        if let Some(owner_id) = &criteria.owner_id {
+            sql_query = sql_query.bind(owner_id.to_string());
         }
         if let Some(receiver_id) = &criteria.contains_receiver_id {
             sql_query = sql_query.bind(receiver_id.to_string());

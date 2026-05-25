@@ -360,6 +360,92 @@ impl EventReceiverGroupHandler {
         self.group_repository.find_by_criteria(criteria).await
     }
 
+    /// Finds event receiver groups owned by a specific user using repository criteria.
+    ///
+    /// This is the owner-scoped version of `find_by_criteria`. The `owner_id`
+    /// is always forced onto the criteria before delegation.
+    ///
+    /// # Arguments
+    ///
+    /// * `criteria` - Search criteria; `owner_id` is replaced by `owner_id` arg.
+    /// * `owner_id` - ID of the authenticated user making the request.
+    ///
+    /// # Returns
+    ///
+    /// Returns all groups matching the criteria that belong to `owner_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error` if the repository query fails.
+    pub async fn find_event_receiver_groups_for_user(
+        &self,
+        mut criteria: FindEventReceiverGroupCriteria,
+        owner_id: UserId,
+    ) -> Result<Vec<EventReceiverGroup>> {
+        criteria = criteria.with_owner_id(owner_id);
+
+        if criteria.limit.is_none() {
+            criteria = criteria.with_limit(50);
+        }
+        if criteria.offset.is_none() {
+            criteria = criteria.with_offset(0);
+        }
+
+        self.group_repository.find_by_criteria(criteria).await
+    }
+
+    /// Enables an event receiver group only when the caller owns it.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - ID of the group to enable.
+    /// * `owner_id` - ID of the authenticated user making the request.
+    ///
+    /// # Returns
+    ///
+    /// Returns the group ID on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AuthorizationError::PermissionDenied` if the caller does not own the group.
+    /// Returns `Error` if the repository query fails.
+    pub async fn enable_event_receiver_group_for_user(
+        &self,
+        id: EventReceiverGroupId,
+        owner_id: UserId,
+    ) -> Result<EventReceiverGroupId> {
+        if !self.group_repository.is_owner(id, owner_id).await? {
+            return Err(crate::error::AuthorizationError::PermissionDenied.into());
+        }
+        self.enable_event_receiver_group(id).await
+    }
+
+    /// Disables an event receiver group only when the caller owns it.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - ID of the group to disable.
+    /// * `owner_id` - ID of the authenticated user making the request.
+    ///
+    /// # Returns
+    ///
+    /// Returns the group ID on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AuthorizationError::PermissionDenied` if the caller does not own the group.
+    /// Returns `Error` if the repository query fails.
+    pub async fn disable_event_receiver_group_for_user(
+        &self,
+        id: EventReceiverGroupId,
+        owner_id: UserId,
+    ) -> Result<EventReceiverGroupId> {
+        if !self.group_repository.is_owner(id, owner_id).await? {
+            return Err(crate::error::AuthorizationError::PermissionDenied.into());
+        }
+        self.disable_event_receiver_group(id).await
+    }
+
     /// Lists all event receiver groups with pagination
     pub async fn list_event_receiver_groups(
         &self,
@@ -1377,6 +1463,57 @@ mod tests {
 
         let group_id = EventReceiverGroupId::new();
         let result = handler.get_event_receiver_group_or_error(group_id).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_find_event_receiver_groups_for_user_scopes_by_owner() {
+        let receiver_repo = Arc::new(MockEventReceiverRepository::new());
+        let group_repo = Arc::new(MockEventReceiverGroupRepository::new());
+        let handler = EventReceiverGroupHandler::new(group_repo, receiver_repo);
+
+        let owner_id = UserId::new();
+        let criteria = FindEventReceiverGroupCriteria::new();
+
+        let result = handler
+            .find_event_receiver_groups_for_user(criteria, owner_id)
+            .await;
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_enable_event_receiver_group_for_user_denies_non_owner() {
+        let receiver_repo = Arc::new(MockEventReceiverRepository::new());
+        let group_repo = Arc::new(MockEventReceiverGroupRepository::new());
+        let handler = EventReceiverGroupHandler::new(group_repo, receiver_repo);
+
+        // Mock is_owner returns Ok(false) by default, so any caller is denied.
+        let group_id = EventReceiverGroupId::new();
+        let owner_id = UserId::new();
+
+        let result = handler
+            .enable_event_receiver_group_for_user(group_id, owner_id)
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_disable_event_receiver_group_for_user_denies_non_owner() {
+        let receiver_repo = Arc::new(MockEventReceiverRepository::new());
+        let group_repo = Arc::new(MockEventReceiverGroupRepository::new());
+        let handler = EventReceiverGroupHandler::new(group_repo, receiver_repo);
+
+        // Mock is_owner returns Ok(false) by default, so any caller is denied.
+        let group_id = EventReceiverGroupId::new();
+        let owner_id = UserId::new();
+
+        let result = handler
+            .disable_event_receiver_group_for_user(group_id, owner_id)
+            .await;
+
         assert!(result.is_err());
     }
 }
