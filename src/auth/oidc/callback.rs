@@ -13,6 +13,149 @@ use thiserror::Error;
 use super::client::{OidcAuthResult, OidcClient, OidcError};
 use crate::auth::rbac::Role;
 
+// ---------------------------------------------------------------------------
+// RedirectValidationError
+// ---------------------------------------------------------------------------
+
+/// Errors returned when validating a `redirect_to` parameter.
+///
+/// Validation enforces the following rules:
+/// - `None` values are always accepted.
+/// - Relative paths (starting with `/`) are always accepted.
+/// - Absolute HTTPS URLs are accepted only when the host appears in the
+///   caller-supplied allowlist.
+/// - HTTP URLs and unrecognised formats are rejected unconditionally.
+#[derive(Error, Debug, PartialEq)]
+pub enum RedirectValidationError {
+    /// The `redirect_to` value is `Some` but contains an empty string.
+    #[error("redirect_to must not be empty")]
+    EmptyValue,
+
+    /// The URL uses the `http://` scheme, which is not allowed.
+    #[error("redirect_to must use https, not http")]
+    HttpNotAllowed,
+
+    /// The URL host is not in the configured allowlist.
+    #[error("redirect host '{host}' is not in the allowed list")]
+    HostNotAllowed {
+        /// The host that was extracted from the URL.
+        host: String,
+    },
+
+    /// The value is not `None`, not a relative path, and not a recognised
+    /// absolute URL scheme.
+    #[error("redirect_to format is not recognized")]
+    InvalidFormat,
+}
+
+// ---------------------------------------------------------------------------
+// validate_redirect_to
+// ---------------------------------------------------------------------------
+
+/// Validate a `redirect_to` parameter before storing it in an OIDC session.
+///
+/// Accepted values:
+/// - `None`: always valid (no post-login redirect).
+/// - `Some(path)` starting with `/`: always valid (server-relative path).
+/// - `Some(url)` starting with `https://`: valid when the hostname is
+///   contained in `allowed_hosts`.
+///
+/// # Arguments
+///
+/// * `redirect_to` - The candidate redirect destination.
+/// * `allowed_hosts` - Allowlist of hostnames (e.g. `["app.example.com"]`).
+///   Only consulted for absolute HTTPS URLs.
+///
+/// # Returns
+///
+/// `Ok(())` when the value is acceptable.
+///
+/// # Errors
+///
+/// Returns [`RedirectValidationError::EmptyValue`] if the string is non-`None`
+/// but empty.
+/// Returns [`RedirectValidationError::HttpNotAllowed`] if the URL uses
+/// `http://`.
+/// Returns [`RedirectValidationError::HostNotAllowed`] if the host is not in
+/// `allowed_hosts`.
+/// Returns [`RedirectValidationError::InvalidFormat`] if the URL format is not
+/// recognised.
+///
+/// # Examples
+///
+/// ```
+/// use xzepr::auth::oidc::callback::validate_redirect_to;
+///
+/// // None is always valid.
+/// assert!(validate_redirect_to(None, &[]).is_ok());
+///
+/// // Relative paths are always valid.
+/// assert!(validate_redirect_to(Some("/dashboard"), &[]).is_ok());
+///
+/// // Absolute HTTPS URL with host in the allowlist.
+/// let hosts = vec!["app.example.com".to_string()];
+/// assert!(validate_redirect_to(Some("https://app.example.com/home"), &hosts).is_ok());
+///
+/// // HTTP is never allowed.
+/// assert!(validate_redirect_to(Some("http://app.example.com/"), &[]).is_err());
+/// ```
+pub fn validate_redirect_to(
+    redirect_to: Option<&str>,
+    allowed_hosts: &[String],
+) -> Result<(), RedirectValidationError> {
+    let value = match redirect_to {
+        None => return Ok(()),
+        Some(v) => v,
+    };
+
+    if value.is_empty() {
+        return Err(RedirectValidationError::EmptyValue);
+    }
+
+    // Relative paths are safe: they stay on the same origin.
+    if value.starts_with('/') {
+        return Ok(());
+    }
+
+    // Reject plain HTTP.
+    if value.starts_with("http://") {
+        return Err(RedirectValidationError::HttpNotAllowed);
+    }
+
+    // Accept HTTPS only when the host is in the allowlist.
+    if value.starts_with("https://") {
+        let host = extract_https_host(value).ok_or(RedirectValidationError::InvalidFormat)?;
+        if allowed_hosts.iter().any(|h| h == host) {
+            return Ok(());
+        }
+        return Err(RedirectValidationError::HostNotAllowed {
+            host: host.to_string(),
+        });
+    }
+
+    Err(RedirectValidationError::InvalidFormat)
+}
+
+/// Extract the hostname from a URL that starts with `https://`.
+///
+/// Returns `None` if no host portion can be found (e.g. `https://` alone).
+fn extract_https_host(url: &str) -> Option<&str> {
+    // Strip the scheme prefix; we already know it starts with "https://".
+    let rest = &url["https://".len()..];
+    // The host ends at the first path separator, query, or fragment character.
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let host = &rest[..end];
+    if host.is_empty() {
+        None
+    } else {
+        Some(host)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// CallbackError
+// ---------------------------------------------------------------------------
+
 /// Errors that can occur during callback handling
 #[derive(Error, Debug)]
 pub enum CallbackError {
@@ -358,6 +501,104 @@ impl OidcCallbackHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -----------------------------------------------------------------------
+    // validate_redirect_to
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_validate_redirect_to_none_is_valid() {
+        let result = validate_redirect_to(None, &[]);
+        assert!(result.is_ok(), "None should always be valid");
+    }
+
+    #[test]
+    fn test_validate_redirect_to_relative_path_is_valid() {
+        let result = validate_redirect_to(Some("/dashboard"), &[]);
+        assert!(result.is_ok(), "relative path should be valid");
+    }
+
+    #[test]
+    fn test_validate_redirect_to_relative_path_with_empty_allowlist_is_valid() {
+        // Relative paths must be accepted regardless of the allowlist contents.
+        let result = validate_redirect_to(Some("/some/deep/path?q=1#section"), &[]);
+        assert!(
+            result.is_ok(),
+            "relative path with query and fragment should be valid"
+        );
+    }
+
+    #[test]
+    fn test_validate_redirect_to_https_with_allowed_host_is_valid() {
+        let hosts = vec!["app.example.com".to_string()];
+        let result = validate_redirect_to(Some("https://app.example.com/home"), &hosts);
+        assert!(
+            result.is_ok(),
+            "HTTPS URL with allowed host should be valid"
+        );
+    }
+
+    #[test]
+    fn test_validate_redirect_to_https_host_not_in_allowlist_is_rejected() {
+        let hosts = vec!["trusted.example.com".to_string()];
+        let result = validate_redirect_to(Some("https://evil.example.com/steal"), &hosts);
+        assert_eq!(
+            result,
+            Err(RedirectValidationError::HostNotAllowed {
+                host: "evil.example.com".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn test_validate_redirect_to_http_is_rejected() {
+        let result = validate_redirect_to(Some("http://example.com/page"), &[]);
+        assert_eq!(result, Err(RedirectValidationError::HttpNotAllowed));
+    }
+
+    #[test]
+    fn test_validate_redirect_to_empty_string_is_rejected() {
+        let result = validate_redirect_to(Some(""), &[]);
+        assert_eq!(result, Err(RedirectValidationError::EmptyValue));
+    }
+
+    #[test]
+    fn test_validate_redirect_to_invalid_format_is_rejected() {
+        // A bare hostname without a scheme is not accepted.
+        let result = validate_redirect_to(Some("example.com/path"), &[]);
+        assert_eq!(result, Err(RedirectValidationError::InvalidFormat));
+    }
+
+    #[test]
+    fn test_validate_redirect_to_ftp_scheme_is_rejected() {
+        let result = validate_redirect_to(Some("ftp://files.example.com/"), &[]);
+        assert_eq!(result, Err(RedirectValidationError::InvalidFormat));
+    }
+
+    #[test]
+    fn test_validate_redirect_to_https_with_no_host_is_invalid_format() {
+        // "https://" with no host should be an invalid format.
+        let hosts = vec!["app.example.com".to_string()];
+        let result = validate_redirect_to(Some("https://"), &hosts);
+        assert_eq!(result, Err(RedirectValidationError::InvalidFormat));
+    }
+
+    #[test]
+    fn test_validate_redirect_to_https_with_path_and_query_is_valid() {
+        let hosts = vec!["app.example.com".to_string()];
+        let result = validate_redirect_to(
+            Some("https://app.example.com/path?key=value#anchor"),
+            &hosts,
+        );
+        assert!(
+            result.is_ok(),
+            "full HTTPS URL with path/query/fragment should be valid"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // RoleMappings
+    // -----------------------------------------------------------------------
 
     #[test]
     fn test_role_mappings_new() {

@@ -11,7 +11,7 @@
 use axum::{
     extract::{DefaultBodyLimit, State},
     middleware,
-    response::{IntoResponse, Json},
+    response::{IntoResponse, Json, Redirect},
     routing::{delete, get, post, put},
     Router,
 };
@@ -33,7 +33,9 @@ use crate::api::middleware::{
     security_headers::{security_headers_middleware_with_config, SecurityHeadersConfig},
     JwtMiddlewareState,
 };
-use crate::api::rest::auth::{login, logout, oidc_callback, oidc_login, refresh_token, AuthState};
+use crate::api::rest::auth::{
+    login, logout, oidc_callback, oidc_login, refresh_token, AuthError, AuthState,
+};
 use crate::api::rest::events::{
     create_event, create_event_receiver, create_event_receiver_group, delete_event_receiver,
     delete_event_receiver_group, get_event, get_event_receiver, get_event_receiver_group,
@@ -199,16 +201,34 @@ where
             crate::api::middleware::rate_limit::rate_limit_middleware,
         ));
 
+    // Local auth routes (always registered; handlers enforce local-auth-enabled at runtime)
     let public_auth_routes = Router::new()
         .route("/api/v1/auth/login", post(login::<R>))
         .route("/api/v1/auth/refresh", post(refresh_token::<R>))
-        .route("/api/v1/auth/oidc/login", get(oidc_login::<R>))
-        .route("/api/v1/auth/oidc/callback", get(oidc_callback::<R>))
         .with_state(auth_state.clone())
         .layer(middleware::from_fn_with_state(
             rate_limiter.clone(),
             crate::api::middleware::rate_limit::rate_limit_middleware,
         ));
+
+    // OIDC routes: registered with real handlers when OIDC is enabled,
+    // or with a disabled handler returning 501 when it is not.
+    let oidc_enabled = auth_state.oidc_client.is_some();
+    tracing::info!(oidc_enabled, "Registering OIDC authentication routes");
+    let public_oidc_routes = if oidc_enabled {
+        Router::new()
+            .route("/api/v1/auth/oidc/login", get(oidc_login::<R>))
+            .route("/api/v1/auth/oidc/callback", get(oidc_callback::<R>))
+    } else {
+        Router::new()
+            .route("/api/v1/auth/oidc/login", get(oidc_not_enabled::<R>))
+            .route("/api/v1/auth/oidc/callback", get(oidc_not_enabled::<R>))
+    }
+    .with_state(auth_state.clone())
+    .layer(middleware::from_fn_with_state(
+        rate_limiter.clone(),
+        crate::api::middleware::rate_limit::rate_limit_middleware,
+    ));
 
     let protected_auth_routes = Router::new()
         .route("/api/v1/auth/logout", post(logout::<R>))
@@ -283,6 +303,7 @@ where
 
     public_core_routes
         .merge(public_auth_routes)
+        .merge(public_oidc_routes)
         .merge(protected_auth_routes)
         .merge(public_graphql_routes)
         .merge(protected_graphql_routes)
@@ -439,6 +460,17 @@ async fn metrics_handler(config: State<Arc<PrometheusMetrics>>) -> String {
             format!("# Error gathering metrics: {}\n", e)
         }
     }
+}
+
+/// Handler for OIDC endpoints when OIDC is not enabled.
+///
+/// Returns HTTP 501 Not Implemented to clearly communicate that the feature
+/// is intentionally disabled, rather than letting callers infer partial behavior
+/// from a 404 or a configuration error.
+async fn oidc_not_enabled<R: UserRepository>(
+    State(_auth_state): State<AuthState<R>>,
+) -> Result<Redirect, AuthError> {
+    Err(AuthError::OidcDisabled)
 }
 
 #[cfg(test)]

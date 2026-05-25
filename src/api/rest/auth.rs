@@ -21,7 +21,10 @@ use std::sync::Arc;
 use thiserror::Error;
 
 use crate::auth::jwt::service::JwtService;
-use crate::auth::oidc::{OidcCallbackHandler, OidcCallbackQuery, OidcClient, OidcSession};
+use crate::auth::oidc::{
+    validate_redirect_to, NullOidcSessionStore, OidcCallbackHandler, OidcCallbackQuery, OidcClient,
+    OidcSession, OidcSessionStore, RedirectValidationError,
+};
 use crate::auth::provisioning::UserProvisioningService;
 use crate::domain::repositories::user_repo::UserRepository;
 
@@ -51,6 +54,30 @@ pub enum AuthError {
     /// Internal error
     #[error("Internal server error: {0}")]
     Internal(String),
+
+    /// OIDC authentication is not enabled in the current configuration.
+    #[error("OIDC authentication is not enabled")]
+    OidcDisabled,
+
+    /// OIDC session state not found (may have expired or never existed).
+    #[error("Session not found")]
+    SessionMissing,
+
+    /// OIDC session has expired.
+    #[error("Session has expired")]
+    SessionExpired,
+
+    /// Redirect target failed allowlist validation.
+    #[error("Invalid redirect target: {0}")]
+    InvalidRedirectTarget(String),
+
+    /// Token exchange with OIDC provider failed.
+    #[error("Callback exchange failed")]
+    CallbackExchangeFailed,
+
+    /// User provisioning failed.
+    #[error("User provisioning failed")]
+    ProvisioningFailed,
 }
 
 impl IntoResponse for AuthError {
@@ -65,6 +92,28 @@ impl IntoResponse for AuthError {
                 "Configuration error".to_string(),
             ),
             AuthError::Internal(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal server error".to_string(),
+            ),
+            AuthError::OidcDisabled => (
+                StatusCode::NOT_IMPLEMENTED,
+                "OIDC authentication is not enabled".to_string(),
+            ),
+            AuthError::SessionMissing => (
+                StatusCode::UNAUTHORIZED,
+                "Session not found or expired".to_string(),
+            ),
+            AuthError::SessionExpired => {
+                (StatusCode::UNAUTHORIZED, "Session has expired".to_string())
+            }
+            AuthError::InvalidRedirectTarget(_) => (
+                StatusCode::BAD_REQUEST,
+                "Invalid redirect target".to_string(),
+            ),
+            AuthError::CallbackExchangeFailed => {
+                (StatusCode::BAD_GATEWAY, "OIDC provider error".to_string())
+            }
+            AuthError::ProvisioningFailed => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal server error".to_string(),
             ),
@@ -138,8 +187,12 @@ pub struct AuthState<R: UserRepository> {
     pub oidc_client: Option<Arc<OidcClient>>,
     /// OIDC callback handler (optional)
     pub oidc_callback_handler: Option<Arc<OidcCallbackHandler>>,
-    /// Session store (in-memory for simplicity, use Redis in production)
-    pub session_store: Arc<std::sync::RwLock<std::collections::HashMap<String, OidcSession>>>,
+    /// Session store for in-flight OIDC authentication state.
+    pub session_store: Arc<dyn OidcSessionStore>,
+    /// Allowed hosts for `redirect_to` parameter validation.
+    pub oidc_allowed_redirect_hosts: Vec<String>,
+    /// Time-to-live for new OIDC sessions.
+    pub oidc_session_ttl: std::time::Duration,
     /// User provisioning service
     pub provisioning_service: Arc<UserProvisioningService<R>>,
 }
@@ -163,8 +216,45 @@ impl<R: UserRepository> AuthState<R> {
             jwt_service,
             oidc_client,
             oidc_callback_handler,
-            session_store: Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
+            session_store: Arc::new(NullOidcSessionStore),
             provisioning_service,
+            oidc_allowed_redirect_hosts: Vec::new(),
+            oidc_session_ttl: std::time::Duration::from_secs(300),
+        }
+    }
+
+    /// Create a new authentication state with full OIDC session support.
+    ///
+    /// Use this constructor when OIDC is enabled at runtime. The `session_store`
+    /// will be used for in-flight OIDC session management; the
+    /// `oidc_allowed_redirect_hosts` list constrains the `redirect_to` parameter.
+    ///
+    /// # Arguments
+    ///
+    /// * `jwt_service` - JWT service for token operations
+    /// * `oidc_client` - Initialized OIDC client
+    /// * `oidc_callback_handler` - OIDC callback handler with role mappings
+    /// * `session_store` - Session store backend (in-memory or Redis)
+    /// * `provisioning_service` - User provisioning service
+    /// * `oidc_allowed_redirect_hosts` - Hosts allowed in redirect_to values
+    /// * `oidc_session_ttl` - TTL for newly created OIDC sessions
+    pub fn new_with_oidc(
+        jwt_service: Arc<JwtService>,
+        oidc_client: Arc<OidcClient>,
+        oidc_callback_handler: Arc<OidcCallbackHandler>,
+        session_store: Arc<dyn OidcSessionStore>,
+        provisioning_service: Arc<UserProvisioningService<R>>,
+        oidc_allowed_redirect_hosts: Vec<String>,
+        oidc_session_ttl: std::time::Duration,
+    ) -> Self {
+        Self {
+            jwt_service,
+            oidc_client: Some(oidc_client),
+            oidc_callback_handler: Some(oidc_callback_handler),
+            session_store,
+            provisioning_service,
+            oidc_allowed_redirect_hosts,
+            oidc_session_ttl,
         }
     }
 }
@@ -177,6 +267,8 @@ impl<R: UserRepository> Clone for AuthState<R> {
             oidc_callback_handler: self.oidc_callback_handler.as_ref().map(Arc::clone),
             session_store: Arc::clone(&self.session_store),
             provisioning_service: Arc::clone(&self.provisioning_service),
+            oidc_allowed_redirect_hosts: self.oidc_allowed_redirect_hosts.clone(),
+            oidc_session_ttl: self.oidc_session_ttl,
         }
     }
 }
@@ -248,7 +340,23 @@ pub async fn oidc_login<R: UserRepository>(
     let oidc_client = auth_state
         .oidc_client
         .as_ref()
-        .ok_or_else(|| AuthError::Config("OIDC not configured".to_string()))?;
+        .ok_or(AuthError::OidcDisabled)?;
+
+    // Validate redirect_to before storing in session (open-redirect prevention)
+    validate_redirect_to(
+        query.redirect_to.as_deref(),
+        &auth_state.oidc_allowed_redirect_hosts,
+    )
+    .map_err(|e| {
+        let msg = e.to_string();
+        // Exhaustive match ensures new variants are caught at compile time.
+        match e {
+            RedirectValidationError::EmptyValue
+            | RedirectValidationError::HttpNotAllowed
+            | RedirectValidationError::HostNotAllowed { .. }
+            | RedirectValidationError::InvalidFormat => AuthError::InvalidRedirectTarget(msg),
+        }
+    })?;
 
     let auth_request = oidc_client.authorization_url();
 
@@ -259,13 +367,15 @@ pub async fn oidc_login<R: UserRepository>(
         redirect_to: query.redirect_to,
     };
 
-    {
-        let mut store = auth_state
-            .session_store
-            .write()
-            .map_err(|e| AuthError::Session(format!("Lock error: {}", e)))?;
-        store.insert(auth_request.state.clone(), session);
-    }
+    auth_state
+        .session_store
+        .insert(
+            auth_request.state.clone(),
+            session,
+            auth_state.oidc_session_ttl,
+        )
+        .await
+        .map_err(|e| AuthError::Session(format!("Session store error: {}", e)))?;
 
     Ok(Redirect::temporary(&auth_request.url))
 }
@@ -290,31 +400,31 @@ pub async fn oidc_callback<R: UserRepository>(
     let callback_handler = auth_state
         .oidc_callback_handler
         .as_ref()
-        .ok_or_else(|| AuthError::Config("OIDC not configured".to_string()))?;
+        .ok_or(AuthError::OidcDisabled)?;
 
-    let session = {
-        let mut store = auth_state
-            .session_store
-            .write()
-            .map_err(|e| AuthError::Session(format!("Lock error: {}", e)))?;
-        store
-            .remove(&query.state)
-            .ok_or_else(|| AuthError::Session("Session not found or expired".to_string()))?
-    };
+    // Consume the session exactly once (prevents state-replay attacks)
+    let session = auth_state
+        .session_store
+        .take(&query.state)
+        .await
+        .map_err(|e| AuthError::Session(format!("Session store error: {}", e)))?
+        .ok_or(AuthError::SessionMissing)?;
 
-    let (_oidc_result, user_data) = callback_handler
+    // Exchange provider code for tokens and extract user claims.
+    // Provider tokens are intentionally discarded; only app-issued JWTs are returned.
+    let (_provider_result, user_data) = callback_handler
         .handle_callback(query, session)
         .await
-        .map_err(|e| AuthError::Oidc(e.to_string()))?;
+        .map_err(|_| AuthError::CallbackExchangeFailed)?;
 
     let user = auth_state
         .provisioning_service
-        .provision_user(user_data.clone())
+        .provision_user(user_data)
         .await
-        .map_err(|e| AuthError::Internal(format!("User provisioning failed: {}", e)))?;
+        .map_err(|_| AuthError::ProvisioningFailed)?;
 
-    let token_pair = generate_jwt_pair_from_user(&auth_state.jwt_service, &user)
-        .map_err(|e| AuthError::Jwt(e.to_string()))?;
+    let token_pair =
+        generate_jwt_pair_from_user(&auth_state.jwt_service, &user).map_err(AuthError::Jwt)?;
 
     Ok(Json(LoginResponse {
         access_token: token_pair.access_token,
@@ -512,5 +622,155 @@ mod tests {
 
         let error = AuthError::Session("expired".to_string());
         assert!(error.to_string().contains("Session error"));
+    }
+
+    #[test]
+    fn test_auth_error_oidc_disabled_returns_501() {
+        let error = AuthError::OidcDisabled;
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+    }
+
+    #[test]
+    fn test_auth_error_session_missing_returns_401() {
+        let error = AuthError::SessionMissing;
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_auth_error_session_expired_returns_401() {
+        let error = AuthError::SessionExpired;
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_auth_error_invalid_redirect_target_returns_400() {
+        let error = AuthError::InvalidRedirectTarget("http://evil.com".to_string());
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn test_auth_error_callback_exchange_failed_returns_502() {
+        let error = AuthError::CallbackExchangeFailed;
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    }
+
+    #[test]
+    fn test_auth_error_provisioning_failed_returns_500() {
+        let error = AuthError::ProvisioningFailed;
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn test_auth_error_display_messages() {
+        assert_eq!(
+            AuthError::OidcDisabled.to_string(),
+            "OIDC authentication is not enabled"
+        );
+        assert_eq!(AuthError::SessionMissing.to_string(), "Session not found");
+        assert_eq!(AuthError::SessionExpired.to_string(), "Session has expired");
+        assert!(AuthError::InvalidRedirectTarget("http://x.com".to_string())
+            .to_string()
+            .contains("Invalid redirect target"));
+        assert_eq!(
+            AuthError::CallbackExchangeFailed.to_string(),
+            "Callback exchange failed"
+        );
+        assert_eq!(
+            AuthError::ProvisioningFailed.to_string(),
+            "User provisioning failed"
+        );
+    }
+
+    #[test]
+    fn test_auth_state_new_uses_null_session_store() {
+        // Verify the default constructor creates a valid state without panicking.
+        // The NullOidcSessionStore is used when OIDC is not configured.
+        // We only test that construction succeeds; runtime behavior is tested
+        // in handler-level tests.
+        use crate::auth::jwt::{Algorithm, JwtConfig, JwtService};
+        use crate::auth::provisioning::UserProvisioningService;
+        use crate::domain::entities::user::{AuthProvider, User};
+        use crate::domain::repositories::user_repo::UserRepository;
+        use crate::domain::value_objects::UserId;
+        use crate::error::DomainError;
+        use async_trait::async_trait;
+
+        struct NoopRepo;
+
+        #[async_trait]
+        impl UserRepository for NoopRepo {
+            async fn find_by_id(&self, _: &UserId) -> Result<Option<User>, DomainError> {
+                Ok(None)
+            }
+            async fn find_by_username(&self, _: &str) -> Result<Option<User>, DomainError> {
+                Ok(None)
+            }
+            async fn find_by_email(&self, _: &str) -> Result<Option<User>, DomainError> {
+                Ok(None)
+            }
+            async fn find_by_oidc_subject(&self, _: &str) -> Result<Option<User>, DomainError> {
+                Ok(None)
+            }
+            async fn create(&self, u: User) -> Result<User, DomainError> {
+                Ok(u)
+            }
+            async fn update(&self, u: User) -> Result<User, DomainError> {
+                Ok(u)
+            }
+            async fn delete(&self, _: &UserId) -> Result<(), DomainError> {
+                Ok(())
+            }
+            async fn username_exists(&self, _: &str) -> Result<bool, DomainError> {
+                Ok(false)
+            }
+            async fn email_exists(&self, _: &str) -> Result<bool, DomainError> {
+                Ok(false)
+            }
+            async fn create_or_update_oidc_user(
+                &self,
+                _: String,
+                _: String,
+                _: Option<String>,
+                _: Option<String>,
+            ) -> Result<User, DomainError> {
+                Err(DomainError::InvalidData("not implemented".to_string()))
+            }
+            async fn list(&self, _: i64, _: i64) -> Result<Vec<User>, DomainError> {
+                Ok(vec![])
+            }
+            async fn count(&self) -> Result<i64, DomainError> {
+                Ok(0)
+            }
+            async fn find_by_provider(&self, _: &AuthProvider) -> Result<Vec<User>, DomainError> {
+                Ok(vec![])
+            }
+        }
+
+        let jwt_service = Arc::new(
+            JwtService::from_config(JwtConfig {
+                access_token_expiration_seconds: 900,
+                refresh_token_expiration_seconds: 604800,
+                issuer: "test".to_string(),
+                audience: "test".to_string(),
+                algorithm: Algorithm::HS256,
+                private_key_path: None,
+                public_key_path: None,
+                secret_key: Some("test-secret-at-least-32-characters-long-ok".to_string()),
+                enable_token_rotation: false,
+                leeway_seconds: 60,
+            })
+            // SAFETY: HS256 with a non-empty secret key is always valid
+            .unwrap(),
+        );
+        let provisioning = Arc::new(UserProvisioningService::new(Arc::new(NoopRepo)));
+        let state = AuthState::new(jwt_service, None, None, provisioning);
+        assert!(state.oidc_client.is_none());
+        assert!(state.oidc_allowed_redirect_hosts.is_empty());
     }
 }

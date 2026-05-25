@@ -9,7 +9,7 @@
 use anyhow::{bail, Context, Result};
 use axum_server::tls_rustls::RustlsConfig;
 use sqlx::PgPool;
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::signal;
 use tracing::{error, info, warn};
 use xzepr::api::middleware::JwtMiddlewareState;
@@ -17,6 +17,9 @@ use xzepr::api::rest::auth::AuthState;
 use xzepr::api::router::{build_production_router, RouterConfig};
 use xzepr::application::handlers::{EventHandler, EventReceiverGroupHandler, EventReceiverHandler};
 use xzepr::auth::jwt::{Algorithm, JwtConfig, JwtService};
+use xzepr::auth::oidc::{
+    InMemoryOidcSessionStore, OidcCallbackHandler, OidcClient, OidcConfig, OidcSessionStore,
+};
 use xzepr::auth::provisioning::UserProvisioningService;
 use xzepr::infrastructure::database::{
     PostgresEventReceiverGroupRepository, PostgresEventReceiverRepository, PostgresEventRepository,
@@ -24,6 +27,94 @@ use xzepr::infrastructure::database::{
 };
 use xzepr::infrastructure::messaging::producer::KafkaEventPublisher;
 use xzepr::{Settings, TopicManager};
+
+/// Build the authentication state, wiring OIDC components when enabled.
+///
+/// When `settings.auth.enable_oidc` is true, builds `OidcConfig`, performs
+/// OIDC provider discovery, constructs the callback handler, and creates an
+/// in-memory session store with TTL from settings. When OIDC is disabled,
+/// returns a minimal state with `NullOidcSessionStore`.
+///
+/// # Arguments
+///
+/// * `settings` - Validated runtime settings
+/// * `jwt_service` - Initialized JWT service
+/// * `provisioning_service` - User provisioning service
+///
+/// # Errors
+///
+/// Returns an error if OIDC is enabled but provider discovery fails or
+/// the Keycloak configuration is missing.
+async fn build_auth_state<R: xzepr::domain::repositories::user_repo::UserRepository + 'static>(
+    settings: &Settings,
+    jwt_service: Arc<JwtService>,
+    provisioning_service: Arc<UserProvisioningService<R>>,
+) -> Result<AuthState<R>> {
+    if !settings.auth.enable_oidc {
+        info!("OIDC authentication disabled");
+        return Ok(AuthState::new(
+            jwt_service,
+            None,
+            None,
+            provisioning_service,
+        ));
+    }
+
+    let keycloak = settings
+        .auth
+        .keycloak
+        .as_ref()
+        .context("OIDC is enabled but [auth.keycloak] configuration is missing")?;
+
+    info!(
+        issuer = %keycloak.issuer_url,
+        "Initializing OIDC client"
+    );
+
+    let oidc_config = OidcConfig::keycloak(
+        keycloak.issuer_url.clone(),
+        keycloak.client_id.clone(),
+        keycloak.client_secret.clone(),
+        keycloak.redirect_url.clone(),
+    );
+
+    let oidc_client = Arc::new(
+        OidcClient::new(oidc_config)
+            .await
+            .context("Failed to initialize OIDC client; provider discovery may have failed")?,
+    );
+
+    let callback_handler = Arc::new(OidcCallbackHandler::new(oidc_client.clone()));
+
+    let session_ttl = Duration::from_secs(keycloak.session_ttl_seconds);
+    // Use 10x the per-user limit as a total-capacity ceiling for pending sessions.
+    let max_pending = keycloak.max_sessions_per_user.saturating_mul(10).max(100);
+    let session_store = Arc::new(InMemoryOidcSessionStore::new(max_pending, session_ttl));
+
+    // Spawn a background task to evict expired sessions every 60 seconds.
+    session_store
+        .clone()
+        .spawn_cleanup_task(Duration::from_secs(60));
+
+    let allowed_redirect_hosts = keycloak.allowed_redirect_hosts.clone();
+
+    info!(
+        session_ttl_seconds = keycloak.session_ttl_seconds,
+        max_pending,
+        allowed_hosts = ?allowed_redirect_hosts,
+        "OIDC authentication enabled"
+    );
+
+    Ok(AuthState::new_with_oidc(
+        jwt_service,
+        oidc_client,
+        callback_handler,
+        session_store as Arc<dyn OidcSessionStore>,
+        provisioning_service,
+        allowed_redirect_hosts,
+        session_ttl,
+    ))
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -88,7 +179,7 @@ async fn main() -> Result<()> {
     );
     let jwt_state = JwtMiddlewareState::new(jwt_service.as_ref().clone());
     let provisioning_service = Arc::new(UserProvisioningService::new(user_repo));
-    let auth_state = AuthState::new(jwt_service, None, None, provisioning_service);
+    let auth_state = build_auth_state(&settings, jwt_service, provisioning_service).await?;
     let router_config = RouterConfig::from_settings(&settings)
         .context("Failed to build router config from runtime settings")?;
     let app = build_production_router(api_state, auth_state, jwt_state, router_config).await;
