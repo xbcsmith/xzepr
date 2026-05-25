@@ -29,22 +29,48 @@ impl PostgresEventReceiverRepository {
         use sqlx::Row;
 
         Ok(EventReceiverData {
-            id: EventReceiverId::parse(&row.get::<String, _>("id")).map_err(|e| {
-                crate::error::Error::BadRequest {
-                    message: format!("Invalid receiver ID: {}", e),
-                }
-            })?,
+            id: {
+                let s: String = row.try_get("id").map_err(|e| {
+                    crate::error::Error::Infrastructure(
+                        crate::error::InfrastructureError::ColumnDecoding {
+                            column: "id".to_string(),
+                            detail: e.to_string(),
+                        },
+                    )
+                })?;
+                EventReceiverId::parse(&s).map_err(|e| {
+                    crate::error::Error::Infrastructure(
+                        crate::error::InfrastructureError::ColumnDecoding {
+                            column: "id".to_string(),
+                            detail: format!("Invalid EventReceiverId: {}", e),
+                        },
+                    )
+                })?
+            },
             name: row.get("name"),
             receiver_type: row.get("receiver_type"),
             version: row.get("version"),
             description: row.get("description"),
             schema: row.get("schema"),
             fingerprint: row.get("fingerprint"),
-            owner_id: UserId::from_string(row.get::<String, _>("owner_id")).map_err(|e| {
-                crate::error::Error::BadRequest {
-                    message: format!("Invalid owner ID: {}", e),
-                }
-            })?,
+            owner_id: {
+                let s: String = row.try_get("owner_id").map_err(|e| {
+                    crate::error::Error::Infrastructure(
+                        crate::error::InfrastructureError::ColumnDecoding {
+                            column: "owner_id".to_string(),
+                            detail: e.to_string(),
+                        },
+                    )
+                })?;
+                UserId::from_string(s).map_err(|e| {
+                    crate::error::Error::Infrastructure(
+                        crate::error::InfrastructureError::ColumnDecoding {
+                            column: "owner_id".to_string(),
+                            detail: format!("Invalid owner ID: {}", e),
+                        },
+                    )
+                })?
+            },
             resource_version: row.get("resource_version"),
             created_at: row.get("created_at"),
         })
@@ -134,7 +160,7 @@ impl EventReceiverRepository for PostgresEventReceiverRepository {
         .bind(event_receiver.created_at())
         .execute(&self.pool)
         .await
-        .map_err(crate::error::Error::Database)?;
+        .map_err(classify_sqlx_error)?;
 
         Ok(())
     }
@@ -530,9 +556,55 @@ impl EventReceiverRepository for PostgresEventReceiverRepository {
     }
 }
 
+/// Maps a [`sqlx::Error`] to the most specific application error available.
+///
+/// If the error is a unique or foreign-key constraint violation, it is mapped
+/// to [`crate::error::RepositoryError::ConstraintViolation`] so that callers
+/// can distinguish conflict responses from generic database failures.
+/// All other errors fall through to [`crate::error::Error::Database`].
+fn classify_sqlx_error(e: sqlx::Error) -> crate::error::Error {
+    if let sqlx::Error::Database(ref db_err) = e {
+        if db_err.is_unique_violation() {
+            return crate::error::Error::Repository(
+                crate::error::RepositoryError::ConstraintViolation {
+                    constraint: db_err.constraint().unwrap_or("unique").to_string(),
+                },
+            );
+        }
+        if db_err.is_foreign_key_violation() {
+            return crate::error::Error::Repository(
+                crate::error::RepositoryError::ConstraintViolation {
+                    constraint: db_err.constraint().unwrap_or("foreign_key").to_string(),
+                },
+            );
+        }
+    }
+    crate::error::Error::Database(e)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Verifies that non-constraint sqlx errors pass through to `Error::Database`
+    /// and are not reclassified as constraint violations.
+    #[test]
+    fn test_classify_sqlx_error_non_constraint_passes_through() {
+        let err = sqlx::Error::RowNotFound;
+        let result = classify_sqlx_error(err);
+        assert!(
+            matches!(result, crate::error::Error::Database(_)),
+            "expected Error::Database variant for non-constraint error"
+        );
+    }
+
+    /// Structural test: verifies `classify_sqlx_error` compiles with the correct
+    /// return type for use with `.map_err(classify_sqlx_error)`.
+    #[test]
+    fn test_classify_sqlx_error_returns_app_error() {
+        fn _assert_app_error(_: crate::error::Error) {}
+        _assert_app_error(classify_sqlx_error(sqlx::Error::RowNotFound));
+    }
 
     #[test]
     fn test_build_where_clause_empty() {

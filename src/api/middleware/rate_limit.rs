@@ -21,6 +21,30 @@ use tokio::sync::RwLock;
 
 use crate::infrastructure::SecurityMonitor;
 
+/// Typed error returned by rate limit store operations.
+///
+/// Replaces the previous `Result<_, String>` return from
+/// [`RateLimitStore::check_rate_limit`] with an enum that carries semantic
+/// context.
+#[derive(Debug, thiserror::Error)]
+pub enum RateLimitError {
+    /// The backing Redis instance returned an error.
+    ///
+    /// The internal Redis error is preserved for logging but must never be
+    /// forwarded to API clients.
+    #[error("Redis rate limit error: {message}")]
+    RedisError {
+        /// Internal error detail for logging.
+        message: String,
+    },
+    /// An unexpected internal failure prevented the rate limit check.
+    #[error("Internal rate limit error: {message}")]
+    InternalError {
+        /// Internal error detail for logging.
+        message: String,
+    },
+}
+
 /// Rate limit configuration for different user tiers
 #[derive(Debug, Clone)]
 pub struct RateLimitConfig {
@@ -165,13 +189,13 @@ impl TokenBucket {
 /// Storage trait for rate limit state
 #[async_trait::async_trait]
 pub trait RateLimitStore: Send + Sync {
-    /// Checks if the key is rate limited
+    /// Checks whether the key is within its rate limit window.
     async fn check_rate_limit(
         &self,
         key: &str,
         limit: u32,
         window: Duration,
-    ) -> Result<RateLimitStatus, String>;
+    ) -> Result<RateLimitStatus, RateLimitError>;
 }
 
 /// Rate limit status
@@ -215,7 +239,7 @@ impl RateLimitStore for InMemoryRateLimitStore {
         key: &str,
         limit: u32,
         window: Duration,
-    ) -> Result<RateLimitStatus, String> {
+    ) -> Result<RateLimitStatus, RateLimitError> {
         let mut buckets = self.buckets.write().await;
 
         let refill_rate = limit as f64 / window.as_secs_f64();
@@ -248,7 +272,7 @@ impl RateLimitStore for FailClosedRateLimitStore {
         _key: &str,
         limit: u32,
         window: Duration,
-    ) -> Result<RateLimitStatus, String> {
+    ) -> Result<RateLimitStatus, RateLimitError> {
         Ok(RateLimitStatus {
             allowed: false,
             limit,
@@ -285,7 +309,7 @@ impl RateLimitStore for RedisRateLimitStore {
         key: &str,
         limit: u32,
         window: Duration,
-    ) -> Result<RateLimitStatus, String> {
+    ) -> Result<RateLimitStatus, RateLimitError> {
         let mut conn = self.client.clone();
         let redis_key = format!("ratelimit:{}", key);
         let window_secs = window.as_secs();
@@ -335,7 +359,9 @@ impl RateLimitStore for RedisRateLimitStore {
             .arg(now)
             .invoke_async(&mut conn)
             .await
-            .map_err(|e| format!("Redis error: {}", e))?;
+            .map_err(|e| RateLimitError::RedisError {
+                message: e.to_string(),
+            })?;
 
         let allowed = result[0] == 1;
         let remaining = result[1] as u32;
@@ -398,7 +424,7 @@ impl RateLimiterState {
         key: &str,
         limit: u32,
         window: Duration,
-    ) -> Result<RateLimitStatus, String> {
+    ) -> Result<RateLimitStatus, RateLimitError> {
         self.store.check_rate_limit(key, limit, window).await
     }
 
@@ -486,7 +512,10 @@ pub async fn rate_limit_middleware(
         .store
         .check_rate_limit(&rate_limit_key, limit, limiter.config.window_size)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!(error = %e, "Rate limit store failure");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     if !status.allowed {
         tracing::warn!(
@@ -607,5 +636,29 @@ mod tests {
 
         assert_eq!(config.per_endpoint.get("/auth/login"), Some(&5));
         assert_eq!(config.per_endpoint.get("/auth/register"), Some(&3));
+    }
+
+    #[test]
+    fn test_rate_limit_error_redis_display() {
+        let err = RateLimitError::RedisError {
+            message: "conn lost".to_string(),
+        };
+        assert!(
+            err.to_string().contains("Redis"),
+            "RedisError display should contain 'Redis'; got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_rate_limit_error_internal_display() {
+        let err = RateLimitError::InternalError {
+            message: "oops".to_string(),
+        };
+        assert!(
+            err.to_string().contains("Internal"),
+            "InternalError display should contain 'Internal'; got: {}",
+            err
+        );
     }
 }

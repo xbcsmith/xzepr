@@ -102,6 +102,16 @@ pub enum AuthError {
 
     #[error("API key disabled")]
     ApiKeyDisabled,
+
+    /// A storage (database) operation in an auth repository failed.
+    ///
+    /// This variant preserves the internal failure detail for logging while
+    /// preventing SQL or driver messages from reaching API clients.
+    #[error("Auth storage error: {message}")]
+    StorageError {
+        /// Internal description for logging (never exposed in HTTP responses).
+        message: String,
+    },
 }
 
 /// Authorization-related errors
@@ -427,6 +437,17 @@ mod tests {
 
         let auth_error = Error::Auth(AuthError::InvalidCredentials);
         assert!(auth_error.message().contains("credentials"));
+    }
+
+    #[test]
+    fn test_auth_storage_error_maps_to_500() {
+        assert_eq!(
+            Error::Auth(AuthError::StorageError {
+                message: "db down".to_string()
+            })
+            .status_code(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
     }
 
     #[test]

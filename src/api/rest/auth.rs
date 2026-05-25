@@ -82,19 +82,35 @@ pub enum AuthError {
 
 impl IntoResponse for AuthError {
     fn into_response(self) -> Response {
+        use tracing::error;
         let (status, message) = match self {
             AuthError::InvalidCredentials => (StatusCode::UNAUTHORIZED, self.to_string()),
-            AuthError::Oidc(_) => (StatusCode::BAD_REQUEST, self.to_string()),
-            AuthError::Jwt(_) => (StatusCode::UNAUTHORIZED, self.to_string()),
-            AuthError::Session(_) => (StatusCode::BAD_REQUEST, self.to_string()),
-            AuthError::Config(_) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Configuration error".to_string(),
-            ),
-            AuthError::Internal(_) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal server error".to_string(),
-            ),
+            AuthError::Oidc(ref detail) => {
+                error!(detail = %detail, "OIDC authentication error");
+                (StatusCode::BAD_REQUEST, "Authentication error".to_string())
+            }
+            AuthError::Jwt(ref detail) => {
+                error!(detail = %detail, "JWT processing error");
+                (StatusCode::UNAUTHORIZED, "Authentication error".to_string())
+            }
+            AuthError::Session(ref detail) => {
+                error!(detail = %detail, "Session error");
+                (StatusCode::BAD_REQUEST, "Session error".to_string())
+            }
+            AuthError::Config(ref detail) => {
+                error!(detail = %detail, "Auth configuration error");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Configuration error".to_string(),
+                )
+            }
+            AuthError::Internal(ref detail) => {
+                error!(detail = %detail, "Internal auth error");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".to_string(),
+                )
+            }
             AuthError::OidcDisabled => (
                 StatusCode::NOT_IMPLEMENTED,
                 "OIDC authentication is not enabled".to_string(),
@@ -309,8 +325,10 @@ pub async fn login<R: UserRepository>(
         return Err(AuthError::InvalidCredentials);
     }
 
-    let token_pair = generate_jwt_pair_from_user(&auth_state.jwt_service, &user)
-        .map_err(|e| AuthError::Jwt(e.to_string()))?;
+    let token_pair = generate_jwt_pair_from_user(&auth_state.jwt_service, &user).map_err(|e| {
+        tracing::error!(error = %e, "JWT generation failed during login");
+        AuthError::Internal("Token generation failed".to_string())
+    })?;
 
     Ok(Json(LoginResponse {
         access_token: token_pair.access_token,
@@ -423,8 +441,10 @@ pub async fn oidc_callback<R: UserRepository>(
         .await
         .map_err(|_| AuthError::ProvisioningFailed)?;
 
-    let token_pair =
-        generate_jwt_pair_from_user(&auth_state.jwt_service, &user).map_err(AuthError::Jwt)?;
+    let token_pair = generate_jwt_pair_from_user(&auth_state.jwt_service, &user).map_err(|e| {
+        tracing::error!(error = %e, "JWT generation failed during OIDC callback");
+        AuthError::Internal("Token generation failed".to_string())
+    })?;
 
     Ok(Json(LoginResponse {
         access_token: token_pair.access_token,
@@ -519,18 +539,29 @@ pub async fn logout<R: UserRepository>(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Helper function to generate JWT from provisioned user
+/// Generates a JWT token pair from a provisioned user.
+///
+/// # Arguments
+///
+/// * `jwt_service` - The JWT service used to sign tokens.
+/// * `user` - The user for whom tokens are generated.
+///
+/// # Returns
+///
+/// A signed token pair on success.
+///
+/// # Errors
+///
+/// Returns [`crate::auth::jwt::error::JwtError`] if the JWT service fails.
 fn generate_jwt_pair_from_user(
     jwt_service: &JwtService,
     user: &crate::domain::entities::user::User,
-) -> Result<crate::auth::jwt::TokenPair, String> {
-    jwt_service
-        .generate_token_pair(
-            user.id().to_string(),
-            roles_from_user(user),
-            permissions_from_user(user),
-        )
-        .map_err(|e| format!("JWT generation error: {}", e))
+) -> crate::auth::jwt::error::JwtResult<crate::auth::jwt::TokenPair> {
+    jwt_service.generate_token_pair(
+        user.id().to_string(),
+        roles_from_user(user),
+        permissions_from_user(user),
+    )
 }
 
 fn roles_from_user(user: &crate::domain::entities::user::User) -> Vec<String> {
@@ -664,6 +695,54 @@ mod tests {
         let error = AuthError::ProvisioningFailed;
         let response = error.into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn test_auth_error_oidc_does_not_expose_internal_detail() {
+        let err = AuthError::Oidc("sensitive_db_secret".to_string());
+        let response = err.into_response();
+        // SAFETY: usize::MAX is the upper bound; the response body is a small JSON blob.
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body collection must succeed for this small JSON response");
+        let body = String::from_utf8_lossy(&bytes);
+        assert!(
+            !body.contains("sensitive_db_secret"),
+            "OIDC error detail must not leak to clients; got: {}",
+            body
+        );
+    }
+
+    #[tokio::test]
+    async fn test_auth_error_jwt_does_not_expose_internal_detail() {
+        let err = AuthError::Jwt("private_key_path=/etc/secret.pem".to_string());
+        let response = err.into_response();
+        // SAFETY: usize::MAX is the upper bound; the response body is a small JSON blob.
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body collection must succeed");
+        let body = String::from_utf8_lossy(&bytes);
+        assert!(
+            !body.contains("private_key_path"),
+            "JWT error detail must not leak to clients; got: {}",
+            body
+        );
+    }
+
+    #[tokio::test]
+    async fn test_auth_error_session_does_not_expose_internal_detail() {
+        let err = AuthError::Session("redis://user:password@host:6379".to_string());
+        let response = err.into_response();
+        // SAFETY: usize::MAX is the upper bound; the response body is a small JSON blob.
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body collection must succeed");
+        let body = String::from_utf8_lossy(&bytes);
+        assert!(
+            !body.contains("redis://user:password@host:6379"),
+            "Session error detail must not leak to clients; got: {}",
+            body
+        );
     }
 
     #[test]

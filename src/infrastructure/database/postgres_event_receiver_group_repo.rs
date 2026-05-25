@@ -22,22 +22,66 @@ fn membership_record_from_row(row: &sqlx::postgres::PgRow) -> Result<GroupMember
     use sqlx::Row;
 
     Ok(GroupMembershipRecord {
-        group_id: EventReceiverGroupId::parse(&row.get::<String, _>("group_id")).map_err(|e| {
-            crate::error::Error::BadRequest {
-                message: format!("Invalid group ID: {}", e),
-            }
+        group_id: {
+            let s: String = row.try_get("group_id").map_err(|e| {
+                crate::error::Error::Infrastructure(
+                    crate::error::InfrastructureError::ColumnDecoding {
+                        column: "group_id".to_string(),
+                        detail: e.to_string(),
+                    },
+                )
+            })?;
+            EventReceiverGroupId::parse(&s).map_err(|e| {
+                crate::error::Error::Infrastructure(
+                    crate::error::InfrastructureError::ColumnDecoding {
+                        column: "group_id".to_string(),
+                        detail: format!("Invalid group ID: {}", e),
+                    },
+                )
+            })?
+        },
+        user_id: {
+            let s: String = row.try_get("user_id").map_err(|e| {
+                crate::error::Error::Infrastructure(
+                    crate::error::InfrastructureError::ColumnDecoding {
+                        column: "user_id".to_string(),
+                        detail: e.to_string(),
+                    },
+                )
+            })?;
+            UserId::parse(&s).map_err(|e| {
+                crate::error::Error::Infrastructure(
+                    crate::error::InfrastructureError::ColumnDecoding {
+                        column: "user_id".to_string(),
+                        detail: format!("Invalid user ID: {}", e),
+                    },
+                )
+            })?
+        },
+        added_by: {
+            let s: String = row.try_get("added_by").map_err(|e| {
+                crate::error::Error::Infrastructure(
+                    crate::error::InfrastructureError::ColumnDecoding {
+                        column: "added_by".to_string(),
+                        detail: e.to_string(),
+                    },
+                )
+            })?;
+            UserId::parse(&s).map_err(|e| {
+                crate::error::Error::Infrastructure(
+                    crate::error::InfrastructureError::ColumnDecoding {
+                        column: "added_by".to_string(),
+                        detail: format!("Invalid added_by user ID: {}", e),
+                    },
+                )
+            })?
+        },
+        added_at: row.try_get("added_at").map_err(|e| {
+            crate::error::Error::Infrastructure(crate::error::InfrastructureError::ColumnDecoding {
+                column: "added_at".to_string(),
+                detail: e.to_string(),
+            })
         })?,
-        user_id: UserId::parse(&row.get::<String, _>("user_id")).map_err(|e| {
-            crate::error::Error::BadRequest {
-                message: format!("Invalid user ID: {}", e),
-            }
-        })?,
-        added_by: UserId::parse(&row.get::<String, _>("added_by")).map_err(|e| {
-            crate::error::Error::BadRequest {
-                message: format!("Invalid added_by user ID: {}", e),
-            }
-        })?,
-        added_at: row.get("added_at"),
     })
 }
 
@@ -52,22 +96,48 @@ impl PostgresEventReceiverGroupRepository {
         use sqlx::Row;
 
         Ok(EventReceiverGroupData {
-            id: EventReceiverGroupId::parse(&row.get::<String, _>("id")).map_err(|e| {
-                crate::error::Error::BadRequest {
-                    message: format!("Invalid group ID: {}", e),
-                }
-            })?,
+            id: {
+                let s: String = row.try_get("id").map_err(|e| {
+                    crate::error::Error::Infrastructure(
+                        crate::error::InfrastructureError::ColumnDecoding {
+                            column: "id".to_string(),
+                            detail: e.to_string(),
+                        },
+                    )
+                })?;
+                EventReceiverGroupId::parse(&s).map_err(|e| {
+                    crate::error::Error::Infrastructure(
+                        crate::error::InfrastructureError::ColumnDecoding {
+                            column: "id".to_string(),
+                            detail: format!("Invalid group ID: {}", e),
+                        },
+                    )
+                })?
+            },
             name: row.get("name"),
             group_type: row.get("group_type"),
             version: row.get("version"),
             description: row.get("description"),
             enabled: row.get("enabled"),
             event_receiver_ids: vec![], // Will be loaded separately
-            owner_id: UserId::from_string(row.get::<String, _>("owner_id")).map_err(|e| {
-                crate::error::Error::BadRequest {
-                    message: format!("Invalid owner ID: {}", e),
-                }
-            })?,
+            owner_id: {
+                let s: String = row.try_get("owner_id").map_err(|e| {
+                    crate::error::Error::Infrastructure(
+                        crate::error::InfrastructureError::ColumnDecoding {
+                            column: "owner_id".to_string(),
+                            detail: e.to_string(),
+                        },
+                    )
+                })?;
+                UserId::from_string(s).map_err(|e| {
+                    crate::error::Error::Infrastructure(
+                        crate::error::InfrastructureError::ColumnDecoding {
+                            column: "owner_id".to_string(),
+                            detail: format!("Invalid owner ID: {}", e),
+                        },
+                    )
+                })?
+            },
             resource_version: row.get("resource_version"),
             created_at: row.get("created_at"),
             updated_at: row.get("updated_at"),
@@ -108,7 +178,7 @@ impl PostgresEventReceiverGroupRepository {
             .bind(group_id.to_string())
             .execute(&self.pool)
             .await
-            .map_err(crate::error::Error::Database)?;
+            .map_err(classify_sqlx_error)?;
 
         // Insert new associations
         for receiver_id in receiver_ids {
@@ -119,7 +189,7 @@ impl PostgresEventReceiverGroupRepository {
             .bind(receiver_id.to_string())
             .execute(&self.pool)
             .await
-            .map_err(crate::error::Error::Database)?;
+            .map_err(classify_sqlx_error)?;
         }
 
         Ok(())
@@ -160,7 +230,7 @@ impl EventReceiverGroupRepository for PostgresEventReceiverGroupRepository {
         .bind(group.updated_at())
         .execute(&self.pool)
         .await
-        .map_err(crate::error::Error::Database)?;
+        .map_err(classify_sqlx_error)?;
 
         // Save receiver associations
         self.save_receiver_ids(group.id(), group.event_receiver_ids())
@@ -972,5 +1042,57 @@ impl EventReceiverGroupRepository for PostgresEventReceiverGroupRepository {
         }
 
         Ok(groups)
+    }
+}
+
+/// Maps a [`sqlx::Error`] to the most specific application error available.
+///
+/// If the error is a unique or foreign-key constraint violation, it is mapped
+/// to [`crate::error::RepositoryError::ConstraintViolation`] so that callers
+/// can distinguish conflict responses from generic database failures.
+/// All other errors fall through to [`crate::error::Error::Database`].
+fn classify_sqlx_error(e: sqlx::Error) -> crate::error::Error {
+    if let sqlx::Error::Database(ref db_err) = e {
+        if db_err.is_unique_violation() {
+            return crate::error::Error::Repository(
+                crate::error::RepositoryError::ConstraintViolation {
+                    constraint: db_err.constraint().unwrap_or("unique").to_string(),
+                },
+            );
+        }
+        if db_err.is_foreign_key_violation() {
+            return crate::error::Error::Repository(
+                crate::error::RepositoryError::ConstraintViolation {
+                    constraint: db_err.constraint().unwrap_or("foreign_key").to_string(),
+                },
+            );
+        }
+    }
+    crate::error::Error::Database(e)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verifies that non-constraint sqlx errors pass through to `Error::Database`
+    /// and are not reclassified as constraint violations.
+    #[test]
+    fn test_classify_sqlx_error_row_not_found_maps_to_database() {
+        let err = sqlx::Error::RowNotFound;
+        let result = classify_sqlx_error(err);
+        assert!(
+            matches!(result, crate::error::Error::Database(_)),
+            "expected Error::Database variant for non-constraint error"
+        );
+    }
+
+    /// Structural test: verifies `classify_sqlx_error` compiles with the correct
+    /// return type for use with `.map_err(classify_sqlx_error)`.
+    #[test]
+    fn test_classify_sqlx_error_type_annotation() {
+        fn _takes_app_error(_e: crate::error::Error) {}
+        let e = sqlx::Error::RowNotFound;
+        _takes_app_error(classify_sqlx_error(e));
     }
 }

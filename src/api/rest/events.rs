@@ -12,10 +12,11 @@ use tracing::{error, info, warn};
 
 use crate::api::middleware::jwt::AuthenticatedUser;
 use crate::api::rest::dtos::{
-    CreateEventReceiverGroupRequest, CreateEventReceiverGroupResponse, CreateEventReceiverRequest,
-    CreateEventReceiverResponse, CreateEventRequest, CreateEventResponse, ErrorResponse,
-    EventReceiverGroupResponse, EventReceiverQueryParams, EventReceiverResponse, EventResponse,
-    PaginatedResponse, PaginationMeta, UpdateEventReceiverGroupRequest, UpdateEventReceiverRequest,
+    map_app_error_to_rest_response, CreateEventReceiverGroupRequest,
+    CreateEventReceiverGroupResponse, CreateEventReceiverRequest, CreateEventReceiverResponse,
+    CreateEventRequest, CreateEventResponse, ErrorResponse, EventReceiverGroupResponse,
+    EventReceiverQueryParams, EventReceiverResponse, EventResponse, PaginatedResponse,
+    PaginationMeta, UpdateEventReceiverGroupRequest, UpdateEventReceiverRequest,
 };
 use crate::application::handlers::event_receiver_group_handler::{
     CreateEventReceiverGroupParams, UpdateEventReceiverGroupParams,
@@ -114,17 +115,7 @@ pub async fn create_event(
                 data: event_id.to_string(),
             }))
         }
-        Err(e) => {
-            error!("Failed to create event: {}", e);
-            let status = e.status_code();
-            Err((
-                status,
-                Json(ErrorResponse::new(
-                    "event_creation_failed".to_string(),
-                    e.message(),
-                )),
-            ))
-        }
+        Err(e) => Err(map_app_error_to_rest_response(e)),
     }
 }
 
@@ -172,17 +163,7 @@ pub async fn get_event(
                 )),
             ))
         }
-        Err(e) => {
-            error!("Failed to get event {}: {}", event_id, e);
-            let status = e.status_code();
-            Err((
-                status,
-                Json(ErrorResponse::new(
-                    "event_retrieval_failed".to_string(),
-                    e.message(),
-                )),
-            ))
-        }
+        Err(e) => Err(map_app_error_to_rest_response(e)),
     }
 }
 
@@ -235,17 +216,7 @@ pub async fn create_event_receiver(
                 data: receiver_id.to_string(),
             }))
         }
-        Err(e) => {
-            error!("Failed to create event receiver: {}", e);
-            let status = e.status_code();
-            Err((
-                status,
-                Json(ErrorResponse::new(
-                    "receiver_creation_failed".to_string(),
-                    e.message(),
-                )),
-            ))
-        }
+        Err(e) => Err(map_app_error_to_rest_response(e)),
     }
 }
 
@@ -293,17 +264,7 @@ pub async fn get_event_receiver(
                 )),
             ))
         }
-        Err(e) => {
-            error!("Failed to get event receiver {}: {}", receiver_id, e);
-            let status = e.status_code();
-            Err((
-                status,
-                Json(ErrorResponse::new(
-                    "receiver_retrieval_failed".to_string(),
-                    e.message(),
-                )),
-            ))
-        }
+        Err(e) => Err(map_app_error_to_rest_response(e)),
     }
 }
 
@@ -340,11 +301,7 @@ pub async fn list_event_receivers(
     {
         Ok(count) => count,
         Err(e) => {
-            error!("Failed to count event receivers: {}", e);
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse::new("count_failed".to_string(), e.message())),
-            ));
+            return Err(map_app_error_to_rest_response(e));
         }
     };
 
@@ -367,14 +324,7 @@ pub async fn list_event_receivers(
                 pagination,
             }))
         }
-        Err(e) => {
-            error!("Failed to list event receivers: {}", e);
-            let status = e.status_code();
-            Err((
-                status,
-                Json(ErrorResponse::new("list_failed".to_string(), e.message())),
-            ))
-        }
+        Err(e) => Err(map_app_error_to_rest_response(e)),
     }
 }
 
@@ -435,14 +385,7 @@ pub async fn update_event_receiver(
             info!("Event receiver updated successfully: {}", receiver_id);
             Ok(StatusCode::NO_CONTENT)
         }
-        Err(e) => {
-            error!("Failed to update event receiver {}: {}", receiver_id, e);
-            let status = e.status_code();
-            Err((
-                status,
-                Json(ErrorResponse::new("update_failed".to_string(), e.message())),
-            ))
-        }
+        Err(e) => Err(map_app_error_to_rest_response(e)),
     }
 }
 
@@ -480,14 +423,7 @@ pub async fn delete_event_receiver(
             info!("Event receiver deleted successfully: {}", receiver_id);
             Ok(StatusCode::NO_CONTENT)
         }
-        Err(e) => {
-            error!("Failed to delete event receiver {}: {}", receiver_id, e);
-            let status = e.status_code();
-            Err((
-                status,
-                Json(ErrorResponse::new("delete_failed".to_string(), e.message())),
-            ))
-        }
+        Err(e) => Err(map_app_error_to_rest_response(e)),
     }
 }
 
@@ -557,17 +493,7 @@ pub async fn create_event_receiver_group(
                 data: group_id.to_string(),
             }))
         }
-        Err(e) => {
-            error!("Failed to create event receiver group: {}", e);
-            let status = e.status_code();
-            Err((
-                status,
-                Json(ErrorResponse::new(
-                    "group_creation_failed".to_string(),
-                    e.message(),
-                )),
-            ))
-        }
+        Err(e) => Err(map_app_error_to_rest_response(e)),
     }
 }
 
@@ -615,17 +541,7 @@ pub async fn get_event_receiver_group(
                 )),
             ))
         }
-        Err(e) => {
-            error!("Failed to get event receiver group {}: {}", group_id, e);
-            let status = e.status_code();
-            Err((
-                status,
-                Json(ErrorResponse::new(
-                    "group_retrieval_failed".to_string(),
-                    e.message(),
-                )),
-            ))
-        }
+        Err(e) => Err(map_app_error_to_rest_response(e)),
     }
 }
 
@@ -703,14 +619,7 @@ pub async fn update_event_receiver_group(
             info!("Event receiver group updated successfully: {}", group_id);
             Ok(StatusCode::NO_CONTENT)
         }
-        Err(e) => {
-            error!("Failed to update event receiver group {}: {}", group_id, e);
-            let status = e.status_code();
-            Err((
-                status,
-                Json(ErrorResponse::new("update_failed".to_string(), e.message())),
-            ))
-        }
+        Err(e) => Err(map_app_error_to_rest_response(e)),
     }
 }
 
@@ -748,14 +657,7 @@ pub async fn delete_event_receiver_group(
             info!("Event receiver group deleted successfully: {}", group_id);
             Ok(StatusCode::NO_CONTENT)
         }
-        Err(e) => {
-            error!("Failed to delete event receiver group {}: {}", group_id, e);
-            let status = e.status_code();
-            Err((
-                status,
-                Json(ErrorResponse::new("delete_failed".to_string(), e.message())),
-            ))
-        }
+        Err(e) => Err(map_app_error_to_rest_response(e)),
     }
 }
 
@@ -779,6 +681,22 @@ mod tests {
         // Unit tests for ID parsing are covered in the domain value objects
         assert_eq!(StatusCode::BAD_REQUEST.as_u16(), 400);
         assert_eq!(StatusCode::NOT_FOUND.as_u16(), 404);
+    }
+
+    #[test]
+    fn test_map_app_error_to_rest_response_is_used_for_error_mapping() {
+        // Structural test: verify map_app_error_to_rest_response can be called
+        // from within this module and produces correct output, confirming the
+        // import and wiring are correct.
+        use crate::api::rest::dtos::map_app_error_to_rest_response;
+        use crate::error::{Error, RepositoryError};
+
+        let e = Error::Repository(RepositoryError::EntityNotFound {
+            entity: "Event".to_string(),
+        });
+        let (status, body) = map_app_error_to_rest_response(e);
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body.0.error, "not_found");
     }
 
     #[test]

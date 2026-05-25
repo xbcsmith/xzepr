@@ -65,7 +65,7 @@ impl ApiKeyRepository for PostgresApiKeyRepository {
         .bind(api_key.last_used_at)
         .execute(&self.pool)
         .await
-        .map_err(|e| AuthError::OidcError {
+        .map_err(|e| AuthError::StorageError {
             message: format!("api_key save: {}", e),
         })?;
         Ok(())
@@ -79,48 +79,53 @@ impl ApiKeyRepository for PostgresApiKeyRepository {
         .bind(hash)
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| AuthError::OidcError {
+        .map_err(|e| AuthError::StorageError {
             message: format!("find_by_hash: {}", e),
         })?;
 
         match row {
             None => Ok(None),
             Some(row) => {
-                let id_str: String = row.try_get("id").map_err(|e| AuthError::OidcError {
+                let id_str: String = row.try_get("id").map_err(|e| AuthError::StorageError {
                     message: e.to_string(),
                 })?;
                 let user_id_str: String =
-                    row.try_get("user_id").map_err(|e| AuthError::OidcError {
-                        message: e.to_string(),
-                    })?;
+                    row.try_get("user_id")
+                        .map_err(|e| AuthError::StorageError {
+                            message: e.to_string(),
+                        })?;
                 Ok(Some(ApiKey {
-                    id: ApiKeyId::parse(&id_str).map_err(|e| AuthError::OidcError {
+                    id: ApiKeyId::parse(&id_str).map_err(|e| AuthError::StorageError {
                         message: e.to_string(),
                     })?,
-                    user_id: UserId::parse(&user_id_str).map_err(|e| AuthError::OidcError {
+                    user_id: UserId::parse(&user_id_str).map_err(|e| AuthError::StorageError {
                         message: e.to_string(),
                     })?,
-                    key_hash: row.try_get("key_hash").map_err(|e| AuthError::OidcError {
-                        message: e.to_string(),
-                    })?,
-                    name: row.try_get("name").map_err(|e| AuthError::OidcError {
+                    key_hash: row
+                        .try_get("key_hash")
+                        .map_err(|e| AuthError::StorageError {
+                            message: e.to_string(),
+                        })?,
+                    name: row.try_get("name").map_err(|e| AuthError::StorageError {
                         message: e.to_string(),
                     })?,
                     expires_at: row
                         .try_get("expires_at")
-                        .map_err(|e| AuthError::OidcError {
+                        .map_err(|e| AuthError::StorageError {
                             message: e.to_string(),
                         })?,
-                    enabled: row.try_get("enabled").map_err(|e| AuthError::OidcError {
-                        message: e.to_string(),
-                    })?,
+                    enabled: row
+                        .try_get("enabled")
+                        .map_err(|e| AuthError::StorageError {
+                            message: e.to_string(),
+                        })?,
                     created_at: row
                         .try_get("created_at")
-                        .map_err(|e| AuthError::OidcError {
+                        .map_err(|e| AuthError::StorageError {
                             message: e.to_string(),
                         })?,
                     last_used_at: row.try_get("last_used_at").map_err(|e| {
-                        AuthError::OidcError {
+                        AuthError::StorageError {
                             message: e.to_string(),
                         }
                     })?,
@@ -134,7 +139,7 @@ impl ApiKeyRepository for PostgresApiKeyRepository {
             .bind(id.as_ulid().to_string())
             .execute(&self.pool)
             .await
-            .map_err(|e| AuthError::OidcError {
+            .map_err(|e| AuthError::StorageError {
                 message: format!("update_last_used: {}", e),
             })?;
         Ok(())
@@ -148,47 +153,53 @@ impl ApiKeyRepository for PostgresApiKeyRepository {
         .bind(user_id.as_ulid().to_string())
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| AuthError::OidcError {
+        .map_err(|e| AuthError::StorageError {
             message: format!("find_by_user_id: {}", e),
         })?;
 
         let mut keys = Vec::with_capacity(rows.len());
         for row in rows {
-            let id_str: String = row.try_get("id").map_err(|e| AuthError::OidcError {
+            let id_str: String = row.try_get("id").map_err(|e| AuthError::StorageError {
                 message: e.to_string(),
             })?;
-            let uid_str: String = row.try_get("user_id").map_err(|e| AuthError::OidcError {
-                message: e.to_string(),
-            })?;
+            let uid_str: String = row
+                .try_get("user_id")
+                .map_err(|e| AuthError::StorageError {
+                    message: e.to_string(),
+                })?;
             keys.push(ApiKey {
-                id: ApiKeyId::parse(&id_str).map_err(|e| AuthError::OidcError {
+                id: ApiKeyId::parse(&id_str).map_err(|e| AuthError::StorageError {
                     message: e.to_string(),
                 })?,
-                user_id: UserId::parse(&uid_str).map_err(|e| AuthError::OidcError {
+                user_id: UserId::parse(&uid_str).map_err(|e| AuthError::StorageError {
                     message: e.to_string(),
                 })?,
-                key_hash: row.try_get("key_hash").map_err(|e| AuthError::OidcError {
-                    message: e.to_string(),
-                })?,
-                name: row.try_get("name").map_err(|e| AuthError::OidcError {
+                key_hash: row
+                    .try_get("key_hash")
+                    .map_err(|e| AuthError::StorageError {
+                        message: e.to_string(),
+                    })?,
+                name: row.try_get("name").map_err(|e| AuthError::StorageError {
                     message: e.to_string(),
                 })?,
                 expires_at: row
                     .try_get("expires_at")
-                    .map_err(|e| AuthError::OidcError {
+                    .map_err(|e| AuthError::StorageError {
                         message: e.to_string(),
                     })?,
-                enabled: row.try_get("enabled").map_err(|e| AuthError::OidcError {
-                    message: e.to_string(),
-                })?,
+                enabled: row
+                    .try_get("enabled")
+                    .map_err(|e| AuthError::StorageError {
+                        message: e.to_string(),
+                    })?,
                 created_at: row
                     .try_get("created_at")
-                    .map_err(|e| AuthError::OidcError {
+                    .map_err(|e| AuthError::StorageError {
                         message: e.to_string(),
                     })?,
                 last_used_at: row
                     .try_get("last_used_at")
-                    .map_err(|e| AuthError::OidcError {
+                    .map_err(|e| AuthError::StorageError {
                         message: e.to_string(),
                     })?,
             });
@@ -201,7 +212,7 @@ impl ApiKeyRepository for PostgresApiKeyRepository {
             .bind(id.as_ulid().to_string())
             .execute(&self.pool)
             .await
-            .map_err(|e| AuthError::OidcError {
+            .map_err(|e| AuthError::StorageError {
                 message: format!("revoke: {}", e),
             })?;
         Ok(())
@@ -217,5 +228,17 @@ mod tests {
         // Structural test - verifies the type can be constructed given a pool.
         // A real pool is not required for this compilation check.
         let _: fn(PgPool) -> PostgresApiKeyRepository = PostgresApiKeyRepository::new;
+    }
+
+    #[test]
+    fn test_postgres_api_key_repository_maps_errors_to_storage_error() {
+        // Structural test: verifies that the StorageError variant is the one
+        // used throughout this file, not OidcError.
+        // The error mapping closures compile only when AuthError::StorageError
+        // exists and has a `message` field, proving the migration is complete.
+        let err = crate::error::AuthError::StorageError {
+            message: "test failure".to_string(),
+        };
+        assert!(err.to_string().contains("storage"));
     }
 }

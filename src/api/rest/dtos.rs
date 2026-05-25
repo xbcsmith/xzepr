@@ -3,9 +3,11 @@
 
 // src/api/rest/dtos.rs
 
+use axum::{http::StatusCode, response::Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use tracing::error;
 
 use crate::domain::entities::{
     event::Event, event_receiver::EventReceiver, event_receiver_group::EventReceiverGroup,
@@ -659,6 +661,148 @@ pub struct GroupMembersResponse {
     pub members: Vec<GroupMemberResponse>,
 }
 
+/// Maps an application [`crate::error::Error`] to a REST HTTP response tuple.
+///
+/// Internal error details are logged via [`tracing::error!`] for server errors
+/// (HTTP 5xx) and are never included in the response body.  Callers should
+/// return the result of this function directly from their Axum handler.
+///
+/// # Stable error codes
+///
+/// | Application error                            | HTTP status | `error` field          |
+/// |----------------------------------------------|-------------|------------------------|
+/// | `AuthError::InvalidCredentials`              | 401         | `authentication_error` |
+/// | `AuthError::UserDisabled`                    | 403         | `authorization_error`  |
+/// | `AuthError::UserNotFound`                    | 404         | `not_found`            |
+/// | Any other `AuthError`                        | 401         | `authentication_error` |
+/// | `AuthorizationError`                         | 403         | `authorization_error`  |
+/// | `ValidationError`                            | 400         | `validation_error`     |
+/// | `Error::NotFound`                            | 404         | `not_found`            |
+/// | `Error::BadRequest`                          | 400         | `bad_request`          |
+/// | `DomainError::EventCreationFailed`           | 400         | `validation_error`     |
+/// | `DomainError::InvalidEventPayload`           | 400         | `validation_error`     |
+/// | `DomainError::ValidationError`               | 400         | `validation_error`     |
+/// | `DomainError::InvalidData`                   | 400         | `validation_error`     |
+/// | `DomainError::ReceiverNotFound`              | 404         | `not_found`            |
+/// | `DomainError::GroupNotFound`                 | 404         | `not_found`            |
+/// | `DomainError::NotFound`                      | 404         | `not_found`            |
+/// | `DomainError::UserAlreadyExists`             | 409         | `conflict`             |
+/// | `DomainError::AlreadyExists`                 | 409         | `conflict`             |
+/// | `RepositoryError::EntityNotFound`            | 404         | `not_found`            |
+/// | `RepositoryError::ConstraintViolation`       | 409         | `conflict`             |
+/// | `RepositoryError::ConcurrencyConflict`       | 409         | `conflict`             |
+/// | Everything else                              | 500         | `internal_error`       |
+///
+/// # Arguments
+///
+/// * `e` - The application error to convert.
+///
+/// # Returns
+///
+/// A tuple of `(StatusCode, Json<ErrorResponse>)` suitable for returning from
+/// an Axum handler.
+///
+/// # Examples
+///
+/// ```
+/// use xzepr::api::rest::dtos::map_app_error_to_rest_response;
+/// use xzepr::error::{Error, RepositoryError};
+///
+/// let e = Error::Repository(RepositoryError::EntityNotFound {
+///     entity: "Event".to_string(),
+/// });
+/// let (status, _body) = map_app_error_to_rest_response(e);
+/// assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+/// ```
+pub fn map_app_error_to_rest_response(e: crate::error::Error) -> (StatusCode, Json<ErrorResponse>) {
+    use crate::error::{AuthError, DomainError, RepositoryError};
+
+    let (status, error_code, public_message) = match &e {
+        // --- Authentication ---
+        crate::error::Error::Auth(AuthError::InvalidCredentials) => (
+            StatusCode::UNAUTHORIZED,
+            "authentication_error",
+            "Invalid credentials",
+        ),
+        crate::error::Error::Auth(AuthError::UserDisabled) => (
+            StatusCode::FORBIDDEN,
+            "authorization_error",
+            "Access denied",
+        ),
+        crate::error::Error::Auth(AuthError::UserNotFound) => {
+            (StatusCode::NOT_FOUND, "not_found", "Resource not found")
+        }
+        crate::error::Error::Auth(_) => (
+            StatusCode::UNAUTHORIZED,
+            "authentication_error",
+            "Authentication required",
+        ),
+        // --- Authorization ---
+        crate::error::Error::Authorization(_) => (
+            StatusCode::FORBIDDEN,
+            "authorization_error",
+            "Access denied",
+        ),
+        // --- Validation ---
+        crate::error::Error::Validation(_) => (
+            StatusCode::BAD_REQUEST,
+            "validation_error",
+            "Validation failed",
+        ),
+        // --- Not found / bad request ---
+        crate::error::Error::NotFound { .. } => {
+            (StatusCode::NOT_FOUND, "not_found", "Resource not found")
+        }
+        crate::error::Error::BadRequest { .. } => {
+            (StatusCode::BAD_REQUEST, "bad_request", "Bad request")
+        }
+        // --- Domain errors ---
+        crate::error::Error::Domain(
+            DomainError::EventCreationFailed { .. }
+            | DomainError::InvalidEventPayload
+            | DomainError::ValidationError { .. }
+            | DomainError::InvalidData(_),
+        ) => (
+            StatusCode::BAD_REQUEST,
+            "validation_error",
+            "Validation failed",
+        ),
+        crate::error::Error::Domain(
+            DomainError::ReceiverNotFound
+            | DomainError::GroupNotFound
+            | DomainError::NotFound { .. },
+        ) => (StatusCode::NOT_FOUND, "not_found", "Resource not found"),
+        crate::error::Error::Domain(
+            DomainError::UserAlreadyExists | DomainError::AlreadyExists { .. },
+        ) => (StatusCode::CONFLICT, "conflict", "Resource already exists"),
+        // --- Repository errors ---
+        crate::error::Error::Repository(RepositoryError::EntityNotFound { .. }) => {
+            (StatusCode::NOT_FOUND, "not_found", "Resource not found")
+        }
+        crate::error::Error::Repository(
+            RepositoryError::ConstraintViolation { .. } | RepositoryError::ConcurrencyConflict,
+        ) => (StatusCode::CONFLICT, "conflict", "Resource conflict"),
+        // --- Everything else is a server error ---
+        _ => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "internal_error",
+            "An internal server error occurred",
+        ),
+    };
+
+    if status.is_server_error() {
+        error!(error = %e, "Internal server error handling REST request");
+    }
+
+    (
+        status,
+        Json(ErrorResponse::new(
+            error_code.to_string(),
+            public_message.to_string(),
+        )),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -893,6 +1037,90 @@ mod tests {
         assert!(json_str.contains("email"));
         assert!(json_str.contains("added_at"));
         assert!(json_str.contains("added_by"));
+    }
+
+    #[test]
+    fn test_map_app_error_invalid_credentials_returns_401() {
+        use crate::error::{AuthError, Error};
+
+        let e = Error::Auth(AuthError::InvalidCredentials);
+        let (status, body) = map_app_error_to_rest_response(e);
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_eq!(body.0.error, "authentication_error");
+    }
+
+    #[test]
+    fn test_map_app_error_permission_denied_returns_403() {
+        use crate::error::{AuthorizationError, Error};
+
+        let e = Error::Authorization(AuthorizationError::PermissionDenied);
+        let (status, body) = map_app_error_to_rest_response(e);
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body.0.error, "authorization_error");
+    }
+
+    #[test]
+    fn test_map_app_error_not_found_returns_404() {
+        use crate::error::{Error, RepositoryError};
+
+        let e = Error::Repository(RepositoryError::EntityNotFound {
+            entity: "Event".to_string(),
+        });
+        let (status, body) = map_app_error_to_rest_response(e);
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body.0.error, "not_found");
+    }
+
+    #[test]
+    fn test_map_app_error_constraint_violation_returns_409() {
+        use crate::error::{Error, RepositoryError};
+
+        let e = Error::Repository(RepositoryError::ConstraintViolation {
+            constraint: "unique_name".to_string(),
+        });
+        let (status, body) = map_app_error_to_rest_response(e);
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body.0.error, "conflict");
+    }
+
+    #[test]
+    fn test_map_app_error_concurrency_conflict_returns_409() {
+        use crate::error::{Error, RepositoryError};
+
+        let e = Error::Repository(RepositoryError::ConcurrencyConflict);
+        let (status, body) = map_app_error_to_rest_response(e);
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body.0.error, "conflict");
+    }
+
+    #[test]
+    fn test_map_app_error_validation_error_returns_400() {
+        use crate::error::{Error, ValidationError};
+
+        let e = Error::Validation(ValidationError::InvalidEmail);
+        let (status, body) = map_app_error_to_rest_response(e);
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body.0.error, "validation_error");
+    }
+
+    #[test]
+    fn test_map_app_error_database_error_returns_500() {
+        let e = crate::error::Error::Database(sqlx::Error::RowNotFound);
+        let (status, _body) = map_app_error_to_rest_response(e);
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn test_map_app_error_500_response_does_not_expose_internal_detail() {
+        let e = crate::error::Error::Database(sqlx::Error::RowNotFound);
+        let (status, body) = map_app_error_to_rest_response(e);
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body.0.error, "internal_error");
+        assert_eq!(body.0.message, "An internal server error occurred");
+        // Verify the raw SQL driver message is not present in the response body.
+        let serialized = serde_json::to_string(&body.0).unwrap();
+        assert!(!serialized.contains("no rows"));
+        assert!(!serialized.contains("query"));
     }
 
     #[test]

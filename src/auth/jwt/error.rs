@@ -62,9 +62,12 @@ pub enum JwtError {
     #[error("Blacklist storage error: {0}")]
     BlacklistError(String),
 
-    /// Configuration error
-    #[error("Configuration error: {0}")]
-    ConfigError(String),
+    /// JWT configuration validation error.
+    ///
+    /// Carries a [`JwtConfigError`] from [`crate::auth::jwt::config`] that
+    /// describes which configuration constraint was violated.
+    #[error("JWT configuration error: {0}")]
+    ConfigError(#[from] crate::auth::jwt::config::JwtConfigError),
 
     /// Internal error
     #[error("Internal JWT error: {0}")]
@@ -92,6 +95,17 @@ pub type JwtResult<T> = Result<T, JwtError>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_config_error_display() {
+        use crate::auth::jwt::config::JwtConfigError;
+        let err = JwtError::ConfigError(JwtConfigError::EmptyIssuer);
+        assert!(
+            err.to_string().contains("issuer"),
+            "ConfigError display should mention 'issuer'; got: {}",
+            err
+        );
+    }
 
     #[test]
     fn test_error_display() {

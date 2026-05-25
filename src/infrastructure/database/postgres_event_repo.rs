@@ -118,13 +118,28 @@ impl PostgresEventRepository {
             e
         })?;
 
-        let owner_id: crate::domain::value_objects::UserId = row
-            .try_get::<String, _>("owner_id")
-            .ok()
-            .and_then(|s| crate::domain::value_objects::UserId::from_string(s).ok())
-            .unwrap_or_else(crate::domain::value_objects::UserId::new);
+        let owner_id_str: String = row.try_get("owner_id").map_err(|e| {
+            crate::error::Error::Infrastructure(crate::error::InfrastructureError::ColumnDecoding {
+                column: "owner_id".to_string(),
+                detail: e.to_string(),
+            })
+        })?;
+        let owner_id =
+            crate::domain::value_objects::UserId::from_string(owner_id_str).map_err(|e| {
+                crate::error::Error::Infrastructure(
+                    crate::error::InfrastructureError::ColumnDecoding {
+                        column: "owner_id".to_string(),
+                        detail: format!("Invalid owner ID format: {}", e),
+                    },
+                )
+            })?;
 
-        let resource_version: i64 = row.try_get("resource_version").unwrap_or(1);
+        let resource_version: i64 = row.try_get("resource_version").map_err(|e| {
+            crate::error::Error::Infrastructure(crate::error::InfrastructureError::ColumnDecoding {
+                column: "resource_version".to_string(),
+                detail: e.to_string(),
+            })
+        })?;
 
         // Reconstruct event from database fields with original ID and timestamp
         Ok(Event::from_database(DatabaseEventFields {
@@ -195,7 +210,8 @@ impl EventRepository for PostgresEventRepository {
         .bind(event.owner_id().to_string())
         .bind(event.resource_version())
         .execute(&self.pool)
-        .await?;
+        .await
+        .map_err(classify_sqlx_error)?;
 
         Ok(())
     }
@@ -819,5 +835,60 @@ impl EventRepository for PostgresEventRepository {
         .await?;
 
         Ok(result)
+    }
+}
+
+/// Maps a [`sqlx::Error`] to the most specific application error available.
+///
+/// If the error is a unique or foreign-key constraint violation, it is mapped
+/// to [`crate::error::RepositoryError::ConstraintViolation`] so that callers
+/// can distinguish conflict responses from generic database failures.
+/// All other errors fall through to [`crate::error::Error::Database`].
+fn classify_sqlx_error(e: sqlx::Error) -> crate::error::Error {
+    if let sqlx::Error::Database(ref db_err) = e {
+        if db_err.is_unique_violation() {
+            return crate::error::Error::Repository(
+                crate::error::RepositoryError::ConstraintViolation {
+                    constraint: db_err.constraint().unwrap_or("unique").to_string(),
+                },
+            );
+        }
+        if db_err.is_foreign_key_violation() {
+            return crate::error::Error::Repository(
+                crate::error::RepositoryError::ConstraintViolation {
+                    constraint: db_err.constraint().unwrap_or("foreign_key").to_string(),
+                },
+            );
+        }
+    }
+    crate::error::Error::Database(e)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verifies that non-database sqlx errors pass through to `Error::Database`
+    /// without being reclassified as constraint violations.
+    #[test]
+    fn test_classify_sqlx_error_non_database_error_maps_to_database() {
+        // sqlx::Error::RowNotFound is not a database-originated error;
+        // it must pass through as Error::Database unchanged.
+        let err = sqlx::Error::RowNotFound;
+        let result = classify_sqlx_error(err);
+        assert!(
+            matches!(result, crate::error::Error::Database(_)),
+            "expected Error::Database variant"
+        );
+    }
+
+    /// Compile-time type annotation test: verifies `classify_sqlx_error` returns
+    /// `crate::error::Error`, which is required for `.map_err(classify_sqlx_error)`
+    /// to compose correctly with `?`.
+    #[test]
+    fn test_classify_sqlx_error_type_annotation() {
+        fn _takes_app_error(_e: crate::error::Error) {}
+        let e = sqlx::Error::RowNotFound;
+        _takes_app_error(classify_sqlx_error(e));
     }
 }

@@ -10,6 +10,41 @@
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
 
+/// Errors produced when validating [`JwtConfig`].
+///
+/// These errors indicate misconfiguration at startup and are never returned in
+/// per-request paths.
+#[derive(Debug, thiserror::Error)]
+pub enum JwtConfigError {
+    /// Access token expiration is zero or negative.
+    #[error("Access token expiration must be positive")]
+    NonPositiveAccessExpiration,
+    /// Refresh token expiration is zero or negative.
+    #[error("Refresh token expiration must be positive")]
+    NonPositiveRefreshExpiration,
+    /// Access token expiration is not shorter than refresh token expiration.
+    #[error("Access token expiration must be less than refresh token expiration")]
+    AccessExpirationExceedsRefresh,
+    /// JWT issuer is empty.
+    #[error("JWT issuer cannot be empty")]
+    EmptyIssuer,
+    /// JWT audience is empty.
+    #[error("JWT audience cannot be empty")]
+    EmptyAudience,
+    /// RS256 requires a private key path.
+    #[error("Private key path is required for RS256")]
+    MissingPrivateKey,
+    /// RS256 requires a public key path.
+    #[error("Public key path is required for RS256")]
+    MissingPublicKey,
+    /// HS256/HS512 require a secret.
+    #[error("Secret key is required for HS256/HS512")]
+    MissingSecret,
+    /// HS256/HS512 secret key is shorter than the minimum required length.
+    #[error("Secret key must be at least 32 characters")]
+    SecretTooShort,
+}
+
 /// JWT configuration for the application
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JwtConfig {
@@ -94,49 +129,52 @@ impl JwtConfig {
         Duration::seconds(self.refresh_token_expiration_seconds)
     }
 
-    /// Validate the configuration
-    pub fn validate(&self) -> Result<(), String> {
+    /// Validate the configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`JwtConfigError`] variant describing the first constraint
+    /// violation found.
+    pub fn validate(&self) -> Result<(), JwtConfigError> {
         // Validate expiration times
         if self.access_token_expiration_seconds <= 0 {
-            return Err("Access token expiration must be positive".to_string());
+            return Err(JwtConfigError::NonPositiveAccessExpiration);
         }
 
         if self.refresh_token_expiration_seconds <= 0 {
-            return Err("Refresh token expiration must be positive".to_string());
+            return Err(JwtConfigError::NonPositiveRefreshExpiration);
         }
 
         if self.access_token_expiration_seconds >= self.refresh_token_expiration_seconds {
-            return Err(
-                "Access token expiration must be less than refresh token expiration".to_string(),
-            );
+            return Err(JwtConfigError::AccessExpirationExceedsRefresh);
         }
 
         // Validate issuer and audience
         if self.issuer.is_empty() {
-            return Err("Issuer cannot be empty".to_string());
+            return Err(JwtConfigError::EmptyIssuer);
         }
 
         if self.audience.is_empty() {
-            return Err("Audience cannot be empty".to_string());
+            return Err(JwtConfigError::EmptyAudience);
         }
 
         // Validate algorithm-specific requirements
         match self.algorithm {
             Algorithm::RS256 => {
                 if self.private_key_path.is_none() {
-                    return Err("Private key path required for RS256".to_string());
+                    return Err(JwtConfigError::MissingPrivateKey);
                 }
                 if self.public_key_path.is_none() {
-                    return Err("Public key path required for RS256".to_string());
+                    return Err(JwtConfigError::MissingPublicKey);
                 }
             }
             Algorithm::HS256 => {
                 if self.secret_key.is_none() {
-                    return Err("Secret key required for HS256".to_string());
+                    return Err(JwtConfigError::MissingSecret);
                 }
                 if let Some(ref secret) = self.secret_key {
                     if secret.len() < 32 {
-                        return Err("Secret key must be at least 32 characters".to_string());
+                        return Err(JwtConfigError::SecretTooShort);
                     }
                 }
             }
@@ -260,10 +298,10 @@ mod tests {
         config.access_token_expiration_seconds = 1000;
         config.refresh_token_expiration_seconds = 500;
         let result = config.validate();
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("Access token expiration must be less"));
+        assert!(matches!(
+            result,
+            Err(JwtConfigError::AccessExpirationExceedsRefresh)
+        ));
     }
 
     #[test]
@@ -302,8 +340,58 @@ mod tests {
             ..Default::default()
         };
         let result = config.validate();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("at least 32 characters"));
+        assert!(matches!(result, Err(JwtConfigError::SecretTooShort)));
+    }
+
+    #[test]
+    fn test_jwt_config_validate_non_positive_access_expiration() {
+        let mut config = JwtConfig::development();
+        config.access_token_expiration_seconds = 0;
+        assert!(matches!(
+            config.validate(),
+            Err(JwtConfigError::NonPositiveAccessExpiration)
+        ));
+    }
+
+    #[test]
+    fn test_jwt_config_validate_non_positive_refresh_expiration() {
+        let mut config = JwtConfig::development();
+        config.refresh_token_expiration_seconds = -1;
+        assert!(matches!(
+            config.validate(),
+            Err(JwtConfigError::NonPositiveRefreshExpiration)
+        ));
+    }
+
+    #[test]
+    fn test_jwt_config_validate_access_exceeds_refresh() {
+        let mut config = JwtConfig::development();
+        config.access_token_expiration_seconds = 86400;
+        config.refresh_token_expiration_seconds = 3600;
+        assert!(matches!(
+            config.validate(),
+            Err(JwtConfigError::AccessExpirationExceedsRefresh)
+        ));
+    }
+
+    #[test]
+    fn test_jwt_config_validate_empty_issuer() {
+        let mut config = JwtConfig::development();
+        config.issuer = String::new();
+        assert!(matches!(
+            config.validate(),
+            Err(JwtConfigError::EmptyIssuer)
+        ));
+    }
+
+    #[test]
+    fn test_jwt_config_validate_empty_audience() {
+        let mut config = JwtConfig::development();
+        config.audience = String::new();
+        assert!(matches!(
+            config.validate(),
+            Err(JwtConfigError::EmptyAudience)
+        ));
     }
 
     #[test]
