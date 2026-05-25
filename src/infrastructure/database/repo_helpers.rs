@@ -69,6 +69,50 @@ pub fn require_entity<T>(result: Option<T>, entity: &str) -> Result<T, Repositor
     })
 }
 
+/// Maps a [`sqlx::Error`] to the most specific application [`crate::error::Error`].
+///
+/// Database errors indicating a unique-constraint or foreign-key violation are
+/// mapped to [`crate::error::RepositoryError::ConstraintViolation`] so that
+/// callers can distinguish conflict responses (HTTP 409) from generic failures.
+/// All other errors fall through to [`crate::error::Error::Database`].
+///
+/// # Arguments
+///
+/// * `e` - The sqlx error to classify.
+///
+/// # Returns
+///
+/// A [`crate::error::Error`] variant representing the failure.
+///
+/// # Examples
+///
+/// ```rust
+/// use xzepr::infrastructure::database::repo_helpers::classify_sqlx_error;
+///
+/// let err = sqlx::Error::RowNotFound;
+/// let app_err = classify_sqlx_error(err);
+/// assert!(matches!(app_err, xzepr::error::Error::Database(_)));
+/// ```
+pub fn classify_sqlx_error(e: sqlx::Error) -> crate::error::Error {
+    if let sqlx::Error::Database(ref db_err) = e {
+        if db_err.is_unique_violation() {
+            return crate::error::Error::Repository(
+                crate::error::RepositoryError::ConstraintViolation {
+                    constraint: db_err.constraint().unwrap_or("unique").to_string(),
+                },
+            );
+        }
+        if db_err.is_foreign_key_violation() {
+            return crate::error::Error::Repository(
+                crate::error::RepositoryError::ConstraintViolation {
+                    constraint: db_err.constraint().unwrap_or("foreign_key").to_string(),
+                },
+            );
+        }
+    }
+    crate::error::Error::Database(e)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -95,5 +139,22 @@ mod tests {
         let result: Result<String, RepositoryError> = require_entity(None, "MyEntity");
         let err = result.unwrap_err();
         assert!(err.to_string().contains("MyEntity"));
+    }
+
+    #[test]
+    fn test_classify_sqlx_error_row_not_found_passes_through() {
+        let err = sqlx::Error::RowNotFound;
+        let result = classify_sqlx_error(err);
+        assert!(
+            matches!(result, crate::error::Error::Database(_)),
+            "RowNotFound must map to Error::Database"
+        );
+    }
+
+    #[test]
+    fn test_classify_sqlx_error_return_type() {
+        fn _assert_error(_e: crate::error::Error) {}
+        let err = sqlx::Error::RowNotFound;
+        _assert_error(classify_sqlx_error(err));
     }
 }

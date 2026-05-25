@@ -15,4 +15,5 @@ pub use postgres_event_receiver_group_repo::PostgresEventReceiverGroupRepository
 pub use postgres_event_receiver_repo::PostgresEventReceiverRepository;
 pub use postgres_event_repo::PostgresEventRepository;
 pub use postgres_user_repo::PostgresUserRepository;
+pub use repo_helpers::classify_sqlx_error;
 pub use repo_helpers::require_entity;

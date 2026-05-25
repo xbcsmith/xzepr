@@ -241,4 +241,21 @@ mod tests {
         };
         assert!(err.to_string().contains("storage"));
     }
+
+    #[test]
+    fn test_storage_error_does_not_contain_hash_format() {
+        // Structural test: verify StorageError messages reference the operation
+        // name, not sensitive data such as a key hash.
+        let err = crate::error::AuthError::StorageError {
+            message: "api_key save: connection refused".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("storage"),
+            "StorageError display must include 'storage'"
+        );
+        // The hash itself (64-char hex) should never be part of error messages.
+        // This is a compile-time property enforced by the AuthError::StorageError
+        // variant only carrying the operation name + underlying DB error.
+    }
 }

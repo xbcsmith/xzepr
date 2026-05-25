@@ -82,6 +82,7 @@ chrono = { version = "0.4", features = ["serde"] }
 # Missing dependencies
 async-trait = "0.1"
 sha2 = "0.10"
+hmac = "0.12"
 clap = { version = "4.5.48", features = ["derive"] }
 hex = "0.4"
 reqwest = { version = "0.12", features = ["json"] }

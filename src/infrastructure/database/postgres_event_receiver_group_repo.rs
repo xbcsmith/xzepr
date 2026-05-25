@@ -6,6 +6,8 @@
 use async_trait::async_trait;
 use sqlx::PgPool;
 
+use super::repo_helpers::classify_sqlx_error;
+
 use crate::domain::entities::event_receiver_group::{EventReceiverGroup, EventReceiverGroupData};
 use crate::domain::repositories::event_receiver_group_repo::{
     EventReceiverGroupRepository, FindEventReceiverGroupCriteria, GroupMembershipRecord,
@@ -166,40 +168,56 @@ impl PostgresEventReceiverGroupRepository {
             })
             .collect()
     }
+}
 
-    /// Saves event receiver IDs for a group
-    async fn save_receiver_ids(
-        &self,
-        group_id: EventReceiverGroupId,
-        receiver_ids: &[EventReceiverId],
-    ) -> Result<()> {
-        // Delete existing associations
-        sqlx::query("DELETE FROM event_receiver_group_receivers WHERE group_id = $1")
-            .bind(group_id.to_string())
-            .execute(&self.pool)
-            .await
-            .map_err(classify_sqlx_error)?;
+/// Deletes and re-inserts receiver associations within an existing transaction.
+///
+/// All deletes and inserts share the same transaction so that partial
+/// association state is never visible to other sessions.
+///
+/// # Arguments
+///
+/// * `tx` - An active PostgreSQL transaction.
+/// * `group_id` - The group whose associations are being rewritten.
+/// * `receiver_ids` - The complete new set of receiver IDs.
+///
+/// # Errors
+///
+/// Returns [`crate::error::Error`] if any SQL statement fails.
+async fn save_receiver_ids_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    group_id: EventReceiverGroupId,
+    receiver_ids: &[EventReceiverId],
+) -> crate::error::Result<()> {
+    sqlx::query("DELETE FROM event_receiver_group_receivers WHERE group_id = $1")
+        .bind(group_id.to_string())
+        .execute(&mut **tx)
+        .await
+        .map_err(classify_sqlx_error)?;
 
-        // Insert new associations
-        for receiver_id in receiver_ids {
-            sqlx::query(
-                "INSERT INTO event_receiver_group_receivers (group_id, receiver_id) VALUES ($1, $2)",
-            )
-            .bind(group_id.to_string())
-            .bind(receiver_id.to_string())
-            .execute(&self.pool)
-            .await
-            .map_err(classify_sqlx_error)?;
-        }
-
-        Ok(())
+    for receiver_id in receiver_ids {
+        sqlx::query(
+            "INSERT INTO event_receiver_group_receivers (group_id, receiver_id) VALUES ($1, $2)",
+        )
+        .bind(group_id.to_string())
+        .bind(receiver_id.to_string())
+        .execute(&mut **tx)
+        .await
+        .map_err(classify_sqlx_error)?;
     }
+
+    Ok(())
 }
 
 #[async_trait]
 impl EventReceiverGroupRepository for PostgresEventReceiverGroupRepository {
     async fn save(&self, group: &EventReceiverGroup) -> Result<()> {
-        // Save the group
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(crate::error::Error::Database)?;
+
         sqlx::query(
             r#"
             INSERT INTO event_receiver_groups (
@@ -228,13 +246,13 @@ impl EventReceiverGroupRepository for PostgresEventReceiverGroupRepository {
         .bind(group.resource_version())
         .bind(group.created_at())
         .bind(group.updated_at())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(classify_sqlx_error)?;
 
-        // Save receiver associations
-        self.save_receiver_ids(group.id(), group.event_receiver_ids())
-            .await?;
+        save_receiver_ids_in_tx(&mut tx, group.id(), group.event_receiver_ids()).await?;
+
+        tx.commit().await.map_err(crate::error::Error::Database)?;
 
         Ok(())
     }
@@ -512,6 +530,12 @@ impl EventReceiverGroupRepository for PostgresEventReceiverGroupRepository {
     }
 
     async fn update(&self, group: &EventReceiverGroup) -> Result<()> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(crate::error::Error::Database)?;
+
         let result = sqlx::query(
             r#"
             UPDATE event_receiver_groups
@@ -535,19 +559,20 @@ impl EventReceiverGroupRepository for PostgresEventReceiverGroupRepository {
         .bind(group.owner_id().to_string())
         .bind(group.resource_version())
         .bind(group.updated_at())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
-        .map_err(crate::error::Error::Database)?;
+        .map_err(classify_sqlx_error)?;
 
         if result.rows_affected() == 0 {
             return Err(crate::error::Error::NotFound {
                 resource: format!("Event receiver group with ID {} not found", group.id()),
             });
+            // tx drops here, triggering automatic rollback
         }
 
-        // Update receiver associations
-        self.save_receiver_ids(group.id(), group.event_receiver_ids())
-            .await?;
+        save_receiver_ids_in_tx(&mut tx, group.id(), group.event_receiver_ids()).await?;
+
+        tx.commit().await.map_err(crate::error::Error::Database)?;
 
         Ok(())
     }
@@ -557,7 +582,7 @@ impl EventReceiverGroupRepository for PostgresEventReceiverGroupRepository {
             .bind(id.to_string())
             .execute(&self.pool)
             .await
-            .map_err(crate::error::Error::Database)?;
+            .map_err(classify_sqlx_error)?;
 
         if result.rows_affected() == 0 {
             return Err(crate::error::Error::NotFound {
@@ -624,105 +649,80 @@ impl EventReceiverGroupRepository for PostgresEventReceiverGroupRepository {
         &self,
         criteria: FindEventReceiverGroupCriteria,
     ) -> Result<Vec<EventReceiverGroup>> {
-        let mut conditions = Vec::new();
-        let mut param_count = 1;
+        let needs_join = criteria.contains_receiver_id.is_some();
 
-        if criteria.id.is_some() {
-            conditions.push(format!("g.id = ${}", param_count));
-            param_count += 1;
-        }
-        if criteria.name.is_some() {
-            conditions.push(format!("g.name ILIKE ${}", param_count));
-            param_count += 1;
-        }
-        if criteria.group_type.is_some() {
-            conditions.push(format!("g.group_type = ${}", param_count));
-            param_count += 1;
-        }
-        if criteria.version.is_some() {
-            conditions.push(format!("g.version = ${}", param_count));
-            param_count += 1;
-        }
-        if criteria.enabled.is_some() {
-            conditions.push(format!("g.enabled = ${}", param_count));
-            param_count += 1;
-        }
-
-        if criteria.owner_id.is_some() {
-            conditions.push(format!("g.owner_id = ${}", param_count));
-            param_count += 1;
-        }
-
-        let where_clause = if conditions.is_empty() {
-            String::new()
+        let base = if needs_join {
+            "SELECT DISTINCT g.id, g.name, g.group_type, g.version, g.description, g.enabled, \
+             g.owner_id, g.resource_version, g.created_at, g.updated_at \
+             FROM event_receiver_groups g \
+             INNER JOIN event_receiver_group_receivers gr ON g.id = gr.group_id"
         } else {
-            format!("WHERE {}", conditions.join(" AND "))
+            "SELECT g.id, g.name, g.group_type, g.version, g.description, g.enabled, \
+             g.owner_id, g.resource_version, g.created_at, g.updated_at \
+             FROM event_receiver_groups g"
         };
 
-        let mut query = if criteria.contains_receiver_id.is_some() {
-            let receiver_clause = format!("gr.receiver_id = ${}", param_count);
-            format!(
-                r#"
-                SELECT DISTINCT g.id, g.name, g.group_type, g.version, g.description, g.enabled,
-                       g.owner_id, g.resource_version, g.created_at, g.updated_at
-                FROM event_receiver_groups g
-                INNER JOIN event_receiver_group_receivers gr ON g.id = gr.group_id
-                {}
-                {}
-                ORDER BY g.created_at DESC
-                "#,
-                if !where_clause.is_empty() {
-                    where_clause.clone() + " AND"
-                } else {
-                    "WHERE".to_string()
-                },
-                receiver_clause
-            )
-        } else {
-            format!(
-                r#"
-                SELECT id, name, group_type, version, description, enabled,
-                       owner_id, resource_version, created_at, updated_at
-                FROM event_receiver_groups g
-                {}
-                ORDER BY created_at DESC
-                "#,
-                where_clause
-            )
-        };
-
-        if let Some(limit) = criteria.limit {
-            query.push_str(&format!(" LIMIT {}", limit));
-        }
-        if let Some(offset) = criteria.offset {
-            query.push_str(&format!(" OFFSET {}", offset));
-        }
-
-        let mut sql_query = sqlx::query(&query);
+        let mut qb = sqlx::QueryBuilder::<sqlx::Postgres>::new(base);
+        let mut sep = " WHERE ";
 
         if let Some(id) = &criteria.id {
-            sql_query = sql_query.bind(id.to_string());
+            qb.push(sep);
+            sep = " AND ";
+            qb.push("g.id = ");
+            qb.push_bind(id.to_string());
         }
         if let Some(name) = &criteria.name {
-            sql_query = sql_query.bind(format!("%{}%", name));
+            qb.push(sep);
+            sep = " AND ";
+            qb.push("g.name ILIKE ");
+            qb.push_bind(format!("%{}%", name));
         }
         if let Some(group_type) = &criteria.group_type {
-            sql_query = sql_query.bind(group_type);
+            qb.push(sep);
+            sep = " AND ";
+            qb.push("g.group_type = ");
+            qb.push_bind(group_type.clone());
         }
         if let Some(version) = &criteria.version {
-            sql_query = sql_query.bind(version);
+            qb.push(sep);
+            sep = " AND ";
+            qb.push("g.version = ");
+            qb.push_bind(version.clone());
         }
         if let Some(enabled) = criteria.enabled {
-            sql_query = sql_query.bind(enabled);
+            qb.push(sep);
+            sep = " AND ";
+            qb.push("g.enabled = ");
+            qb.push_bind(enabled);
         }
         if let Some(owner_id) = &criteria.owner_id {
-            sql_query = sql_query.bind(owner_id.to_string());
+            qb.push(sep);
+            sep = " AND ";
+            qb.push("g.owner_id = ");
+            qb.push_bind(owner_id.to_string());
         }
         if let Some(receiver_id) = &criteria.contains_receiver_id {
-            sql_query = sql_query.bind(receiver_id.to_string());
+            qb.push(sep);
+            qb.push("gr.receiver_id = ");
+            qb.push_bind(receiver_id.to_string());
         }
 
-        let rows = sql_query
+        // silence the "value assigned to `sep` is never read" lint for the last branch
+        let _ = sep;
+
+        qb.push(" ORDER BY g.created_at DESC");
+
+        if let Some(limit) = criteria.limit {
+            qb.push(" LIMIT ");
+            qb.push_bind(limit as i64);
+        }
+        if let Some(offset) = criteria.offset {
+            qb.push(" OFFSET ");
+            qb.push_bind(offset as i64);
+        }
+
+        let rows = qb
+            .build()
             .fetch_all(&self.pool)
             .await
             .map_err(crate::error::Error::Database)?;
@@ -746,23 +746,29 @@ impl EventReceiverGroupRepository for PostgresEventReceiverGroupRepository {
         group_id: EventReceiverGroupId,
         receiver_id: EventReceiverId,
     ) -> Result<()> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(crate::error::Error::Database)?;
+
         sqlx::query(
-            "INSERT INTO event_receiver_group_receivers (group_id, receiver_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            "INSERT INTO event_receiver_group_receivers (group_id, receiver_id) \
+             VALUES ($1, $2) ON CONFLICT DO NOTHING",
         )
         .bind(group_id.to_string())
         .bind(receiver_id.to_string())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
-        .map_err(|e| {
-            crate::error::Error::Database(e)
-        })?;
+        .map_err(classify_sqlx_error)?;
 
-        // Update group's updated_at timestamp
         sqlx::query("UPDATE event_receiver_groups SET updated_at = NOW() WHERE id = $1")
             .bind(group_id.to_string())
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(crate::error::Error::Database)?;
+
+        tx.commit().await.map_err(crate::error::Error::Database)?;
 
         Ok(())
     }
@@ -772,21 +778,28 @@ impl EventReceiverGroupRepository for PostgresEventReceiverGroupRepository {
         group_id: EventReceiverGroupId,
         receiver_id: EventReceiverId,
     ) -> Result<()> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(crate::error::Error::Database)?;
+
         sqlx::query(
             "DELETE FROM event_receiver_group_receivers WHERE group_id = $1 AND receiver_id = $2",
         )
         .bind(group_id.to_string())
         .bind(receiver_id.to_string())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(crate::error::Error::Database)?;
 
-        // Update group's updated_at timestamp
         sqlx::query("UPDATE event_receiver_groups SET updated_at = NOW() WHERE id = $1")
             .bind(group_id.to_string())
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(crate::error::Error::Database)?;
+
+        tx.commit().await.map_err(crate::error::Error::Database)?;
 
         Ok(())
     }
@@ -1045,54 +1058,26 @@ impl EventReceiverGroupRepository for PostgresEventReceiverGroupRepository {
     }
 }
 
-/// Maps a [`sqlx::Error`] to the most specific application error available.
-///
-/// If the error is a unique or foreign-key constraint violation, it is mapped
-/// to [`crate::error::RepositoryError::ConstraintViolation`] so that callers
-/// can distinguish conflict responses from generic database failures.
-/// All other errors fall through to [`crate::error::Error::Database`].
-fn classify_sqlx_error(e: sqlx::Error) -> crate::error::Error {
-    if let sqlx::Error::Database(ref db_err) = e {
-        if db_err.is_unique_violation() {
-            return crate::error::Error::Repository(
-                crate::error::RepositoryError::ConstraintViolation {
-                    constraint: db_err.constraint().unwrap_or("unique").to_string(),
-                },
-            );
-        }
-        if db_err.is_foreign_key_violation() {
-            return crate::error::Error::Repository(
-                crate::error::RepositoryError::ConstraintViolation {
-                    constraint: db_err.constraint().unwrap_or("foreign_key").to_string(),
-                },
-            );
-        }
-    }
-    crate::error::Error::Database(e)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Verifies that non-constraint sqlx errors pass through to `Error::Database`
-    /// and are not reclassified as constraint violations.
+    /// Verifies that `save_receiver_ids_in_tx` compiles as a callable free
+    /// function.  The exact async-fn type cannot be expressed as a fn-pointer
+    /// without higher-ranked lifetime bounds, so we just confirm the symbol
+    /// resolves and that `PostgresEventReceiverGroupRepository::new` has the
+    /// expected synchronous constructor type.
     #[test]
-    fn test_classify_sqlx_error_row_not_found_maps_to_database() {
-        let err = sqlx::Error::RowNotFound;
-        let result = classify_sqlx_error(err);
-        assert!(
-            matches!(result, crate::error::Error::Database(_)),
-            "expected Error::Database variant for non-constraint error"
-        );
+    fn test_save_receiver_ids_in_tx_exists() {
+        // Structural test: referencing the function name forces the compiler to
+        // resolve and type-check it.  Integration tests cover rollback semantics.
+        let _ = save_receiver_ids_in_tx as *const () as usize;
     }
 
-    /// Structural test: verifies `classify_sqlx_error` compiles with the correct
-    /// return type for use with `.map_err(classify_sqlx_error)`.
+    /// Verifies the repository constructor is available and has the expected type.
     #[test]
-    fn test_classify_sqlx_error_type_annotation() {
-        fn _takes_app_error(_e: crate::error::Error) {}
-        let e = sqlx::Error::RowNotFound;
-        _takes_app_error(classify_sqlx_error(e));
+    fn test_new_constructor_type() {
+        let _: fn(sqlx::PgPool) -> PostgresEventReceiverGroupRepository =
+            PostgresEventReceiverGroupRepository::new;
     }
 }

@@ -5982,6 +5982,7 @@ dependencies = [
  "env_logger",
  "fake",
  "hex",
+ "hmac",
  "jsonwebtoken",
  "metrics",
  "metrics-exporter-prometheus",
