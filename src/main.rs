@@ -12,6 +12,10 @@ use sqlx::PgPool;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::signal;
 use tracing::{error, info, warn};
+use xzepr::api::middleware::opa::{OpaMiddlewareState, ResourceContextBuilders};
+use xzepr::api::middleware::resource_context::{
+    EventContextBuilder, EventReceiverContextBuilder, EventReceiverGroupContextBuilder,
+};
 use xzepr::api::middleware::JwtMiddlewareState;
 use xzepr::api::rest::auth::AuthState;
 use xzepr::api::router::{build_production_router, RouterConfig};
@@ -21,11 +25,15 @@ use xzepr::auth::oidc::{
     InMemoryOidcSessionStore, OidcCallbackHandler, OidcClient, OidcConfig, OidcSessionStore,
 };
 use xzepr::auth::provisioning::UserProvisioningService;
+use xzepr::infrastructure::audit::AuditLogger;
 use xzepr::infrastructure::database::{
     PostgresEventReceiverGroupRepository, PostgresEventReceiverRepository, PostgresEventRepository,
     PostgresUserRepository,
 };
 use xzepr::infrastructure::messaging::producer::KafkaEventPublisher;
+use xzepr::infrastructure::PrometheusMetrics;
+use xzepr::opa::client::OpaClient;
+use xzepr::opa::types::OpaFailSafeMode;
 use xzepr::{Settings, TopicManager};
 
 /// Build the authentication state, wiring OIDC components when enabled.
@@ -116,6 +124,105 @@ async fn build_auth_state<R: xzepr::domain::repositories::user_repo::UserReposit
     ))
 }
 
+/// Build the OPA middleware state when OPA authorization is enabled.
+///
+/// Reads the OPA configuration from `settings.opa`, constructs an `OpaClient`,
+/// audit logger, resource context builders, and returns a fully initialized
+/// [`OpaMiddlewareState`]. Returns `None` when OPA is disabled.
+///
+/// OPA failures during construction are logged as warnings and return `None`
+/// (OPA disabled gracefully) rather than aborting server startup, unless the
+/// failure is a configuration error that would leave the server insecure.
+///
+/// # Arguments
+///
+/// * `settings` - Validated runtime settings
+/// * `event_repo` - Event repository for context building
+/// * `receiver_repo` - Event receiver repository for context building
+/// * `group_repo` - Event receiver group repository for context building
+/// * `metrics` - Prometheus metrics (shared with router)
+async fn build_opa_state(
+    settings: &Settings,
+    event_repo: Arc<PostgresEventRepository>,
+    receiver_repo: Arc<PostgresEventReceiverRepository>,
+    group_repo: Arc<PostgresEventReceiverGroupRepository>,
+    metrics: Option<Arc<PrometheusMetrics>>,
+) -> Option<OpaMiddlewareState> {
+    let opa_config = match &settings.opa {
+        Some(cfg) if cfg.enabled => cfg.clone(),
+        _ => {
+            info!("OPA authorization disabled");
+            return None;
+        }
+    };
+
+    let fail_safe_mode = opa_config.fail_safe_mode;
+
+    let opa_client = match OpaClient::new(opa_config) {
+        Ok(client) => Arc::new(client),
+        Err(e) => {
+            warn!(error = %e, "Failed to build OPA client; OPA authorization disabled");
+            return None;
+        }
+    };
+
+    let audit_logger = Arc::new(AuditLogger::new());
+
+    let metrics = metrics.unwrap_or_else(|| {
+        // SAFETY: Default PrometheusMetrics registry is always valid.
+        Arc::new(PrometheusMetrics::default())
+    });
+
+    let context_builders = ResourceContextBuilders {
+        event: Arc::new(EventContextBuilder::new(
+            event_repo.clone(),
+            receiver_repo.clone(),
+            group_repo.clone(),
+        )),
+        receiver: Arc::new(EventReceiverContextBuilder::new(
+            receiver_repo.clone(),
+            group_repo.clone(),
+        )),
+        group: Arc::new(EventReceiverGroupContextBuilder::new(group_repo.clone())),
+    };
+
+    let is_production = std::env::var("RUST_ENV")
+        .map(|env| env == "production")
+        .unwrap_or(false);
+
+    if is_production && fail_safe_mode == OpaFailSafeMode::FailOpenDevelopment {
+        warn!(
+            "OPA fail_safe_mode is fail_open_development but RUST_ENV=production; \
+             this combination is rejected by validate_production() and should not be reachable. \
+             Disabling OPA to prevent accidental fail-open."
+        );
+        return None;
+    }
+
+    if fail_safe_mode == OpaFailSafeMode::LegacyRbacFallback {
+        warn!(
+            "OPA fail_safe_mode is legacy_rbac_fallback; \
+             built-in RBAC will be used as a fallback when OPA is unavailable"
+        );
+    }
+
+    info!(
+        url = %opa_client.config().url,
+        fail_safe_mode = ?fail_safe_mode,
+        is_production,
+        "OPA authorization enabled"
+    );
+
+    Some(OpaMiddlewareState::new(
+        opa_client,
+        audit_logger,
+        metrics,
+        context_builders,
+        fail_safe_mode,
+        is_production,
+    ))
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -182,7 +289,16 @@ async fn main() -> Result<()> {
     let auth_state = build_auth_state(&settings, jwt_service, provisioning_service).await?;
     let router_config = RouterConfig::from_settings(&settings)
         .context("Failed to build router config from runtime settings")?;
-    let app = build_production_router(api_state, auth_state, jwt_state, router_config).await;
+    let opa_state = build_opa_state(
+        &settings,
+        event_repo.clone(),
+        receiver_repo.clone(),
+        group_repo.clone(),
+        router_config.metrics.clone(),
+    )
+    .await;
+    let app =
+        build_production_router(api_state, auth_state, jwt_state, router_config, opa_state).await;
 
     let addr = SocketAddr::from((
         settings

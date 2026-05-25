@@ -37,6 +37,7 @@ pub use metrics::{
 };
 pub use opa::{
     opa_authorize_middleware, AuthorizationDecision, AuthorizationError, OpaMiddlewareState,
+    ResourceContextBuilders,
 };
 pub use rate_limit::{
     rate_limit_middleware, InMemoryRateLimitStore, RateLimitConfig, RateLimitStore,

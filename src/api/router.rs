@@ -28,6 +28,7 @@ use crate::api::middleware::{
     cors::CorsConfig,
     jwt_auth_middleware,
     metrics::MetricsMiddlewareState,
+    opa::{opa_authorize_middleware, OpaMiddlewareState},
     rate_limit::{RateLimitConfig, RateLimiterState},
     rbac_enforcement_middleware,
     security_headers::{security_headers_middleware_with_config, SecurityHeadersConfig},
@@ -145,7 +146,9 @@ impl RouterConfig {
 
 /// Builds the canonical production router.
 ///
-/// Protected REST routes require JWT authentication and RBAC permissions.
+/// Protected REST routes require JWT authentication. When `opa_state` is
+/// `Some`, OPA authorization replaces RBAC enforcement on protected routes.
+/// When it is `None`, the built-in RBAC middleware is applied instead.
 /// GraphQL execution requires JWT authentication. Public routes are limited to
 /// health, metrics, status, auth login/refresh, OIDC redirects, GraphQL health,
 /// and the GraphQL playground.
@@ -156,6 +159,8 @@ impl RouterConfig {
 /// * `auth_state` - Authentication state for login, refresh, and logout.
 /// * `jwt_state` - JWT middleware state for protected routes.
 /// * `config` - Router security and observability configuration.
+/// * `opa_state` - Optional OPA middleware state; when present OPA is used for
+///   authorization instead of the built-in RBAC middleware.
 ///
 /// # Returns
 ///
@@ -165,11 +170,15 @@ pub async fn build_production_router<R>(
     auth_state: AuthState<R>,
     jwt_state: JwtMiddlewareState,
     config: RouterConfig,
+    opa_state: Option<OpaMiddlewareState>,
 ) -> Router
 where
     R: UserRepository + 'static,
 {
     tracing::info!("Building canonical production router");
+
+    let opa_enabled = opa_state.is_some();
+    tracing::info!(opa_enabled, "OPA authorization status");
 
     let schema = create_schema_with_config(
         Arc::new(state.event_handler.clone()),
@@ -263,43 +272,71 @@ where
             jwt_auth_middleware,
         ));
 
-    let protected_group_membership_routes = Router::new()
-        .route("/api/v1/groups/:id/members", get(list_group_members))
-        .route("/api/v1/groups/:id/members", post(add_group_member))
-        .route("/api/v1/groups/:id/members", delete(remove_group_member))
-        .with_state(group_membership_state)
-        .layer(middleware::from_fn_with_state(
-            rate_limiter.clone(),
-            crate::api::middleware::rate_limit::rate_limit_middleware,
-        ))
-        .layer(middleware::from_fn(rbac_enforcement_middleware))
-        .layer(middleware::from_fn_with_state(
-            jwt_state.clone(),
-            jwt_auth_middleware,
-        ));
+    let protected_group_membership_routes = {
+        let base = Router::new()
+            .route("/api/v1/groups/:id/members", get(list_group_members))
+            .route("/api/v1/groups/:id/members", post(add_group_member))
+            .route("/api/v1/groups/:id/members", delete(remove_group_member))
+            .with_state(group_membership_state)
+            .layer(middleware::from_fn_with_state(
+                rate_limiter.clone(),
+                crate::api::middleware::rate_limit::rate_limit_middleware,
+            ));
 
-    let protected_api_routes = Router::new()
-        .route("/api/v1/events", post(create_event))
-        .route("/api/v1/events/:id", get(get_event))
-        .route("/api/v1/receivers", post(create_event_receiver))
-        .route("/api/v1/receivers", get(list_event_receivers))
-        .route("/api/v1/receivers/:id", get(get_event_receiver))
-        .route("/api/v1/receivers/:id", put(update_event_receiver))
-        .route("/api/v1/receivers/:id", delete(delete_event_receiver))
-        .route("/api/v1/groups", post(create_event_receiver_group))
-        .route("/api/v1/groups/:id", get(get_event_receiver_group))
-        .route("/api/v1/groups/:id", put(update_event_receiver_group))
-        .route("/api/v1/groups/:id", delete(delete_event_receiver_group))
-        .with_state(state)
-        .layer(middleware::from_fn_with_state(
-            rate_limiter,
-            crate::api::middleware::rate_limit::rate_limit_middleware,
-        ))
-        .layer(middleware::from_fn(rbac_enforcement_middleware))
-        .layer(middleware::from_fn_with_state(
-            jwt_state,
-            jwt_auth_middleware,
-        ));
+        if let Some(ref opa) = opa_state {
+            base.layer(middleware::from_fn_with_state(
+                opa.clone(),
+                opa_authorize_middleware,
+            ))
+            .layer(middleware::from_fn_with_state(
+                jwt_state.clone(),
+                jwt_auth_middleware,
+            ))
+        } else {
+            base.layer(middleware::from_fn(rbac_enforcement_middleware))
+                .layer(middleware::from_fn_with_state(
+                    jwt_state.clone(),
+                    jwt_auth_middleware,
+                ))
+        }
+    };
+
+    let protected_api_routes = {
+        let base = Router::new()
+            .route("/api/v1/events", post(create_event))
+            .route("/api/v1/events/:id", get(get_event))
+            .route("/api/v1/receivers", post(create_event_receiver))
+            .route("/api/v1/receivers", get(list_event_receivers))
+            .route("/api/v1/receivers/:id", get(get_event_receiver))
+            .route("/api/v1/receivers/:id", put(update_event_receiver))
+            .route("/api/v1/receivers/:id", delete(delete_event_receiver))
+            .route("/api/v1/groups", post(create_event_receiver_group))
+            .route("/api/v1/groups/:id", get(get_event_receiver_group))
+            .route("/api/v1/groups/:id", put(update_event_receiver_group))
+            .route("/api/v1/groups/:id", delete(delete_event_receiver_group))
+            .with_state(state)
+            .layer(middleware::from_fn_with_state(
+                rate_limiter.clone(),
+                crate::api::middleware::rate_limit::rate_limit_middleware,
+            ));
+
+        if let Some(ref opa) = opa_state {
+            base.layer(middleware::from_fn_with_state(
+                opa.clone(),
+                opa_authorize_middleware,
+            ))
+            .layer(middleware::from_fn_with_state(
+                jwt_state.clone(),
+                jwt_auth_middleware,
+            ))
+        } else {
+            base.layer(middleware::from_fn(rbac_enforcement_middleware))
+                .layer(middleware::from_fn_with_state(
+                    jwt_state.clone(),
+                    jwt_auth_middleware,
+                ))
+        }
+    };
 
     public_core_routes
         .merge(public_auth_routes)

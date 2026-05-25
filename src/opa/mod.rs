@@ -30,7 +30,7 @@
 //!     ..OpaConfig::default()
 //! };
 //!
-//! let client = OpaClient::new(config);
+//! let client = OpaClient::new(config)?;
 //!
 //! let input = OpaInput {
 //!     user: UserContext {
@@ -104,6 +104,6 @@ pub use cache::{AuthorizationCache, CacheEntry, CacheKey, ResourceUpdatedEvent};
 pub use circuit_breaker::{CircuitBreaker, CircuitBreakerError};
 pub use client::OpaClient;
 pub use types::{
-    AuthorizationDecision, OpaConfig, OpaError, OpaInput, OpaRequest, OpaResponse, ResourceContext,
-    UserContext,
+    AuthorizationDecision, OpaConfig, OpaDecisionOutcome, OpaError, OpaFailSafeMode, OpaInput,
+    OpaRequest, OpaResponse, ResourceContext, UserContext,
 };

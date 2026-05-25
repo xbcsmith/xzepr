@@ -37,7 +37,7 @@ use std::time::Duration as StdDuration;
 ///     ..OpaConfig::default()
 /// };
 ///
-/// let client = OpaClient::new(config);
+/// let client = OpaClient::new(config).expect("failed to build OPA client");
 ///
 /// let input = OpaInput {
 ///     user: UserContext {
@@ -75,11 +75,15 @@ pub struct OpaClient {
 }
 
 impl OpaClient {
-    /// Creates a new OPA client
+    /// Creates a new OPA client.
     ///
     /// # Arguments
     ///
     /// * `config` - OPA configuration
+    ///
+    /// # Errors
+    ///
+    /// Returns `OpaError::ConfigurationError` if the HTTP client cannot be built.
     ///
     /// # Examples
     ///
@@ -97,13 +101,16 @@ impl OpaClient {
     ///     ..OpaConfig::default()
     /// };
     ///
-    /// let client = OpaClient::new(config);
+    /// let result = OpaClient::new(config);
+    /// assert!(result.is_ok());
     /// ```
-    pub fn new(config: OpaConfig) -> Self {
+    pub fn new(config: OpaConfig) -> Result<Self, OpaError> {
         let http_client = Client::builder()
             .timeout(StdDuration::from_secs(config.timeout_seconds))
             .build()
-            .expect("Failed to build HTTP client");
+            .map_err(|e| {
+                OpaError::ConfigurationError(format!("Failed to build HTTP client: {}", e))
+            })?;
 
         let cache = Arc::new(AuthorizationCache::new(Duration::seconds(
             config.cache_ttl_seconds as i64,
@@ -111,12 +118,12 @@ impl OpaClient {
 
         let circuit_breaker = Arc::new(CircuitBreaker::new(5, StdDuration::from_secs(30)));
 
-        Self {
+        Ok(Self {
             http_client,
             config,
             cache,
             circuit_breaker,
-        }
+        })
     }
 
     /// Evaluates a policy with caching
@@ -152,7 +159,8 @@ impl OpaClient {
     /// #     cache_ttl_seconds: 300,
     /// #     ..OpaConfig::default()
     /// # };
-    /// let client = OpaClient::new(config);
+    /// // SAFETY: Test configuration with valid timeout is known not to fail HTTP client construction.
+    /// let client = OpaClient::new(config).expect("test config should build client");
     ///
     /// let input = OpaInput {
     ///     user: UserContext {
@@ -292,6 +300,18 @@ impl OpaClient {
             })
     }
 
+    /// Returns the fail-safe mode configured for this client.
+    ///
+    /// Used by middleware to determine behavior when OPA is unavailable.
+    pub fn fail_safe_mode(&self) -> crate::opa::types::OpaFailSafeMode {
+        self.config.fail_safe_mode
+    }
+
+    /// Returns the OPA configuration.
+    pub fn config(&self) -> &OpaConfig {
+        &self.config
+    }
+
     /// Gets the authorization cache
     ///
     /// Returns a reference to the internal cache for manual invalidation.
@@ -312,7 +332,8 @@ impl OpaClient {
     /// #     cache_ttl_seconds: 300,
     /// #     ..OpaConfig::default()
     /// # };
-    /// let client = OpaClient::new(config);
+    /// // SAFETY: Test configuration with valid timeout is known not to fail HTTP client construction.
+    /// let client = OpaClient::new(config).expect("test config should build client");
     ///
     /// client.cache().invalidate_resource("event_receiver", "receiver123").await;
     /// # });
@@ -341,7 +362,8 @@ impl OpaClient {
     /// #     cache_ttl_seconds: 300,
     /// #     ..OpaConfig::default()
     /// # };
-    /// let client = OpaClient::new(config);
+    /// // SAFETY: Test configuration with valid timeout is known not to fail HTTP client construction.
+    /// let client = OpaClient::new(config).expect("test config should build client");
     ///
     /// let is_open = client.circuit_breaker().is_open().await;
     /// # });
@@ -368,7 +390,8 @@ impl OpaClient {
     ///     ..OpaConfig::default()
     /// };
     ///
-    /// let client = OpaClient::new(config);
+    /// // SAFETY: Test configuration with valid timeout is known not to fail HTTP client construction.
+    /// let client = OpaClient::new(config).expect("test config should build client");
     /// assert!(client.is_enabled());
     /// ```
     pub fn is_enabled(&self) -> bool {
@@ -393,7 +416,8 @@ mod tests {
             ..OpaConfig::default()
         };
 
-        let client = OpaClient::new(config);
+        // SAFETY: Test configuration with valid timeout is known not to fail HTTP client construction.
+        let client = OpaClient::new(config).expect("test config should build client");
         assert!(client.is_enabled());
     }
 
@@ -409,7 +433,8 @@ mod tests {
             ..OpaConfig::default()
         };
 
-        let client = OpaClient::new(config);
+        // SAFETY: Test configuration with valid timeout is known not to fail HTTP client construction.
+        let client = OpaClient::new(config).expect("test config should build client");
         assert!(client.cache().is_empty().await);
     }
 
@@ -425,7 +450,8 @@ mod tests {
             ..OpaConfig::default()
         };
 
-        let client = OpaClient::new(config);
+        // SAFETY: Test configuration with valid timeout is known not to fail HTTP client construction.
+        let client = OpaClient::new(config).expect("test config should build client");
         assert!(!client.circuit_breaker().is_open().await);
     }
 
@@ -441,7 +467,8 @@ mod tests {
             ..OpaConfig::default()
         };
 
-        let client = OpaClient::new(config);
+        // SAFETY: Test configuration with valid timeout is known not to fail HTTP client construction.
+        let client = OpaClient::new(config).expect("test config should build client");
         assert!(!client.is_enabled());
     }
 
@@ -457,7 +484,8 @@ mod tests {
             ..OpaConfig::default()
         };
 
-        let client = OpaClient::new(config);
+        // SAFETY: Test configuration with valid timeout is known not to fail HTTP client construction.
+        let client = OpaClient::new(config).expect("test config should build client");
 
         let input = OpaInput {
             user: UserContext {
@@ -479,5 +507,41 @@ mod tests {
 
         let result = client.evaluate(input).await;
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_opa_client_new_returns_result() {
+        let config = OpaConfig {
+            enabled: true,
+            url: "http://localhost:8181".to_string(),
+            timeout_seconds: 5,
+            policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
+            bundle_url: None,
+            cache_ttl_seconds: 300,
+            ..OpaConfig::default()
+        };
+
+        let result = OpaClient::new(config);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_opa_client_fail_safe_mode_accessor() {
+        use crate::opa::types::OpaFailSafeMode;
+
+        let config = OpaConfig {
+            enabled: true,
+            url: "http://localhost:8181".to_string(),
+            timeout_seconds: 5,
+            policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
+            bundle_url: None,
+            cache_ttl_seconds: 300,
+            fail_safe_mode: OpaFailSafeMode::LegacyRbacFallback,
+            ..OpaConfig::default()
+        };
+
+        // SAFETY: Test configuration with valid timeout is known not to fail.
+        let client = OpaClient::new(config).expect("test config should build client");
+        assert_eq!(client.fail_safe_mode(), OpaFailSafeMode::LegacyRbacFallback);
     }
 }

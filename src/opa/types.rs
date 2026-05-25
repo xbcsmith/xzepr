@@ -11,6 +11,14 @@ use std::collections::HashMap;
 use thiserror::Error;
 
 /// OPA fail-safe behavior when policy evaluation is unavailable.
+///
+/// Three modes are available:
+///
+/// - `FailClosed` (default): deny all requests when OPA is unreachable; safe for production.
+/// - `FailOpenDevelopment`: allow all requests when OPA is unreachable; restricted to non-production
+///   environments only.
+/// - `LegacyRbacFallback`: fall back to the built-in RBAC engine when OPA is unreachable;
+///   permitted in production with a startup warning.
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum OpaFailSafeMode {
@@ -18,7 +26,65 @@ pub enum OpaFailSafeMode {
     #[default]
     FailClosed,
     /// Allow development fallback behavior when OPA is unavailable.
+    ///
+    /// This mode is NOT permitted in production deployments.
     FailOpenDevelopment,
+    /// Fall back to legacy RBAC checks when OPA is unavailable.
+    ///
+    /// This allows the system to continue operating using the built-in role-based
+    /// access control when the OPA server cannot be reached. Audit records will
+    /// label these decisions as `unavailable_legacy_rbac_*` to distinguish them
+    /// from normal OPA decisions. Allowed in production with a startup warning.
+    LegacyRbacFallback,
+}
+
+/// Outcome label for an OPA authorization decision.
+///
+/// Used to distinguish between normal OPA decisions and fallback/error cases
+/// in audit logs and Prometheus metrics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OpaDecisionOutcome {
+    /// OPA evaluated the policy and allowed the request.
+    OpaAllow,
+    /// OPA evaluated the policy and denied the request.
+    OpaDeny,
+    /// OPA was unavailable; fail-closed mode denied the request.
+    UnavailableFailClosed,
+    /// OPA was unavailable; fail-open-development mode allowed the request
+    /// (only permitted when `RUST_ENV` is not `production`).
+    UnavailableFailOpenDevelopment,
+    /// OPA was unavailable; legacy RBAC fallback allowed the request.
+    UnavailableLegacyRbacAllow,
+    /// OPA was unavailable; legacy RBAC fallback denied the request.
+    UnavailableLegacyRbacDeny,
+    /// Resource context could not be built; the request was denied.
+    ResourceContextMissing,
+}
+
+impl OpaDecisionOutcome {
+    /// Returns a short snake_case label suitable for use as a Prometheus metric label.
+    pub fn as_metric_label(&self) -> &'static str {
+        match self {
+            OpaDecisionOutcome::OpaAllow => "opa_allow",
+            OpaDecisionOutcome::OpaDeny => "opa_deny",
+            OpaDecisionOutcome::UnavailableFailClosed => "unavailable_fail_closed",
+            OpaDecisionOutcome::UnavailableFailOpenDevelopment => "unavailable_fail_open_dev",
+            OpaDecisionOutcome::UnavailableLegacyRbacAllow => "unavailable_legacy_rbac_allow",
+            OpaDecisionOutcome::UnavailableLegacyRbacDeny => "unavailable_legacy_rbac_deny",
+            OpaDecisionOutcome::ResourceContextMissing => "resource_context_missing",
+        }
+    }
+
+    /// Returns `true` if this outcome represents an allowed request.
+    pub fn is_allowed(&self) -> bool {
+        matches!(
+            self,
+            OpaDecisionOutcome::OpaAllow
+                | OpaDecisionOutcome::UnavailableFailOpenDevelopment
+                | OpaDecisionOutcome::UnavailableLegacyRbacAllow
+        )
+    }
 }
 
 /// OPA client configuration
@@ -191,9 +257,11 @@ impl OpaConfig {
             validate_allowed_host(bundle_url, &self.allowed_hosts, "OPA bundle URL")?;
         }
 
-        if self.fail_safe_mode != OpaFailSafeMode::FailClosed {
+        if self.fail_safe_mode == OpaFailSafeMode::FailOpenDevelopment {
             return Err(OpaError::ConfigurationError(
-                "OPA fail_safe_mode must be fail_closed in production".to_string(),
+                "OPA fail_safe_mode cannot be fail_open_development in production; \
+                 use fail_closed or legacy_rbac_fallback"
+                    .to_string(),
             ));
         }
 
@@ -518,6 +586,114 @@ mod tests {
 
         let response: OpaResponse = serde_json::from_str(json).unwrap();
         assert!(response.result.unwrap().allow);
+    }
+
+    #[test]
+    fn test_opa_fail_safe_mode_legacy_rbac_fallback_default_serialization() {
+        let mode = OpaFailSafeMode::LegacyRbacFallback;
+        let json = serde_json::to_string(&mode).unwrap();
+        assert_eq!(json, "\"legacy_rbac_fallback\"");
+    }
+
+    #[test]
+    fn test_opa_decision_outcome_is_allowed_opa_allow() {
+        assert!(OpaDecisionOutcome::OpaAllow.is_allowed());
+    }
+
+    #[test]
+    fn test_opa_decision_outcome_is_allowed_opa_deny() {
+        assert!(!OpaDecisionOutcome::OpaDeny.is_allowed());
+    }
+
+    #[test]
+    fn test_opa_decision_outcome_is_allowed_fail_closed() {
+        assert!(!OpaDecisionOutcome::UnavailableFailClosed.is_allowed());
+    }
+
+    #[test]
+    fn test_opa_decision_outcome_is_allowed_fail_open_dev() {
+        assert!(OpaDecisionOutcome::UnavailableFailOpenDevelopment.is_allowed());
+    }
+
+    #[test]
+    fn test_opa_decision_outcome_is_allowed_legacy_rbac_allow() {
+        assert!(OpaDecisionOutcome::UnavailableLegacyRbacAllow.is_allowed());
+    }
+
+    #[test]
+    fn test_opa_decision_outcome_is_allowed_legacy_rbac_deny() {
+        assert!(!OpaDecisionOutcome::UnavailableLegacyRbacDeny.is_allowed());
+    }
+
+    #[test]
+    fn test_opa_decision_outcome_is_allowed_resource_context_missing() {
+        assert!(!OpaDecisionOutcome::ResourceContextMissing.is_allowed());
+    }
+
+    #[test]
+    fn test_opa_decision_outcome_as_metric_label() {
+        assert_eq!(OpaDecisionOutcome::OpaAllow.as_metric_label(), "opa_allow");
+        assert_eq!(OpaDecisionOutcome::OpaDeny.as_metric_label(), "opa_deny");
+        assert_eq!(
+            OpaDecisionOutcome::UnavailableFailClosed.as_metric_label(),
+            "unavailable_fail_closed"
+        );
+        assert_eq!(
+            OpaDecisionOutcome::UnavailableFailOpenDevelopment.as_metric_label(),
+            "unavailable_fail_open_dev"
+        );
+        assert_eq!(
+            OpaDecisionOutcome::UnavailableLegacyRbacAllow.as_metric_label(),
+            "unavailable_legacy_rbac_allow"
+        );
+        assert_eq!(
+            OpaDecisionOutcome::UnavailableLegacyRbacDeny.as_metric_label(),
+            "unavailable_legacy_rbac_deny"
+        );
+        assert_eq!(
+            OpaDecisionOutcome::ResourceContextMissing.as_metric_label(),
+            "resource_context_missing"
+        );
+    }
+
+    #[test]
+    fn test_validate_production_rejects_fail_open_development() {
+        let config = OpaConfig {
+            enabled: true,
+            url: "https://opa.example.com".to_string(),
+            timeout_seconds: 5,
+            policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
+            bundle_url: None,
+            cache_ttl_seconds: 300,
+            allowed_hosts: vec!["opa.example.com".to_string()],
+            fail_safe_mode: OpaFailSafeMode::FailOpenDevelopment,
+        };
+        let result = config.validate_production();
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("fail_open_development"));
+    }
+
+    #[test]
+    fn test_validate_production_allows_legacy_rbac_fallback() {
+        let config = OpaConfig {
+            enabled: true,
+            url: "https://opa.example.com".to_string(),
+            timeout_seconds: 5,
+            policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
+            bundle_url: None,
+            cache_ttl_seconds: 300,
+            allowed_hosts: vec!["opa.example.com".to_string()],
+            fail_safe_mode: OpaFailSafeMode::LegacyRbacFallback,
+        };
+        assert!(config.validate_production().is_ok());
+    }
+
+    #[test]
+    fn test_opa_decision_outcome_serialization() {
+        let outcome = OpaDecisionOutcome::OpaAllow;
+        let json = serde_json::to_string(&outcome).unwrap();
+        assert_eq!(json, "\"opa_allow\"");
     }
 
     #[test]
