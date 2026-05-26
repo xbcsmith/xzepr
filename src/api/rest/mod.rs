@@ -10,7 +10,14 @@ pub mod group_membership;
 pub mod routes;
 
 pub use auth::{AuthState, LoginRequest, LoginResponse, RefreshRequest};
-pub use dtos::*;
+pub use dtos::{
+    map_app_error_to_rest_response, AddMemberRequest, CreateEventReceiverGroupRequest,
+    CreateEventReceiverGroupResponse, CreateEventReceiverRequest, CreateEventReceiverResponse,
+    CreateEventRequest, CreateEventResponse, ErrorResponse, EventReceiverGroupResponse,
+    EventReceiverQueryParams, EventReceiverResponse, EventResponse, GroupMemberResponse,
+    GroupMembersResponse, PaginatedResponse, PaginationMeta, RemoveMemberRequest,
+    UpdateEventReceiverGroupRequest, UpdateEventReceiverRequest,
+};
 pub use events::AppState;
 pub use group_membership::{
     add_group_member, list_group_members, remove_group_member, GroupMembershipState,

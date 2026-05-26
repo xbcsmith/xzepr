@@ -3,14 +3,25 @@
 
 // src/api/middleware/mod.rs
 
-//! API middleware components for authentication, rate limiting, CORS, and security
+//! API middleware components.
 //!
-//! This module provides reusable middleware for the XZepr API, including:
-//! - CORS configuration and validation
-//! - Rate limiting with token bucket algorithm
-//! - JWT authentication and validation
-//! - Input validation and sanitization
-//! - Security headers (CSP, HSTS, etc.)
+//! This module re-exports the public API surface of every middleware component.
+//! All items listed here are intentionally stable and may be used by integration
+//! code and tests outside this module.
+//!
+//! ## Components
+//!
+//! - [`cors`]: CORS configuration and origin validation
+//! - [`jwt`]: JWT authentication and user extraction
+//! - [`metrics`]: Request metrics and Prometheus integration
+//! - [`opa`]: OPA policy authorization middleware
+//! - [`rate_limit`]: Token-bucket rate limiting
+//! - [`rbac`]: Role-based access control enforcement
+//! - [`rbac_helpers`]: Permission-to-route mapping utilities
+//! - [`resource_context`]: Resource context builders for OPA input
+//! - [`security_headers`]: CSP, HSTS, and security header injection
+//! - [`tracing_middleware`]: Request ID generation and tracing
+//! - [`validation`]: Input validation, sanitization, and body-size limits
 
 pub mod cors;
 pub mod jwt;

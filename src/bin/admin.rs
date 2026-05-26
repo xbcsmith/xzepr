@@ -7,9 +7,8 @@ use sqlx::PgPool;
 use std::str::FromStr;
 use std::sync::Arc;
 use xzepr::auth::api_key::AuthUserRepository;
-use xzepr::{
-    ApiKeyId, ApiKeyService, PostgresApiKeyRepository, PostgresUserRepository, Role, Settings, User,
-};
+use xzepr::infrastructure::database::{PostgresApiKeyRepository, PostgresUserRepository};
+use xzepr::{ApiKeyId, ApiKeyService, Role, Settings, User};
 
 #[derive(Parser)]
 #[command(name = "xzepr-admin")]

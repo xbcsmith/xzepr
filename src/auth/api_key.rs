@@ -409,16 +409,6 @@ pub fn hash_api_key_with_config(key: &str, config: &KeyDigestConfig) -> String {
     }
 }
 
-/// Compute the SHA-256 hash of a plaintext API key (V1 format).
-///
-/// This is kept for backward compatibility with callers that have not yet
-/// migrated to [`hash_api_key_with_config`].  New code should use the
-/// versioned function.
-#[allow(dead_code)]
-fn hash_api_key(key: &str) -> String {
-    hash_api_key_v1(key)
-}
-
 #[cfg(test)]
 pub struct StubApiKeyRepository;
 
@@ -523,11 +513,5 @@ mod tests {
         let config = KeyDigestConfig::with_pepper("secret".to_string());
         assert_eq!(config.version, KeyDigestVersion::V2);
         assert_eq!(config.pepper(), Some("secret"));
-    }
-
-    #[test]
-    fn test_hash_api_key_backward_compat() {
-        // hash_api_key (the old function) must still produce the same result as hash_api_key_v1.
-        assert_eq!(hash_api_key("test-key"), hash_api_key_v1("test-key"));
     }
 }

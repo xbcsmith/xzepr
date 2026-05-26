@@ -31,10 +31,11 @@ use xzepr::infrastructure::database::{
     PostgresUserRepository,
 };
 use xzepr::infrastructure::messaging::producer::KafkaEventPublisher;
+use xzepr::infrastructure::messaging::TopicManager;
 use xzepr::infrastructure::PrometheusMetrics;
 use xzepr::opa::client::OpaClient;
 use xzepr::opa::types::OpaFailSafeMode;
-use xzepr::{Settings, TopicManager};
+use xzepr::Settings;
 
 /// Build the authentication state, wiring OIDC components when enabled.
 ///

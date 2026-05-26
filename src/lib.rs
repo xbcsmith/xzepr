@@ -6,16 +6,18 @@
 //! This crate provides the core XZepr functionality including domain entities,
 //! application services, authentication, and infrastructure adapters.
 //!
-//! # Public API
+//! # Stable Public API
 //!
-//! The canonical public API is re-exported at the crate root for convenience:
+//! The following re-exports form the intentionally stable crate root:
 //!
-//! - Domain entities: [`domain::entities`]
-//! - Value objects: [`domain::value_objects`]
-//! - Application handlers: [`application::handlers`]
+//! - Domain entities: [`domain::entities`] (Event, EventReceiver, EventReceiverGroup, User)
+//! - Value objects: [`domain::value_objects`] (typed IDs)
+//! - Auth service: [`auth::api_key::ApiKeyService`]
+//! - Auth types: [`auth::rbac`] (Role, Permission)
 //! - Configuration: [`infrastructure::config::Settings`]
 //! - Error types: [`error::Error`], [`error::Result`]
-//! - GraphQL schema: [`api::graphql::create_schema`]
+//!
+//! All other types are accessible via their full module paths.
 
 pub mod api;
 pub mod application;
@@ -25,8 +27,7 @@ pub mod error;
 pub mod infrastructure;
 pub mod opa;
 
-// Re-exports for convenience
-pub use application::{build_group_created_event, build_receiver_created_event};
+// Stable crate-root re-exports
 pub use auth::api_key::ApiKeyService;
 pub use auth::rbac::permissions::{Permission, PermissionParseError};
 pub use auth::rbac::roles::{Role, RoleParseError};
@@ -34,19 +35,54 @@ pub use domain::entities::{
     event::Event, event_receiver::EventReceiver, event_receiver_group::EventReceiverGroup,
     user::User,
 };
-pub use domain::repositories::event_publisher::EventPublisher;
-pub use domain::validation::{
-    validate_json_object, validate_max_length, validate_pagination, validate_required_string,
-    validate_semver,
-};
 pub use domain::value_objects::{ApiKeyId, EventId, EventReceiverGroupId, EventReceiverId, UserId};
 pub use error::{Error, Result};
 pub use infrastructure::config::Settings;
-pub use infrastructure::database::{PostgresApiKeyRepository, PostgresUserRepository};
-pub use infrastructure::messaging::TopicManager;
 
-// Application services
-pub use application::handlers::{EventHandler, EventReceiverGroupHandler, EventReceiverHandler};
+/// Compile-time API surface tests verifying that the stable crate root
+/// exports are accessible.
+///
+/// These tests do not execute meaningful logic; they exist to produce
+/// compile errors if a deliberately stable export is accidentally removed.
+#[cfg(test)]
+mod api_surface_tests {
+    use super::*;
 
-// GraphQL
-pub use api::graphql::{create_schema, Schema};
+    /// Verifies error types are re-exported at the crate root.
+    #[test]
+    fn test_error_types_are_exported() {
+        let _: Result<()> = Ok(());
+        let _err: Error = Error::Internal {
+            message: "surface test".to_string(),
+        };
+    }
+
+    /// Verifies value-object ID types are re-exported at the crate root.
+    #[test]
+    fn test_value_objects_are_exported() {
+        let _id = EventId::new();
+        let _id = UserId::new();
+        let _id = EventReceiverId::new();
+        let _id = EventReceiverGroupId::new();
+        let _id = ApiKeyId::new();
+    }
+
+    /// Verifies RBAC types are re-exported at the crate root.
+    #[test]
+    fn test_auth_types_are_exported() {
+        let _role: Role = Role::User;
+        let _perm: Permission = Permission::EventRead;
+    }
+
+    /// Verifies Settings is re-exported at the crate root.
+    #[test]
+    fn test_settings_is_exported() {
+        let _ = std::any::TypeId::of::<Settings>();
+    }
+
+    /// Verifies ApiKeyService is re-exported at the crate root.
+    #[test]
+    fn test_api_key_service_is_exported() {
+        let _ = std::any::TypeId::of::<ApiKeyService>();
+    }
+}

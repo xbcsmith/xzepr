@@ -1,6 +1,35 @@
 // SPDX-FileCopyrightText: 2025 Brett Smith <xbcsmith@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
+//! User domain entity.
+//!
+//! # Architecture Decision Records
+//!
+//! ## ADR-1: Password Hashing in Domain Entity
+//!
+//! `User::new_local` performs Argon2 password hashing during entity
+//! construction so that a `User` value can never hold a plaintext password.
+//! The identical functions `hash_password` and `verify_password` also exist in
+//! `crate::auth::local::password`.
+//!
+//! **Decision (Phase 13)**: Retain the domain copies as a documented exception.
+//! The duplication exists to keep entity construction self-contained without
+//! requiring a dependency on the auth layer.  The long-term path is to accept
+//! a pre-hashed credential at `new_local` construction time and move all
+//! hashing to the auth service caller.
+//!
+//! ## ADR-2: RBAC Types Imported from Auth Layer
+//!
+//! `User` carries `Vec<Role>` and the `has_permission` method, both of which
+//! depend on `crate::auth::rbac`.  This creates a domain-to-auth import that
+//! inverts the intended layering.
+//!
+//! **Decision (Phase 13)**: Retain as a documented exception.  `Role` and
+//! `Permission` represent fundamental user identity data and are properly a
+//! domain concept.  The correct long-term fix is to relocate `Role` and
+//! `Permission` to a shared `domain::rbac` module.  That refactoring touches
+//! every import site and is deferred to a dedicated cleanup phase.
+
 use crate::auth::rbac::{permissions::Permission, roles::Role};
 use crate::domain::value_objects::UserId;
 use crate::error::{AuthError, DomainError};
@@ -407,5 +436,49 @@ mod tests {
         );
 
         assert!(user.enabled());
+    }
+
+    /// Architecture guard: verifies that the domain user entity does not import
+    /// from the API layer.
+    ///
+    /// A violation here means domain entities have grown a dependency on HTTP
+    /// routing, REST DTOs, or GraphQL schema - which must never happen.
+    ///
+    /// The check is line-based (`starts_with`) so that strings embedded in
+    /// test assertion text do not create false positives.
+    #[test]
+    fn test_domain_user_does_not_import_api_layer() {
+        let source = include_str!("user.rs");
+        let has_api_import = source.lines().any(|line| {
+            let trimmed = line.trim_start();
+            // Only match real `use` statements, not comments or test string literals.
+            trimmed.starts_with("use crate::api") && !trimmed.starts_with("/")
+        });
+        let has_infra_import = source.lines().any(|line| {
+            let trimmed = line.trim_start();
+            trimmed.starts_with("use crate::infrastructure") && !trimmed.starts_with("/")
+        });
+        assert!(
+            !has_api_import,
+            "domain/entities/user.rs must not start any line with a crate::api import"
+        );
+        assert!(
+            !has_infra_import,
+            "domain/entities/user.rs must not start any line with a crate::infrastructure import"
+        );
+    }
+
+    /// Architecture guard: verifies the boundary exception is documented in the
+    /// module source.
+    ///
+    /// If the ADR comment is removed without resolving the underlying issue, this
+    /// test will fail, prompting the author to make an explicit decision.
+    #[test]
+    fn test_domain_user_boundary_exceptions_are_documented() {
+        let source = include_str!("user.rs");
+        assert!(
+            source.contains("ADR-1") && source.contains("ADR-2"),
+            "Boundary exceptions must be documented with ADR comments in user.rs"
+        );
     }
 }

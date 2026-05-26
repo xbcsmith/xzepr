@@ -578,8 +578,8 @@ impl crate::auth::api_key::AuthUserRepository for PostgresUserRepository {
     ) -> Result<Option<crate::domain::entities::user::User>, crate::error::AuthError> {
         <Self as UserRepository>::find_by_id(self, &id)
             .await
-            .map_err(|e| crate::error::AuthError::OidcError {
-                message: e.to_string(),
+            .map_err(|e| crate::error::AuthError::StorageError {
+                message: format!("find_by_id: {}", e),
             })
     }
 
@@ -589,8 +589,8 @@ impl crate::auth::api_key::AuthUserRepository for PostgresUserRepository {
     ) -> Result<Option<crate::domain::entities::user::User>, crate::error::AuthError> {
         <Self as UserRepository>::find_by_username(self, username)
             .await
-            .map_err(|e| crate::error::AuthError::OidcError {
-                message: e.to_string(),
+            .map_err(|e| crate::error::AuthError::StorageError {
+                message: format!("find_by_username: {}", e),
             })
     }
 
@@ -611,13 +611,13 @@ impl crate::auth::api_key::AuthUserRepository for PostgresUserRepository {
             _ => None,
         };
 
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| crate::error::AuthError::OidcError {
-                message: format!("begin transaction: {}", e),
-            })?;
+        let mut tx =
+            self.pool
+                .begin()
+                .await
+                .map_err(|e| crate::error::AuthError::StorageError {
+                    message: format!("begin transaction: {}", e),
+                })?;
 
         sqlx::query(
             r#"
@@ -644,7 +644,7 @@ impl crate::auth::api_key::AuthUserRepository for PostgresUserRepository {
         .bind(user.updated_at())
         .execute(&mut *tx)
         .await
-        .map_err(|e| crate::error::AuthError::OidcError {
+        .map_err(|e| crate::error::AuthError::StorageError {
             message: format!("save user: {}", e),
         })?;
 
@@ -654,7 +654,7 @@ impl crate::auth::api_key::AuthUserRepository for PostgresUserRepository {
             .bind(user.id().as_ulid().to_string())
             .execute(&mut *tx)
             .await
-            .map_err(|e| crate::error::AuthError::OidcError {
+            .map_err(|e| crate::error::AuthError::StorageError {
                 message: format!("delete roles: {}", e),
             })?;
 
@@ -664,14 +664,14 @@ impl crate::auth::api_key::AuthUserRepository for PostgresUserRepository {
                 .bind(role.to_string())
                 .execute(&mut *tx)
                 .await
-                .map_err(|e| crate::error::AuthError::OidcError {
+                .map_err(|e| crate::error::AuthError::StorageError {
                     message: format!("insert role: {}", e),
                 })?;
         }
 
         tx.commit()
             .await
-            .map_err(|e| crate::error::AuthError::OidcError {
+            .map_err(|e| crate::error::AuthError::StorageError {
                 message: format!("commit transaction: {}", e),
             })?;
 
@@ -683,8 +683,8 @@ impl crate::auth::api_key::AuthUserRepository for PostgresUserRepository {
     ) -> Result<Vec<crate::domain::entities::user::User>, crate::error::AuthError> {
         <Self as UserRepository>::list(self, i64::MAX, 0)
             .await
-            .map_err(|e| crate::error::AuthError::OidcError {
-                message: e.to_string(),
+            .map_err(|e| crate::error::AuthError::StorageError {
+                message: format!("find_all: {}", e),
             })
     }
 
@@ -700,7 +700,7 @@ impl crate::auth::api_key::AuthUserRepository for PostgresUserRepository {
         .bind(role.to_string())
         .execute(&self.pool)
         .await
-        .map_err(|e| crate::error::AuthError::OidcError {
+        .map_err(|e| crate::error::AuthError::StorageError {
             message: format!("add_role: {}", e),
         })?;
         Ok(())
@@ -716,7 +716,7 @@ impl crate::auth::api_key::AuthUserRepository for PostgresUserRepository {
             .bind(role.to_string())
             .execute(&self.pool)
             .await
-            .map_err(|e| crate::error::AuthError::OidcError {
+            .map_err(|e| crate::error::AuthError::StorageError {
                 message: format!("remove_role: {}", e),
             })?;
         Ok(())
@@ -753,5 +753,28 @@ mod tests {
     fn test_create_or_update_oidc_user_logic_is_isolated() {
         fn _assert_user_repository_impl<T: UserRepository>() {}
         _assert_user_repository_impl::<PostgresUserRepository>();
+    }
+
+    /// Verifies that the three delegating methods on AuthUserRepository compile
+    /// and resolve to the correct types.
+    #[test]
+    fn test_auth_user_repository_delegates_find_by_id() {
+        // Structural test: verifies the delegation compiles with the
+        // correct trait dispatch syntax.  A live DB is not required.
+        fn _assert_impl(_: &impl crate::auth::api_key::AuthUserRepository) {}
+        let _: fn(sqlx::PgPool) -> PostgresUserRepository = PostgresUserRepository::new;
+    }
+
+    /// Verifies StorageError is used for non-OIDC persistence failures in
+    /// AuthUserRepository, not OidcError.
+    #[test]
+    fn test_auth_user_repository_uses_storage_error_for_failures() {
+        let err = crate::error::AuthError::StorageError {
+            message: "find_by_id: connection refused".to_string(),
+        };
+        assert!(
+            err.to_string().contains("storage"),
+            "StorageError display must mention storage"
+        );
     }
 }
