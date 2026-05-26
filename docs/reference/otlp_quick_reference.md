@@ -22,40 +22,40 @@ open http://localhost:16686
 
 ## Environment Variables
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `XZEPR__ENABLE_OTLP` | Yes | `false` | Enable OTLP exporter |
-| `XZEPR__OTLP_ENDPOINT` | Yes* | None | OTLP collector endpoint |
-| `XZEPR__ENVIRONMENT` | No | `development` | Environment (affects sampling) |
-| `XZEPR__LOG_LEVEL` | No | `info` | Log level filter |
-| `XZEPR__JSON_LOGS` | No | `false` | JSON log format |
+| Variable               | Required | Default       | Description                    |
+| ---------------------- | -------- | ------------- | ------------------------------ |
+| `XZEPR__ENABLE_OTLP`   | Yes      | `false`       | Enable OTLP exporter           |
+| `XZEPR__OTLP_ENDPOINT` | Yes\*    | None          | OTLP collector endpoint        |
+| `XZEPR__ENVIRONMENT`   | No       | `development` | Environment (affects sampling) |
+| `XZEPR__LOG_LEVEL`     | No       | `info`        | Log level filter               |
+| `XZEPR__JSON_LOGS`     | No       | `false`       | JSON log format                |
 
-*Required when OTLP is enabled
+\*Required when OTLP is enabled
 
 ## Environment Defaults
 
 | Environment | OTLP | Sample Rate | Log Format |
-|-------------|------|-------------|------------|
+| ----------- | ---- | ----------- | ---------- |
 | Development | Off  | 100%        | Human      |
 | Staging     | On   | 50%         | JSON       |
 | Production  | On   | 10%         | JSON       |
 
 ## OTLP Endpoints
 
-| Environment | Endpoint |
-|-------------|----------|
-| Local Docker | `http://localhost:4317` |
-| Kubernetes | `http://jaeger.observability.svc.cluster.local:4317` |
-| Docker Compose | `http://jaeger:4317` |
+| Environment    | Endpoint                                             |
+| -------------- | ---------------------------------------------------- |
+| Local Docker   | `http://localhost:4317`                              |
+| Kubernetes     | `http://jaeger.observability.svc.cluster.local:4317` |
+| Docker Compose | `http://jaeger:4317`                                 |
 
 ## Jaeger Ports
 
-| Port | Protocol | Purpose |
-|------|----------|---------|
-| 4317 | gRPC | OTLP collector |
-| 4318 | HTTP | OTLP HTTP (not used) |
-| 16686 | HTTP | Jaeger UI |
-| 14268 | HTTP | Jaeger collector |
+| Port  | Protocol | Purpose              |
+| ----- | -------- | -------------------- |
+| 4317  | gRPC     | OTLP collector       |
+| 4318  | HTTP     | OTLP HTTP (not used) |
+| 16686 | HTTP     | Jaeger UI            |
+| 14268 | HTTP     | Jaeger collector     |
 
 ## Common Commands
 
@@ -201,11 +201,13 @@ nc -zv jaeger 4317
 ### Only some requests traced
 
 This is normal! Check sampling rate for your environment:
+
 - Production: 10% (1 in 10 requests)
 - Staging: 50% (1 in 2 requests)
 - Development: 100% (all requests)
 
 To see all traces, use development environment:
+
 ```bash
 export XZEPR__ENVIRONMENT=development
 ```
@@ -213,7 +215,7 @@ export XZEPR__ENVIRONMENT=development
 ## Docker Compose Example
 
 ```yaml
-version: '3.8'
+version: "3.8"
 
 services:
   jaeger:
@@ -237,6 +239,7 @@ services:
 ```
 
 Start with:
+
 ```bash
 docker-compose up -d
 ```
@@ -259,57 +262,57 @@ spec:
         app: xzepr
     spec:
       containers:
-      - name: xzepr
-        image: xzepr:latest
-        env:
-        - name: XZEPR__ENABLE_OTLP
-          value: "true"
-        - name: XZEPR__OTLP_ENDPOINT
-          value: "http://jaeger.observability.svc.cluster.local:4317"
-        - name: XZEPR__ENVIRONMENT
-          value: "production"
+        - name: xzepr
+          image: xzepr:latest
+          env:
+            - name: XZEPR__ENABLE_OTLP
+              value: "true"
+            - name: XZEPR__OTLP_ENDPOINT
+              value: "http://jaeger.observability.svc.cluster.local:4317"
+            - name: XZEPR__ENVIRONMENT
+              value: "production"
 ```
 
 ## Best Practices
 
 ### DO
 
-- ✅ Always call `shutdown_tracing()` before exit
-- ✅ Use descriptive span names
-- ✅ Add relevant attributes (status code, user ID, etc.)
-- ✅ Use `#[instrument]` macro for automatic instrumentation
-- ✅ Log errors with span context
+- Always call `shutdown_tracing()` before exit
+- Use descriptive span names
+- Add relevant attributes (status code, user ID, etc.)
+- Use `#[instrument]` macro for automatic instrumentation
+- Log errors with span context
 
 ### DON'T
 
-- ❌ Add high-cardinality attributes (timestamps, full bodies)
-- ❌ Create spans for every loop iteration
-- ❌ Use generic span names ("process", "handler")
-- ❌ Forget to flush spans on shutdown
-- ❌ Block on span export (it's already async)
+- Do not add high-cardinality attributes (timestamps, full bodies)
+- Do not create spans for every loop iteration
+- Do not use generic span names ("process", "handler")
+- Do not forget to flush spans on shutdown
+- Do not block on span export (it's already async)
 
 ## Performance Impact
 
-| Metric | Impact |
-|--------|--------|
-| Request overhead | <1ms |
-| CPU per span | <0.5ms |
-| Memory (1000 spans) | ~5MB |
-| Network | Batch export, minimal |
+| Metric              | Impact                |
+| ------------------- | --------------------- |
+| Request overhead    | <1ms                  |
+| CPU per span        | <0.5ms                |
+| Memory (1000 spans) | ~5MB                  |
+| Network             | Batch export, minimal |
 
 ## Sampling Strategy
 
-| Traffic Level | Recommended Sample Rate |
-|---------------|------------------------|
-| Low (<100 RPS) | 100% (AlwaysOn) |
-| Medium (100-1000 RPS) | 50% (TraceIdRatio 0.5) |
-| High (>1000 RPS) | 10% (TraceIdRatio 0.1) |
+| Traffic Level         | Recommended Sample Rate |
+| --------------------- | ----------------------- |
+| Low (<100 RPS)        | 100% (AlwaysOn)         |
+| Medium (100-1000 RPS) | 50% (TraceIdRatio 0.5)  |
+| High (>1000 RPS)      | 10% (TraceIdRatio 0.1)  |
 
 ## Log Messages
 
 ### Success
 
-```
+```text
 INFO Initializing OTLP exporter otlp_endpoint="http://jaeger:4317" sample_rate=0.1
 INFO OTLP exporter initialized successfully
 INFO Tracing initialized service="xzepr" environment="production" otlp_enabled=true
@@ -318,7 +321,7 @@ INFO OTLP exporter configured and active
 
 ### Failure (with fallback)
 
-```
+```text
 INFO Initializing OTLP exporter otlp_endpoint="http://jaeger:4317"
 WARN Failed to initialize OTLP exporter, continuing without it
 INFO Tracing initialized service="xzepr" otlp_enabled=false
@@ -334,13 +337,14 @@ INFO Tracing initialized service="xzepr" otlp_enabled=false
 
 ### External
 
-- Jaeger: https://www.jaegertracing.io/docs/
-- OpenTelemetry: https://opentelemetry.io/docs/
-- Tracing: https://docs.rs/tracing/
+- Jaeger: <https://www.jaegertracing.io/docs/>
+- OpenTelemetry: <https://opentelemetry.io/docs/>
+- Tracing: <https://docs.rs/tracing/>
 
 ## Support
 
 For issues:
+
 1. Check application logs for error messages
 2. Verify Jaeger is running and accessible
 3. Review troubleshooting section above
@@ -348,5 +352,4 @@ For issues:
 
 ---
 
-**Last Updated:** 2024
-**Version:** 1.0
+**Last Updated:** 2024 **Version:** 1.0

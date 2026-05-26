@@ -1,8 +1,8 @@
 # OPA RBAC Implementation - Next Steps and Roadmap
 
-**Status**: Implementation phase complete (85-90%), moving into validation and deployment
-**Timeline**: 2-3 weeks to production readiness
-**Target Date**: End of Week 3
+**Status**: Implementation phase complete (85-90%), moving into validation and
+deployment **Timeline**: 2-3 weeks to production readiness **Target Date**: End
+of Week 3
 
 ---
 
@@ -10,24 +10,25 @@
 
 The entire OPA RBAC infrastructure is implemented and tested:
 
-✅ Domain model with ownership tracking (Event, EventReceiver, EventReceiverGroup)
-✅ Repository layer with ownership and membership queries
-✅ OPA client with HTTP communication and error handling
-✅ Authorization cache with resource version invalidation
-✅ Circuit breaker with fallback to legacy RBAC
-✅ Authorization middleware ready for integration
-✅ REST and GraphQL APIs for group membership
-✅ Audit logging for authorization decisions
-✅ Prometheus metrics infrastructure
-✅ 618 tests passing with >80% coverage
-✅ Zero Clippy warnings, fully formatted code
-✅ Complete architecture documentation
+- Domain model with ownership tracking (Event, EventReceiver,
+  EventReceiverGroup)
+- Repository layer with ownership and membership queries
+- OPA client with HTTP communication and error handling
+- Authorization cache with resource version invalidation
+- Circuit breaker with fallback to legacy RBAC
+- Authorization middleware ready for integration
+- REST and GraphQL APIs for group membership
+- Audit logging for authorization decisions
+- Prometheus metrics infrastructure
+- 618 tests passing with >80% coverage
+- Zero Clippy warnings, fully formatted code
+- Complete architecture documentation
 
 ---
 
 ## What's Required for Production
 
-### 🔴 CRITICAL PATH (Must Complete)
+### CRITICAL PATH (Must Complete)
 
 #### Task 1: Create Rego Policy Files (2-3 days)
 
@@ -36,6 +37,7 @@ The entire OPA RBAC infrastructure is implemented and tested:
 **Deliverables**:
 
 1. **config/opa/policies/rbac.rego** (Core RBAC rules)
+
    ```rego
    package xzepr.rbac
 
@@ -56,16 +58,19 @@ The entire OPA RBAC infrastructure is implemented and tested:
    ```
 
 2. **config/opa/policies/event_receiver.rego** (Event receiver access rules)
+
    - Owner can create, read, update, delete own receivers
    - Members of receiver's group can POST events
    - Admins have full access
 
 3. **config/opa/policies/event.rego** (Event access rules)
+
    - Owner can create, read, update, delete own events
    - Event receiver owner can read events sent to their receiver
    - Group members can read group events
 
 4. **config/opa/policies/event_receiver_group.rego** (Group access rules)
+
    - Owner can manage group
    - Owner can add/remove members
    - Members can read group info
@@ -77,6 +82,7 @@ The entire OPA RBAC infrastructure is implemented and tested:
    - `user_is_admin()` - Check admin status
 
 **Testing Strategy**:
+
 ```bash
 # Test policies locally with OPA CLI
 opa test config/opa/policies/ -v
@@ -88,6 +94,7 @@ opa eval -d config/opa/policies/ \
 ```
 
 **Success Criteria**:
+
 - All policies evaluate correctly with sample inputs
 - Owner-only operations properly restricted
 - Group member access properly enforced
@@ -105,6 +112,7 @@ opa eval -d config/opa/policies/ \
 1. **OPA Bundle Server** (Choose one approach)
 
    Option A: Docker container with static bundle serving
+
    ```dockerfile
    FROM openpolicyagent/opa:latest
    COPY bundle.tar.gz /policies/
@@ -112,9 +120,11 @@ opa eval -d config/opa/policies/ \
    ```
 
    Option B: Git-based bundle (OPA bundles from Git repo)
+
    - Repository: `https://github.com/org/xzepr-policies`
    - Structure:
-     ```
+
+     ```text
      xzepr-policies/
      ├── rbac.rego
      ├── event_receiver.rego
@@ -125,12 +135,14 @@ opa eval -d config/opa/policies/ \
      ```
 
 2. **Bundle Creation Pipeline**
+
    - Script to create bundle: `scripts/create_opa_bundle.sh`
    - Versioning: Semantic versioning (e.g., v1.0.0)
    - Storage: Docker registry or S3 bucket
    - Signature verification (optional)
 
 3. **docker-compose.yaml Update**
+
    ```yaml
    opa:
      image: openpolicyagent/opa:latest
@@ -154,6 +166,7 @@ opa eval -d config/opa/policies/ \
    ```
 
 **Testing Strategy**:
+
 ```bash
 # Start OPA server
 docker-compose up opa
@@ -168,6 +181,7 @@ curl -X POST http://localhost:8181/v1/data/xzepr/rbac/allow \
 ```
 
 **Success Criteria**:
+
 - OPA server starts and stays healthy
 - Policies load without errors
 - Policy evaluation works via HTTP API
@@ -182,6 +196,7 @@ curl -X POST http://localhost:8181/v1/data/xzepr/rbac/allow \
 **Deliverables**:
 
 1. **Integration Test Suite** (`tests/opa_integration_tests.rs`)
+
    ```rust
    #[tokio::test]
    async fn test_owner_can_delete_own_event_receiver() {
@@ -206,6 +221,7 @@ curl -X POST http://localhost:8181/v1/data/xzepr/rbac/allow \
    ```
 
 2. **Test Scenarios**
+
    - Owner operations (create, read, update, delete)
    - Group member operations (read, post events)
    - Non-owner/non-member access denial
@@ -220,6 +236,7 @@ curl -X POST http://localhost:8181/v1/data/xzepr/rbac/allow \
    - Assertion helpers for authorization checks
 
 **Testing Strategy**:
+
 ```bash
 # Run integration tests
 cargo test --test opa_integration_tests --all-features -- --test-threads=1 --nocapture
@@ -229,6 +246,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
 ```
 
 **Success Criteria**:
+
 - All 50+ integration tests passing
 - 100% authorization decision accuracy
 - Cache invalidation working correctly
@@ -239,11 +257,13 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
 
 #### Task 4: Production Deployment Documentation (2-3 days)
 
-**Why**: Operations team needs clear procedures for deployment and troubleshooting
+**Why**: Operations team needs clear procedures for deployment and
+troubleshooting
 
 **Deliverables**:
 
 1. **docs/how-to/opa_production_deployment.md**
+
    - Prerequisites (OPA version, PostgreSQL, etc.)
    - Step-by-step deployment procedure
    - Configuration validation checklist
@@ -252,6 +272,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
    - Monitoring setup
 
 2. **docs/how-to/opa_policy_development.md**
+
    - Policy structure and organization
    - Writing and testing Rego policies
    - Policy versioning strategy
@@ -260,6 +281,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
    - Deploying policy updates
 
 3. **docs/how-to/opa_troubleshooting.md**
+
    - Common authorization denial issues
    - Cache invalidation problems
    - Circuit breaker troubleshooting
@@ -268,6 +290,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
    - Debug logging for decision tracing
 
 4. **docs/reference/opa_api.md**
+
    - Authorization API endpoints
    - Request/response schema examples
    - Error codes and meanings
@@ -282,6 +305,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
    - Enable/disable OPA evaluation
 
 **Success Criteria**:
+
 - All deployment steps documented with examples
 - Troubleshooting guide covers 80% of likely issues
 - API documentation includes curl examples
@@ -289,7 +313,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
 
 ---
 
-### 🟡 HIGH PRIORITY (Strongly Recommended)
+### HIGH PRIORITY (Strongly Recommended)
 
 #### Task 5: Performance Baseline and Optimization (2-3 days)
 
@@ -298,6 +322,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
 **Deliverables**:
 
 1. **Performance Testing**
+
    ```rust
    #[tokio::test]
    async fn benchmark_authorization_latency() {
@@ -309,12 +334,14 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
    ```
 
 2. **Cache Performance**
+
    - Measure cache hit rate under normal load
    - Verify cache warmup strategy
    - Test cache invalidation performance
    - Optimize cache size settings
 
 3. **Database Performance**
+
    - Profile ownership/membership queries
    - Verify index usage
    - Measure query latency
@@ -327,6 +354,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
    - Benchmark resource usage
 
 **Success Criteria**:
+
 - Authorization latency P95 < 50ms (with cache)
 - Cache hit rate > 70% in steady state
 - No query N+1 problems
@@ -341,24 +369,28 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
 **Deliverables**:
 
 1. **TLS Configuration**
+
    - Configure OPA with mTLS
    - Generate certificates and keys
    - Update OPA client to use TLS
    - Verify secure communication
 
 2. **Secret Management**
+
    - Remove hardcoded secrets
    - Integrate with secret vault (Vault, AWS Secrets Manager, etc.)
    - OPA credentials in secrets
    - Database credentials in secrets
 
 3. **Rate Limiting**
+
    - Implement rate limiting on authorization endpoint
    - Prevent authorization endpoint abuse
    - Configure burst limits
    - Add rate limit response headers
 
 4. **Input Validation**
+
    - Validate all input to OPA
    - Prevent injection attacks
    - Validate user IDs, resource IDs
@@ -371,6 +403,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
    - Secure audit log storage
 
 **Success Criteria**:
+
 - TLS communication verified with packet inspection
 - All secrets stored in vault, none hardcoded
 - Rate limiting working correctly
@@ -378,7 +411,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
 
 ---
 
-### 🟢 MEDIUM PRIORITY (Good to Have)
+### MEDIUM PRIORITY (Good to Have)
 
 #### Task 7: Operational Monitoring (2 days)
 
@@ -387,6 +420,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
 **Deliverables**:
 
 1. **Prometheus Metrics Dashboard**
+
    - Authorization request rate
    - Authorization denial rate
    - Authorization latency histogram
@@ -395,6 +429,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
    - OPA server availability
 
 2. **Alerting Rules**
+
    - Alert when authorization denial rate > 5%
    - Alert when P95 latency > 50ms
    - Alert when cache hit rate < 60%
@@ -409,6 +444,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
    - Policy version tracking
 
 **Success Criteria**:
+
 - Dashboard displays all key metrics
 - Alerts fire correctly on threshold breach
 - Dashboard loads without performance issues
@@ -420,6 +456,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
 ### Week 1: Core Policy Development
 
 **Monday-Tuesday**: Create Rego policies
+
 - [ ] Write rbac.rego with core rules
 - [ ] Write event_receiver.rego policy
 - [ ] Write event.rego policy
@@ -428,6 +465,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
 - [ ] Test policies with OPA CLI
 
 **Wednesday-Thursday**: Setup OPA infrastructure
+
 - [ ] Create bundle structure
 - [ ] Setup OPA Docker service
 - [ ] Configure docker-compose
@@ -435,6 +473,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
 - [ ] Verify policy loading
 
 **Friday**: Initial integration
+
 - [ ] Start OPA server locally
 - [ ] Create sample authorization requests
 - [ ] Test policy evaluation
@@ -444,6 +483,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
 ### Week 2: Integration Testing and Validation
 
 **Monday-Tuesday**: Build integration tests
+
 - [ ] Setup testcontainers for OPA
 - [ ] Write owner operation tests
 - [ ] Write group member tests
@@ -451,6 +491,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
 - [ ] Run test suite
 
 **Wednesday-Thursday**: Performance testing
+
 - [ ] Create performance test suite
 - [ ] Measure authorization latency
 - [ ] Validate cache hit rate
@@ -458,6 +499,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
 - [ ] Optimize if needed
 
 **Friday**: Documentation
+
 - [ ] Write deployment guide
 - [ ] Write policy development guide
 - [ ] Create troubleshooting guide
@@ -467,6 +509,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
 ### Week 3: Security and Production Readiness
 
 **Monday-Tuesday**: Security hardening
+
 - [ ] Configure TLS
 - [ ] Setup secret management
 - [ ] Implement rate limiting
@@ -474,6 +517,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
 - [ ] Security audit
 
 **Wednesday-Thursday**: Monitoring setup
+
 - [ ] Create Prometheus metrics
 - [ ] Setup Grafana dashboard
 - [ ] Configure alerting rules
@@ -481,6 +525,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
 - [ ] Document metrics
 
 **Friday**: Staging validation
+
 - [ ] Deploy to staging environment
 - [ ] Run full integration test suite
 - [ ] Validate monitoring
@@ -492,6 +537,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
 ## Files to Create
 
 ### Rego Policy Files
+
 - [ ] `config/opa/policies/rbac.rego` (200-300 lines)
 - [ ] `config/opa/policies/event_receiver.rego` (100-150 lines)
 - [ ] `config/opa/policies/event.rego` (100-150 lines)
@@ -499,10 +545,12 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
 - [ ] `config/opa/policies/utils.rego` (100-150 lines)
 
 ### Test Files
+
 - [ ] `tests/opa_integration_tests.rs` (500-800 lines)
 - [ ] `tests/fixtures/opa_test_data.json` (Sample inputs/outputs)
 
 ### Documentation Files
+
 - [ ] `docs/how-to/opa_production_deployment.md` (300-400 lines)
 - [ ] `docs/how-to/opa_policy_development.md` (200-300 lines)
 - [ ] `docs/how-to/opa_troubleshooting.md` (200-300 lines)
@@ -510,6 +558,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
 - [ ] `docs/operations/opa_runbooks.md` (200-300 lines)
 
 ### Configuration Files
+
 - [ ] `scripts/create_opa_bundle.sh` (Bash script to create bundles)
 - [ ] `config/opa/bundle.tar.gz` (Policy bundle)
 - [ ] `docker-compose.yaml` (Updated with OPA service)
@@ -521,74 +570,89 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
 ## Success Criteria for Each Task
 
 ### Task 1: Rego Policies
-- ✅ All policy files created
-- ✅ No syntax errors reported by OPA CLI
-- ✅ All policies evaluate correctly with test inputs
-- ✅ Authorization decisions match expected outcomes
+
+- All policy files created
+- No syntax errors reported by OPA CLI
+- All policies evaluate correctly with test inputs
+- Authorization decisions match expected outcomes
 
 ### Task 2: OPA Bundle Server
-- ✅ OPA server starts without errors
-- ✅ Health check endpoint responds
-- ✅ Policies load and are accessible
-- ✅ Policy evaluation works via HTTP API
+
+- OPA server starts without errors
+- Health check endpoint responds
+- Policies load and are accessible
+- Policy evaluation works via HTTP API
 
 ### Task 3: Integration Tests
-- ✅ 50+ tests written and passing
-- ✅ Coverage for all major authorization paths
-- ✅ P95 authorization latency < 50ms
-- ✅ Cache hit rate > 70%
+
+- 50+ tests written and passing
+- Coverage for all major authorization paths
+- P95 authorization latency < 50ms
+- Cache hit rate > 70%
 
 ### Task 4: Documentation
-- ✅ All deployment steps documented
-- ✅ Troubleshooting guide covers common issues
-- ✅ API documentation with examples
-- ✅ Runbooks tested by operations team
+
+- All deployment steps documented
+- Troubleshooting guide covers common issues
+- API documentation with examples
+- Runbooks tested by operations team
 
 ### Task 5: Performance
-- ✅ Authorization latency P95 < 50ms
-- ✅ Cache hit rate > 70%
-- ✅ No performance regressions
-- ✅ Database queries optimized
+
+- Authorization latency P95 < 50ms
+- Cache hit rate > 70%
+- No performance regressions
+- Database queries optimized
 
 ### Task 6: Security
-- ✅ TLS communication verified
-- ✅ All secrets in vault
-- ✅ Rate limiting working
-- ✅ Input validation comprehensive
+
+- TLS communication verified
+- All secrets in vault
+- Rate limiting working
+- Input validation comprehensive
 
 ### Task 7: Monitoring
-- ✅ Grafana dashboard working
-- ✅ All metrics visible
-- ✅ Alerts firing correctly
-- ✅ Historical data retention
+
+- Grafana dashboard working
+- All metrics visible
+- Alerts firing correctly
+- Historical data retention
 
 ---
 
 ## Risk Mitigation
 
 ### Risk: OPA Policy Bugs
+
 **Mitigation**:
+
 - Comprehensive policy testing before deployment
 - Code review for all policy changes
 - Gradual rollout with feature flag
 - Quick rollback procedure
 
 ### Risk: Performance Issues
+
 **Mitigation**:
+
 - Load testing before production
 - P95 latency monitoring
 - Aggressive caching strategy
 - Capacity planning
 
 ### Risk: Cache Invalidation Bugs
+
 **Mitigation**:
+
 - Comprehensive test coverage
 - Resource version validation
 - TTL safety net
 - Manual cache clear capability
 
 ### Risk: OPA Service Outage
+
 **Mitigation**:
+
 - Circuit breaker with fallback
 - Monitoring and alerting
 - Quick recovery procedures
@@ -599,6 +663,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
 ## Validation Checklist
 
 ### Pre-Deployment
+
 - [ ] All Rego policies created and tested
 - [ ] OPA bundle server configured and verified
 - [ ] Integration tests passing (50+)
@@ -610,6 +675,7 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
 - [ ] Staging deployment successful
 
 ### Post-Deployment
+
 - [ ] Monitor authorization latency for 24 hours
 - [ ] Verify cache hit rate > 70%
 - [ ] Check for any authorization denials
@@ -623,19 +689,23 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
 ## Resources and References
 
 ### OPA Documentation
-- https://www.openpolicyagent.org/docs/latest/
-- https://www.openpolicyagent.org/docs/latest/policy-language/
-- https://www.openpolicyagent.org/docs/latest/deployments/
+
+- <https://www.openpolicyagent.org/docs/latest/>
+- <https://www.openpolicyagent.org/docs/latest/policy-language/>
+- <https://www.openpolicyagent.org/docs/latest/deployments/>
 
 ### Rego Policy Examples
-- https://github.com/open-policy-agent/opa/tree/main/examples
-- https://www.openpolicyagent.org/docs/latest/policy-language/#rules
+
+- <https://github.com/open-policy-agent/opa/tree/main/examples>
+- <https://www.openpolicyagent.org/docs/latest/policy-language/#rules>
 
 ### Testing Tools
-- OPA CLI: https://www.openpolicyagent.org/docs/latest/cli/
-- Testcontainers: https://testcontainers.com/
+
+- OPA CLI: <https://www.openpolicyagent.org/docs/latest/cli/>
+- Testcontainers: <https://testcontainers.com/>
 
 ### Related Documentation
+
 - `docs/explanation/opa_rbac_expansion_plan.md` - Detailed plan
 - `docs/explanation/opa_rbac_completion_status.md` - Status report
 - `docs/explanation/opa_authorization_architecture.md` - Architecture
@@ -645,12 +715,12 @@ cargo test --test opa_integration_tests owner_can_delete -- --nocapture
 ## Contact and Questions
 
 For questions about these next steps:
+
 - Review `docs/explanation/opa_rbac_completion_status.md` for status
 - Check `docs/explanation/opa_authorization_architecture.md` for design details
 - See `AGENTS.md` for development guidelines
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2025-01-20
-**Status**: Ready for implementation
+**Document Version**: 1.0 **Last Updated**: 2025-01-20 **Status**: Ready for
+implementation

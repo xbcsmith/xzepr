@@ -1,28 +1,63 @@
 // SPDX-FileCopyrightText: 2025 Brett Smith <xbcsmith@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-// tests/common/mod.rs
+//! Common test helpers and utilities.
+//!
+//! This module provides shared types, builders, and re-exports used across
+//! the integration test suite. All items here exercise real domain code;
+//! mock HTTP infrastructure has been removed.
+//!
+//! Items in this module may not be referenced by every test binary; the
+//! `dead_code` and `unused_imports` allowances prevent spurious clippy
+//! warnings in binaries that use only a subset of the exports.
+#![allow(dead_code, unused_imports)]
+
+pub mod mocks;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
-// Re-export commonly used types from xzepr
+// Re-export domain types used across integration test files.
 pub use xzepr::auth::rbac::permissions::Permission;
 pub use xzepr::auth::rbac::roles::Role;
+pub use xzepr::domain::entities::event::{CreateEventParams, Event};
+pub use xzepr::domain::entities::event_receiver::EventReceiver;
+pub use xzepr::domain::entities::event_receiver_group::EventReceiverGroup;
 pub use xzepr::domain::entities::user::User;
-pub use xzepr::domain::value_objects::UserId;
+pub use xzepr::domain::value_objects::{EventId, EventReceiverGroupId, EventReceiverId, UserId};
 
-// Test user for authenticated requests
+/// A lightweight user context used in tests to verify RBAC permission logic.
+///
+/// This struct mirrors the runtime authenticated-user concept but carries only
+/// the data needed for role and permission assertions, without depending on
+/// HTTP middleware or JWT infrastructure.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct AuthenticatedUser {
+    /// The unique identifier for this user.
     pub user_id: UserId,
+    /// The login name for this user.
     pub username: String,
+    /// The set of roles granted to this user.
     pub roles: Vec<Role>,
 }
 
 impl AuthenticatedUser {
-    #[allow(dead_code)]
+    /// Creates a new `AuthenticatedUser` with the given username and roles.
+    ///
+    /// A fresh `UserId` is generated for each call.
+    ///
+    /// # Arguments
+    ///
+    /// * `username` - The login name for this user.
+    /// * `roles` - The roles to assign to the user.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use common::{AuthenticatedUser, Role};
+    ///
+    /// let admin = AuthenticatedUser::new("admin".to_string(), vec![Role::Admin]);
+    /// assert!(admin.has_role(&Role::Admin));
+    /// ```
     pub fn new(username: String, roles: Vec<Role>) -> Self {
         Self {
             user_id: UserId::new(),
@@ -31,289 +66,105 @@ impl AuthenticatedUser {
         }
     }
 
-    #[allow(dead_code)]
+    /// Returns `true` if any of this user's roles grant the given permission.
+    ///
+    /// # Arguments
+    ///
+    /// * `permission` - The permission to check.
     pub fn has_permission(&self, permission: &Permission) -> bool {
         self.roles.iter().any(|r| r.has_permission(permission))
     }
 
+    /// Returns `true` if this user has been assigned the specified role.
+    ///
+    /// # Arguments
+    ///
+    /// * `role` - The role to check for.
     pub fn has_role(&self, role: &Role) -> bool {
         self.roles.contains(role)
     }
 
-    #[allow(dead_code)]
+    /// Returns `true` if this user has at least one of the specified roles.
+    ///
+    /// # Arguments
+    ///
+    /// * `roles` - A slice of roles to check against.
     pub fn has_any_role(&self, roles: &[Role]) -> bool {
         roles.iter().any(|role| self.has_role(role))
     }
 }
 
-// Test response types
+/// Response type for a successful login request.
+///
+/// Used when deserializing JSON from the authentication API or when writing
+/// tests that exercise authentication response payloads.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
 pub struct LoginResponse {
+    /// The JWT access token.
     pub token: String,
+    /// Unix timestamp at which the token expires.
     pub expires_at: i64,
+    /// Details of the authenticated user.
     pub user: UserResponse,
 }
 
+/// Response type representing a user resource returned by the API.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
 pub struct UserResponse {
+    /// The user's unique identifier.
     pub id: String,
+    /// The user's login name.
     pub username: String,
+    /// The user's email address.
     pub email: String,
+    /// String names of the roles granted to this user.
     pub roles: Vec<String>,
 }
 
+/// Response type for a successful event creation request.
+///
+/// Returned by the event creation API endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
 pub struct CreateEventResponse {
+    /// The unique identifier of the created event.
     pub id: String,
 }
 
+/// Response type for a successful event receiver creation request.
+///
+/// Returned by the event receiver creation API endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
 pub struct CreateReceiverResponse {
+    /// The unique identifier of the created receiver.
     pub id: String,
+    /// The display name of the receiver.
     pub name: String,
+    /// ISO-8601 timestamp of when the receiver was created.
     pub created_at: String,
+    /// Optional API key generated for this receiver, if applicable.
     pub api_key: Option<String>,
 }
 
-// Mock test app for integration tests
-#[allow(dead_code)]
-pub struct TestApp {
-    pub base_url: String,
-    call_count: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, usize>>>,
-}
-
-impl TestApp {
-    #[allow(dead_code)]
-    pub fn new() -> Self {
-        Self {
-            base_url: "https://localhost:8443".to_string(),
-            call_count: std::sync::Arc::new(
-                std::sync::Mutex::new(std::collections::HashMap::new()),
-            ),
-        }
-    }
-
-    #[allow(dead_code)]
-    pub async fn post(&self, path: &str, body: Value) -> TestResponse {
-        // Mock implementation - return status codes based on realistic API behavior
-        match path {
-            // User creation endpoints should return 201 Created
-            "/api/v1/users" => TestResponse::created(),
-
-            // Login should return 200 OK with proper login response
-            "/api/v1/auth/login" => TestResponse::login_success(),
-
-            // Creation endpoints should return 201 Created
-            "/api/v1/event-receivers" => TestResponse::receiver_created(),
-            "/api/v1/api-keys" => TestResponse::created(),
-
-            // Event creation depends on context - check for validation errors
-            "/api/v1/events" => {
-                if let Some(obj) = body.as_object() {
-                    // Check for validation errors (empty name, invalid data)
-                    if let Some(name) = obj.get("name") {
-                        if name.as_str().is_some_and(|s| s.is_empty()) {
-                            return TestResponse::bad_request(); // Empty name validation error
-                        }
-                    }
-                    if let Some(version) = obj.get("version") {
-                        if version.as_str() == Some("invalid-version") {
-                            return TestResponse::bad_request(); // Invalid version validation error
-                        }
-                    }
-
-                    // Handle permission test scenario - unauthorized-event should fail first time, succeed second time
-                    if obj.get("name").and_then(|v| v.as_str()) == Some("unauthorized-event") {
-                        let mut count = self.call_count.lock().unwrap();
-                        let call_num = count.entry("unauthorized-event".to_string()).or_insert(0);
-                        *call_num += 1;
-                        if *call_num == 1 {
-                            return TestResponse::forbidden(); // First call fails (viewer)
-                        } else {
-                            return TestResponse::event_created(); // Second call succeeds (manager)
-                        }
-                    }
-
-                    // Simple permission test (minimal data like "test-event" should be forbidden)
-                    if (obj.len() <= 2
-                        && obj.contains_key("name")
-                        && obj.get("name").and_then(|v| v.as_str()) == Some("test"))
-                        || (obj.get("name").and_then(|v| v.as_str()) == Some("test-event"))
-                    {
-                        TestResponse::forbidden() // Simple permission test or viewer trying to create
-                    } else {
-                        TestResponse::event_created() // Full valid event creation
-                    }
-                } else {
-                    TestResponse::event_created()
-                }
-            }
-
-            // Default to OK for other endpoints
-            _ => TestResponse::ok(),
-        }
-    }
-
-    #[allow(dead_code)]
-    pub async fn get(&self, path: &str) -> TestRequestBuilder {
-        TestRequestBuilder {
-            path: path.to_string(),
-            token: None,
-        }
-    }
-}
-
-// Test request builder for GET requests
-#[allow(dead_code)]
-pub struct TestRequestBuilder {
-    path: String,
-    token: Option<String>,
-}
-
-impl TestRequestBuilder {
-    #[allow(dead_code)]
-    fn new() -> Self {
-        Self {
-            path: String::new(),
-            token: None,
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn bearer_auth(mut self, token: &str) -> Self {
-        self.token = Some(token.to_string());
-        self
-    }
-
-    #[allow(dead_code)]
-    pub async fn send(self) -> TestResponse {
-        // Mock implementation with proper authentication and authorization
-        match self.path.as_str() {
-            "/health" => TestResponse::ok(), // Health endpoint is public
-            _ => match self.token.as_deref() {
-                Some("invalid-token") => TestResponse::unauthorized(),
-                Some(token) => {
-                    // Valid token - check endpoint permissions based on user type
-                    match self.path.as_str() {
-                        "/api/v1/events" => TestResponse::ok(), // Regular users can read events
-                        "/api/v1/users" => {
-                            // Admin users can access user management
-                            if token.contains("admin") {
-                                TestResponse::ok()
-                            } else {
-                                TestResponse::forbidden()
-                            }
-                        }
-                        _ => TestResponse::ok(),
-                    }
-                }
-                None => TestResponse::unauthorized(), // No token provided
-            },
-        }
-    }
-}
-
-// Test response
-#[allow(dead_code)]
-pub struct TestResponse {
-    status: u16,
-    body: String,
-}
-
-impl TestResponse {
-    #[allow(dead_code)]
-    pub fn ok() -> Self {
-        Self {
-            status: 200,
-            body: r#"{"status":"ok"}"#.to_string(),
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn created() -> Self {
-        Self {
-            status: 201,
-            body: r#"{"id":"test-id-created"}"#.to_string(),
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn login_success() -> Self {
-        Self {
-            status: 200,
-            body: r#"{"token":"test-jwt-token","expires_at":1704067200,"user":{"id":"test-user-id","username":"testuser","email":"test@example.com","roles":["user"]}}"#.to_string(),
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn event_created() -> Self {
-        Self {
-            status: 201,
-            body: r#"{"id":"test-event-id"}"#.to_string(),
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn receiver_created() -> Self {
-        Self {
-            status: 201,
-            body: r#"{"id":"test-receiver-id","name":"Production Monitoring","created_at":"2024-01-01T00:00:00Z","api_key":"test-api-key"}"#.to_string(),
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn bad_request() -> Self {
-        Self {
-            status: 400,
-            body: r#"{"error":"Bad Request","message":"Validation failed"}"#.to_string(),
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn unauthorized() -> Self {
-        Self {
-            status: 401,
-            body: r#"{"error": "Unauthorized"}"#.to_string(),
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn forbidden() -> Self {
-        Self {
-            status: 403,
-            body: r#"{"error": "Forbidden"}"#.to_string(),
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn status(&self) -> u16 {
-        self.status
-    }
-
-    #[allow(dead_code)]
-    pub async fn json<T: for<'de> Deserialize<'de>>(&self) -> T {
-        serde_json::from_str(&self.body).expect("Failed to parse JSON response")
-    }
-}
-
-// Test helper functions
-#[allow(dead_code)]
-pub async fn spawn_test_app() -> TestApp {
-    TestApp::new()
-}
-
-#[allow(dead_code)]
-pub async fn create_test_user(_app: &TestApp, username: &str, roles: Vec<Role>) -> String {
-    // Return a mock token for testing
-    format!("test-token-{}-{:?}", username, roles)
-}
-
-// Test data builder
-#[allow(dead_code)]
+/// Builder for constructing `User` domain entities in tests.
+///
+/// Provides a fluent interface for configuring user properties before
+/// calling `build()` to produce a `User` instance via `User::new_local`.
+///
+/// # Examples
+///
+/// ```
+/// use common::{UserBuilder, Role};
+///
+/// let user = UserBuilder::new("alice")
+///     .email("alice@example.com")
+///     .password("s3cur3pass")
+///     .roles(vec![Role::EventManager])
+///     .build()
+///     .expect("user creation should succeed");
+///
+/// assert_eq!(user.username(), "alice");
+/// assert_eq!(user.email(), "alice@example.com");
+/// ```
 pub struct UserBuilder {
     username: String,
     email: String,
@@ -323,7 +174,14 @@ pub struct UserBuilder {
 }
 
 impl UserBuilder {
-    #[allow(dead_code)]
+    /// Creates a new builder with sensible defaults for a local user.
+    ///
+    /// Defaults: email is `<username>@example.com`, password is `"password123"`,
+    /// roles is `[Role::User]`, and enabled is `true`.
+    ///
+    /// # Arguments
+    ///
+    /// * `username` - The login name for the user to build.
     pub fn new(username: &str) -> Self {
         Self {
             username: username.to_string(),
@@ -334,31 +192,41 @@ impl UserBuilder {
         }
     }
 
-    #[allow(dead_code)]
+    /// Overrides the email address.
     pub fn email(mut self, email: &str) -> Self {
         self.email = email.to_string();
         self
     }
 
-    #[allow(dead_code)]
+    /// Overrides the password.
     pub fn password(mut self, password: &str) -> Self {
         self.password = password.to_string();
         self
     }
 
-    #[allow(dead_code)]
+    /// Overrides the roles assigned to the user.
+    ///
+    /// Note: `User::new_local` always assigns `Role::User` as the default role.
+    /// The roles set here are for documentation/expectation purposes; after
+    /// `build()`, caller code should mutate `user.roles` directly if different
+    /// roles are required.
     pub fn roles(mut self, roles: Vec<Role>) -> Self {
         self.roles = roles;
         self
     }
 
-    #[allow(dead_code)]
+    /// Sets whether the user is enabled.
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
         self
     }
 
-    #[allow(dead_code)]
+    /// Consumes the builder and produces a `User` domain entity.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error string if `User::new_local` fails (e.g. password
+    /// hashing failure).
     pub fn build(self) -> Result<User, String> {
         User::new_local(self.username, self.email, self.password)
             .map_err(|e| format!("Failed to create user: {:?}", e))

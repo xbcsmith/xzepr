@@ -13,7 +13,7 @@ containers and extensive documentation.
 - At least 4GB RAM available
 - OpenSSL (for certificate generation)
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Clone and Setup
 
@@ -107,7 +107,7 @@ docker compose exec -T postgres psql -U xzepr -d xzepr -c "SELECT username, emai
 docker compose ps
 ```
 
-## 🎯 First Steps
+## First Steps
 
 ### Create Your First Event
 
@@ -171,7 +171,7 @@ curl -X GET "https://localhost:8443/api/v1/events" \
   -H "Authorization: Bearer $TOKEN" -k
 ```
 
-## 🔧 Development Setup
+## Development Setup
 
 ### Prerequisites for Local Development
 
@@ -197,7 +197,7 @@ RUST_LOG=debug cargo run
 cargo run --bin admin -- list-users
 ```
 
-## 📊 Monitoring and Management
+## Monitoring and Management
 
 ### Service URLs
 
@@ -240,7 +240,7 @@ docker compose down --volumes
 docker system prune -f
 ```
 
-## 🔐 Security Notes
+## Security Notes
 
 ### Development Security
 
@@ -255,10 +255,11 @@ docker system prune -f
 - Use proper TLS certificates from a trusted CA or Let's Encrypt
 - Implement secrets management (Docker secrets, Kubernetes secrets, etc.)
 - Change all default passwords and use strong authentication
-- Review the comprehensive security section in [deployment.md](../how_to/deployment.md)
+- Review the comprehensive security section in
+  [deployment.md](../how_to/deployment.md)
 - Enable additional security features like rate limiting and audit logging
 
-## 🚨 Troubleshooting
+## Troubleshooting
 
 ### Quick Diagnostics
 
@@ -364,11 +365,12 @@ lsof -i :5432  # PostgreSQL
 # Stop conflicting services or change ports in docker-compose.yaml
 ```
 
-## 📚 Next Steps
+## Next Steps
 
 ### Immediate Next Steps
 
-- Explore the [API Documentation](../reference/api.md) for comprehensive endpoint details
+- Explore the [API Documentation](../reference/api.md) for comprehensive
+  endpoint details
 - Try creating events and receivers using the API examples
 - View real-time events in the Redpanda Console
 
@@ -382,7 +384,8 @@ lsof -i :5432  # PostgreSQL
 
 ### Production Preparation
 
-- Read [deployment.md](../how_to/deployment.md) for production deployment strategies
+- Read [deployment.md](../how_to/deployment.md) for production deployment
+  strategies
 - Configure proper TLS certificates and secrets management
 - Set up monitoring with Prometheus/Grafana:
   `docker compose --profile monitoring up -d`
@@ -395,7 +398,7 @@ lsof -i :5432  # PostgreSQL
 - Implement custom event receivers and webhooks
 - Explore the reference documentation for API and operational details
 
-## 🆘 Getting Help
+## Getting Help
 
 ### Self-Service Debugging
 
@@ -416,7 +419,8 @@ lsof -i :5432  # PostgreSQL
 - **Port conflicts**: Change ports in docker-compose.yaml
 - **Resource issues**: Ensure 4GB+ RAM available
 - **Certificate problems**: Regenerate the files in `certs/` with `openssl`
-- **Database issues**: `docker compose down --volumes && docker compose up -d --build`
+- **Database issues**:
+  `docker compose down --volumes && docker compose up -d --build`
 - **Build problems**: `docker compose build --no-cache`
 
 ### Additional Help

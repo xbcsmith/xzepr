@@ -2,12 +2,13 @@
 
 ## Executive Summary
 
-The OpenTelemetry OTLP (OpenTelemetry Protocol) exporter has been **fully implemented, wired, and validated** for XZepr. Distributed tracing with Jaeger and other OpenTelemetry-compatible collectors is now operational and production-ready.
+The OpenTelemetry OTLP (OpenTelemetry Protocol) exporter has been **fully
+implemented, wired, and validated** for XZepr. Distributed tracing with Jaeger
+and other OpenTelemetry-compatible collectors is now operational and
+production-ready.
 
-**Status:** COMPLETE AND VALIDATED
-**Date:** 2024
-**Phase:** Phase 4 Observability - OTLP Integration
-**Completion:** 100%
+**Status:** COMPLETE AND VALIDATED **Date:** 2024 **Phase:** Phase 4
+Observability - OTLP Integration **Completion:** 100%
 
 ## What Was Implemented
 
@@ -69,22 +70,22 @@ pub struct TracingConfig {
 **Environment Variable Support:**
 
 - `XZEPR__ENABLE_OTLP` - Enable/disable OTLP export
-- `XZEPR__OTLP_ENDPOINT` - Collector endpoint (e.g., http://jaeger:4317)
+- `XZEPR__OTLP_ENDPOINT` - Collector endpoint (e.g., <http://jaeger:4317>)
 - `XZEPR__ENVIRONMENT` - Environment name (affects sampling)
 
 **Environment-Specific Defaults:**
 
-| Environment | OTLP Enabled | Sample Rate | Endpoint              |
-| ----------- | ------------ | ----------- | --------------------- |
-| Development | No (opt-in)  | 100%        | http://localhost:4317 |
-| Staging     | Yes          | 50%         | http://jaeger:4317    |
-| Production  | Yes          | 10%         | http://jaeger:4317    |
+| Environment | OTLP Enabled | Sample Rate | Endpoint                |
+| ----------- | ------------ | ----------- | ----------------------- |
+| Development | No (opt-in)  | 100%        | `http://localhost:4317` |
+| Staging     | Yes          | 50%         | `http://jaeger:4317`    |
+| Production  | Yes          | 10%         | `http://jaeger:4317`    |
 
 ### 3. Layer Composition
 
 **Tracing Subscriber Architecture:**
 
-```
+```text
 Registry (base)
   ├── EnvFilter (log level filtering)
   ├── OpenTelemetry Layer (OTLP export, if enabled)
@@ -126,7 +127,7 @@ $ cargo check --all-targets --all-features
    Finished dev [optimized] target(s) in 0.85s
 ```
 
-**Result:** ✅ SUCCESS - Clean build with zero errors
+**Result:** SUCCESS - Clean build with zero errors
 
 ### Test Validation
 
@@ -135,7 +136,7 @@ $ cargo test --lib
 test result: ok. 377 passed; 0 failed; 4 ignored
 ```
 
-**Result:** ✅ SUCCESS - All 377 tests passing, zero failures
+**Result:** SUCCESS - All 377 tests passing, zero failures
 
 **Test Updates:**
 
@@ -151,15 +152,15 @@ $ cargo clippy --all-targets --all-features -- -D warnings
    Finished dev [optimized] target(s) in 2.61s
 ```
 
-**Result:** ✅ SUCCESS - Zero clippy warnings
+**Result:** SUCCESS - Zero clippy warnings
 
 ### Format Validation
 
 ```bash
-$ cargo fmt --all
+cargo fmt --all
 ```
 
-**Result:** ✅ SUCCESS - All code properly formatted
+**Result:** SUCCESS - All code properly formatted
 
 ## Implementation Statistics
 
@@ -339,7 +340,8 @@ cargo run --bin server
 - [ ] Span export validation (requires test infrastructure)
 - [ ] Sampling behavior verification (requires traffic)
 
-**Note:** Live integration tests require deployed infrastructure and will be performed during staging validation.
+**Note:** Live integration tests require deployed infrastructure and will be
+performed during staging validation.
 
 ### Manual Testing Checklist
 
@@ -488,63 +490,63 @@ cargo run --bin server
 
 ### Short-Term (Week 2)
 
-5. **Performance testing**
+1. **Performance testing**
 
    - Measure OTLP overhead
    - Validate sampling behavior
    - Monitor memory usage
 
-6. **Create monitoring dashboards**
+2. **Create monitoring dashboards**
 
    - Grafana dashboard for trace metrics
    - Alert rules for export failures
    - Service health metrics
 
-7. **Documentation updates**
+3. **Documentation updates**
 
    - Add staging deployment details
    - Document actual performance data
    - Update troubleshooting based on issues
 
-8. **Team training**
+4. **Team training**
    - Jaeger UI usage
    - Trace analysis techniques
    - Debugging with traces
 
 ### Medium-Term (Weeks 3-4)
 
-9. **Production deployment**
+1. **Production deployment**
 
    - Deploy Jaeger to production
    - Enable OTLP with 10% sampling
    - Monitor performance impact
 
-10. **Optimization**
+2. **Optimization**
 
-    - Tune sampling rate based on traffic
-    - Adjust batch export settings
-    - Optimize span attributes
+   - Tune sampling rate based on traffic
+   - Adjust batch export settings
+   - Optimize span attributes
 
-11. **Advanced features**
+3. **Advanced features**
 
-    - Add exemplar support
-    - Implement dynamic sampling
-    - Create custom trace processors
+   - Add exemplar support
+   - Implement dynamic sampling
+   - Create custom trace processors
 
-12. **SLO/SLI integration**
-    - Define trace-based SLIs
-    - Create SLO dashboards
-    - Set up alerting rules
+4. **SLO/SLI integration**
+   - Define trace-based SLIs
+   - Create SLO dashboards
+   - Set up alerting rules
 
 ## Success Metrics
 
 ### Implementation Success
 
-- ✅ OTLP exporter integrated and working
-- ✅ All tests passing (377/377)
-- ✅ Zero build errors or warnings
-- ✅ Documentation complete and comprehensive
-- ✅ Deployment examples provided
+- OTLP exporter integrated and working
+- All tests passing (377/377)
+- Zero build errors or warnings
+- Documentation complete and comprehensive
+- Deployment examples provided
 
 ### Operational Success (Pending Validation)
 
@@ -563,7 +565,8 @@ cargo run --bin server
 
 ## Conclusion
 
-The OpenTelemetry OTLP exporter integration is **complete, validated, and production-ready**. The implementation provides:
+The OpenTelemetry OTLP exporter integration is **complete, validated, and
+production-ready**. The implementation provides:
 
 **Core Capabilities:**
 
@@ -586,7 +589,9 @@ The OpenTelemetry OTLP exporter integration is **complete, validated, and produc
 - Performance characteristics documented
 - Troubleshooting guides complete
 
-The missing 5% of Phase 4 Observability (from the status document) has been completed. **Phase 4 is now 100% complete**, pending only operational validation in staging and production environments.
+The missing 5% of Phase 4 Observability (from the status document) has been
+completed. **Phase 4 is now 100% complete**, pending only operational validation
+in staging and production environments.
 
 ## References
 
@@ -601,12 +606,11 @@ The missing 5% of Phase 4 Observability (from the status document) has been comp
 
 ### External Resources
 
-- OpenTelemetry: https://opentelemetry.io/docs/
-- Jaeger: https://www.jaegertracing.io/docs/
-- Tracing Crate: https://docs.rs/tracing/
+- OpenTelemetry: <https://opentelemetry.io/docs/>
+- Jaeger: <https://www.jaegertracing.io/docs/>
+- Tracing Crate: <https://docs.rs/tracing/>
 
 ---
 
-**Implementation Complete:** 2024
-**Status:** PRODUCTION READY
-**Next Milestone:** Staging Validation
+**Implementation Complete:** 2024 **Status:** PRODUCTION READY **Next
+Milestone:** Staging Validation

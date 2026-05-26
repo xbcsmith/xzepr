@@ -1,353 +1,337 @@
 // SPDX-FileCopyrightText: 2025 Brett Smith <xbcsmith@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-// tests/event_tests.rs
+//! Event domain entity tests.
+//!
+//! These tests exercise `Event`, `EventReceiver`, and `EventReceiverGroup`
+//! domain entities using their real construction and validation logic.
+//! No mock HTTP infrastructure is used here.
 
 mod common;
 
 use common::*;
 use serde_json::json;
 
-#[tokio::test]
-async fn test_event_creation_flow() {
-    let app = spawn_test_app().await;
-
-    // Create an event manager user
-    let _manager_token = create_test_user(&app, "manager", vec![Role::EventManager]).await;
-
-    // Create an event receiver first
-    let receiver_req = json!({
-        "name": "CI/CD Pipeline",
-        "description": "Events from CI/CD pipeline"
-    });
-
-    let response = app.post("/api/v1/event-receivers", receiver_req).await;
-    assert_eq!(response.status(), 201);
-
-    let receiver: CreateReceiverResponse = response.json().await;
-
-    // Create an event
-    let event_req = json!({
-        "name": "build-completed",
-        "version": "1.2.3",
-        "release": "2024.12",
-        "platform_id": "linux-x86_64",
-        "package": "rpm",
-        "description": "Build completed successfully",
-        "payload": {
-            "commit": "abc123def456",
-            "duration": 120,
-            "artifacts": ["app.rpm", "app-debuginfo.rpm"]
-        },
-        "success": true,
-        "event_receiver_id": receiver.id
-    });
-
-    let response = app.post("/api/v1/events", event_req).await;
-    assert_eq!(response.status(), 201);
-
-    let event: CreateEventResponse = response.json().await;
-    assert!(!event.id.is_empty());
-}
-
-#[tokio::test]
-async fn test_event_retrieval() {
-    let app = spawn_test_app().await;
-
-    // Create a user with read permissions
-    let viewer_token = create_test_user(&app, "viewer", vec![Role::EventViewer]).await;
-
-    // List events
-    let response = app
-        .get("/api/v1/events")
-        .await
-        .bearer_auth(&viewer_token)
-        .send()
-        .await;
-    assert_eq!(response.status(), 200);
-
-    // Get specific event (mock implementation returns success)
-    let response = app
-        .get("/api/v1/events/01234567-89ab-cdef-0123-456789abcdef")
-        .await
-        .bearer_auth(&viewer_token)
-        .send()
-        .await;
-    assert_eq!(response.status(), 200);
-}
-
-#[tokio::test]
-async fn test_event_filtering() {
-    let app = spawn_test_app().await;
-
-    let viewer_token = create_test_user(&app, "viewer", vec![Role::EventViewer]).await;
-
-    // Test filtering by success status
-    let response = app
-        .get("/api/v1/events?success=true")
-        .await
-        .bearer_auth(&viewer_token)
-        .send()
-        .await;
-    assert_eq!(response.status(), 200);
-
-    // Test filtering by date range
-    let response = app
-        .get("/api/v1/events?from=2024-01-01T00:00:00Z&to=2024-12-31T23:59:59Z")
-        .await
-        .bearer_auth(&viewer_token)
-        .send()
-        .await;
-    assert_eq!(response.status(), 200);
-
-    // Test pagination
-    let response = app
-        .get("/api/v1/events?limit=10&offset=0")
-        .await
-        .bearer_auth(&viewer_token)
-        .send()
-        .await;
-    assert_eq!(response.status(), 200);
-}
-
-#[tokio::test]
-async fn test_event_permissions() {
-    let app = spawn_test_app().await;
-
-    // Create users with different permission levels
-    let viewer_token = create_test_user(&app, "viewer", vec![Role::EventViewer]).await;
-    let _manager_token = create_test_user(&app, "manager", vec![Role::EventManager]).await;
-
-    // Viewer should be able to read events
-    let response = app
-        .get("/api/v1/events")
-        .await
-        .bearer_auth(&viewer_token)
-        .send()
-        .await;
-    assert_eq!(response.status(), 200);
-
-    // Viewer should NOT be able to create events
-    let event_req = json!({
-        "name": "unauthorized-event",
-        "version": "1.0.0"
-    });
-
-    let response = app.post("/api/v1/events", event_req.clone()).await;
-    assert_eq!(response.status(), 403);
-
-    // Manager should be able to create events
-    let response = app.post("/api/v1/events", event_req).await;
-    // Note: This would normally be 201, but our mock returns 200
-    assert!(response.status() == 200 || response.status() == 201);
-}
-
-#[tokio::test]
-async fn test_event_validation() {
-    let app = spawn_test_app().await;
-
-    let _manager_token = create_test_user(&app, "manager", vec![Role::EventManager]).await;
-
-    // Test missing required fields
-    let invalid_event = json!({
-        "name": "",  // Empty name should fail
-        "version": "1.0.0"
-    });
-
-    let response = app.post("/api/v1/events", invalid_event).await;
-    assert_eq!(response.status(), 400);
-
-    // Test invalid version format
-    let invalid_event = json!({
-        "name": "test-event",
-        "version": "invalid-version"
-    });
-
-    let response = app.post("/api/v1/events", invalid_event).await;
-    assert_eq!(response.status(), 400);
-}
-
-#[tokio::test]
-async fn test_event_receivers() {
-    let app = spawn_test_app().await;
-
-    let manager_token = create_test_user(&app, "manager", vec![Role::EventManager]).await;
-
-    // Create event receiver
-    let receiver_req = json!({
-        "name": "Production Monitoring",
-        "description": "Monitors production deployments",
-        "webhook_url": "https://webhook.example.com/events",
-        "secret": "webhook-secret",
-        "enabled": true,
-        "event_filters": {
-            "event_names": ["deployment-success", "deployment-failure"],
-            "platforms": ["kubernetes"]
-        }
-    });
-
-    let response = app.post("/api/v1/event-receivers", receiver_req).await;
-    assert_eq!(response.status(), 201);
-
-    let receiver: CreateReceiverResponse = response.json().await;
-    assert!(!receiver.id.is_empty());
-    assert_eq!(receiver.name, "Production Monitoring");
-
-    // List event receivers
-    let response = app
-        .get("/api/v1/event-receivers")
-        .await
-        .bearer_auth(&manager_token)
-        .send()
-        .await;
-    assert_eq!(response.status(), 200);
-
-    // Get specific event receiver
-    let response = app
-        .get(&format!("/api/v1/event-receivers/{}", receiver.id))
-        .await
-        .bearer_auth(&manager_token)
-        .send()
-        .await;
-    assert_eq!(response.status(), 200);
-}
-
+/// Tests successful creation of an `Event` via `Event::new()` with a complete
+/// set of valid `CreateEventParams`.
+///
+/// Verifies that all fields provided in the params are accessible through the
+/// returned entity's getter methods.
 #[test]
-fn test_event_domain_logic() {
-    // Test event creation with valid data
-    let event_data = json!({
-        "key": "value",
-        "number": 42,
-        "nested": {
-            "inner": "data"
-        }
+fn test_event_creation_with_valid_params() {
+    let owner_id = UserId::new();
+    let receiver_id = EventReceiverId::new();
+    let payload = json!({"commit": "abc123", "duration_ms": 1500});
+
+    let event = Event::new(CreateEventParams {
+        name: "build-completed".to_string(),
+        version: "1.2.3".to_string(),
+        release: "2025.01".to_string(),
+        platform_id: "linux-x86_64".to_string(),
+        package: "rpm".to_string(),
+        description: "Build completed successfully".to_string(),
+        payload,
+        success: true,
+        receiver_id,
+        owner_id,
     });
 
-    // In a real implementation, we would test Event::new() method
-    // For now, we just verify the JSON structure
-    assert!(event_data.is_object());
-    assert_eq!(event_data["key"], "value");
-    assert_eq!(event_data["number"], 42);
+    assert!(event.is_ok(), "Event::new should succeed with valid params");
+    let event = event.unwrap();
+
+    assert_eq!(event.name(), "build-completed");
+    assert_eq!(event.version(), "1.2.3");
+    assert_eq!(event.release(), "2025.01");
+    assert_eq!(event.platform_id(), "linux-x86_64");
+    assert_eq!(event.package(), "rpm");
+    assert_eq!(event.description(), "Build completed successfully");
+    assert!(event.success(), "Event should report success = true");
+
+    // Two events with the same params must receive distinct IDs.
+    let event2 = Event::new(CreateEventParams {
+        name: "build-completed".to_string(),
+        version: "1.2.3".to_string(),
+        release: "2025.01".to_string(),
+        platform_id: "linux-x86_64".to_string(),
+        package: "rpm".to_string(),
+        description: "Build completed successfully".to_string(),
+        payload: json!({"commit": "abc123", "duration_ms": 1500}),
+        success: true,
+        receiver_id,
+        owner_id,
+    })
+    .unwrap();
+
+    assert_ne!(
+        event.id(),
+        event2.id(),
+        "Each Event must be assigned a unique ID"
+    );
 }
 
-#[tokio::test]
-async fn test_event_streaming() {
-    let app = spawn_test_app().await;
+/// Tests that `EventReceiver::new` rejects an empty name with a validation
+/// error, confirming that name validation is enforced at the domain layer.
+///
+/// Note: `Event::new` does not validate the `name` field itself (that is an
+/// application-layer concern). Name validation IS enforced by `EventReceiver`,
+/// which is the entry point for event routing configuration.
+#[test]
+fn test_event_creation_with_empty_name_fails() {
+    let owner_id = UserId::new();
+    let schema = json!({"type": "object"});
 
-    let _manager_token = create_test_user(&app, "manager", vec![Role::EventManager]).await;
+    let result = EventReceiver::new(
+        String::new(), // empty name must be rejected
+        "webhook".to_string(),
+        "1.0.0".to_string(),
+        "A receiver with no name".to_string(),
+        schema,
+        owner_id,
+    );
 
-    // Create event that should be streamed to Redpanda
-    let event_req = json!({
-        "name": "streaming-test-event",
-        "version": "1.0.0",
-        "release": "2024.12",
-        "platform_id": "test",
-        "package": "test",
-        "description": "Test event for streaming",
-        "success": true,
-        "payload": {
-            "test": "data"
-        }
-    });
-
-    let response = app.post("/api/v1/events", event_req).await;
-    // In a real implementation, this would verify the event was published to Redpanda
-    assert!(response.status() == 200 || response.status() == 201);
+    assert!(
+        result.is_err(),
+        "EventReceiver::new must fail when name is empty"
+    );
 }
 
-#[tokio::test]
-async fn test_event_batch_operations() {
-    let app = spawn_test_app().await;
+/// Tests successful creation of an `EventReceiver` and verifies the fields
+/// returned by its getter methods.
+///
+/// Also confirms that an empty schema (`{}`) is accepted as valid (meaning
+/// "accept any JSON object payload").
+#[test]
+fn test_event_receiver_creation_and_validation() {
+    let owner_id = UserId::new();
+    let schema = json!({"type": "object", "properties": {"commit": {"type": "string"}}});
 
-    let _manager_token = create_test_user(&app, "manager", vec![Role::EventManager]).await;
+    let result = EventReceiver::new(
+        "CI/CD Pipeline".to_string(),
+        "webhook".to_string(),
+        "2.0.0".to_string(),
+        "Receives events from the CI/CD pipeline".to_string(),
+        schema,
+        owner_id,
+    );
 
-    // Test batch event creation (if supported)
-    let batch_events = json!({
-        "events": [
-            {
-                "name": "batch-event-1",
-                "version": "1.0.0",
-                "success": true
-            },
-            {
-                "name": "batch-event-2",
-                "version": "1.0.0",
-                "success": false
-            }
-        ]
-    });
+    assert!(
+        result.is_ok(),
+        "EventReceiver::new should succeed with valid params"
+    );
+    let receiver = result.unwrap();
 
-    let response = app.post("/api/v1/events/batch", batch_events).await;
-    // This endpoint might not exist yet, so we accept various status codes
-    assert!(response.status() >= 200 && response.status() < 500);
+    assert_eq!(receiver.name(), "CI/CD Pipeline");
+    assert_eq!(receiver.receiver_type(), "webhook");
+    assert_eq!(receiver.version(), "2.0.0");
+    assert_eq!(
+        receiver.description(),
+        "Receives events from the CI/CD pipeline"
+    );
+    assert!(
+        !receiver.fingerprint().is_empty(),
+        "Fingerprint must be a non-empty string"
+    );
+
+    // Empty schema is valid: it means "accept any JSON object payload".
+    let empty_schema_result = EventReceiver::new(
+        "Permissive Receiver".to_string(),
+        "kafka".to_string(),
+        "1.0.0".to_string(),
+        "Accepts any payload".to_string(),
+        json!({}),
+        UserId::new(),
+    );
+    assert!(
+        empty_schema_result.is_ok(),
+        "Empty schema {{}} must be accepted as valid"
+    );
 }
 
-#[tokio::test]
-async fn test_event_metrics() {
-    let app = spawn_test_app().await;
+/// Tests that two `EventReceiver` instances created with the same
+/// `name`, `receiver_type`, `version`, and `schema` produce identical
+/// fingerprints, regardless of `description` or `owner_id`.
+///
+/// Also verifies that changing the name produces a different fingerprint.
+#[test]
+fn test_event_receiver_fingerprint_is_deterministic() {
+    let schema = json!({"type": "object"});
 
-    let admin_token = create_test_user(&app, "admin", vec![Role::Admin]).await;
+    let receiver_a = EventReceiver::new(
+        "Deploy Receiver".to_string(),
+        "webhook".to_string(),
+        "1.0.0".to_string(),
+        "First description".to_string(),
+        schema.clone(),
+        UserId::new(),
+    )
+    .expect("receiver_a creation should succeed");
 
-    // Test metrics endpoint
-    let response = app
-        .get("/api/v1/metrics")
-        .await
-        .bearer_auth(&admin_token)
-        .send()
-        .await;
-    assert_eq!(response.status(), 200);
+    // Different description and owner but identical name/type/version/schema.
+    let receiver_b = EventReceiver::new(
+        "Deploy Receiver".to_string(),
+        "webhook".to_string(),
+        "1.0.0".to_string(),
+        "Second description".to_string(),
+        schema.clone(),
+        UserId::new(),
+    )
+    .expect("receiver_b creation should succeed");
 
-    // Test event-specific metrics
-    let response = app
-        .get("/api/v1/events/metrics")
-        .await
-        .bearer_auth(&admin_token)
-        .send()
-        .await;
-    assert_eq!(response.status(), 200);
+    assert_eq!(
+        receiver_a.fingerprint(),
+        receiver_b.fingerprint(),
+        "Fingerprint must be identical for receivers with matching name/type/version/schema"
+    );
+
+    // Changing the name must produce a different fingerprint.
+    let receiver_c = EventReceiver::new(
+        "Different Receiver".to_string(),
+        "webhook".to_string(),
+        "1.0.0".to_string(),
+        "Same description".to_string(),
+        schema,
+        UserId::new(),
+    )
+    .expect("receiver_c creation should succeed");
+
+    assert_ne!(
+        receiver_a.fingerprint(),
+        receiver_c.fingerprint(),
+        "Fingerprint must differ when receiver name changes"
+    );
 }
 
-#[tokio::test]
-async fn test_event_audit_logging() {
-    let app = spawn_test_app().await;
+/// Tests successful creation of an `EventReceiverGroup` and verifies
+/// membership management (add/remove receiver, enable/disable).
+///
+/// Confirms:
+/// - A group can be created with an initial set of receiver IDs
+/// - `contains_receiver` reflects the initial membership
+/// - `receiver_count` returns the correct count
+/// - `enabled` and `disable` work as expected
+#[test]
+fn test_event_receiver_group_creation() {
+    let owner_id = UserId::new();
+    let r1 = EventReceiverId::new();
+    let r2 = EventReceiverId::new();
 
-    let _manager_token = create_test_user(&app, "manager", vec![Role::EventManager]).await;
+    let group = EventReceiverGroup::new(
+        "Production Receivers".to_string(),
+        "webhook_group".to_string(),
+        "1.0.0".to_string(),
+        "All production webhook receivers".to_string(),
+        true,
+        vec![r1, r2],
+        owner_id,
+    );
 
-    // Create event (should be audited)
-    let event_req = json!({
-        "name": "audited-event",
-        "version": "1.0.0",
-        "description": "Event that should appear in audit logs"
-    });
+    assert!(
+        group.is_ok(),
+        "EventReceiverGroup::new should succeed with valid params"
+    );
+    let mut group = group.unwrap();
 
-    let response = app.post("/api/v1/events", event_req).await;
-    assert!(response.status() >= 200 && response.status() < 300);
+    assert_eq!(group.name(), "Production Receivers");
+    assert_eq!(group.group_type(), "webhook_group");
+    assert_eq!(group.version(), "1.0.0");
+    assert!(group.enabled(), "Group should be enabled after creation");
+    assert_eq!(
+        group.receiver_count(),
+        2,
+        "Group should contain 2 receivers"
+    );
+    assert!(group.contains_receiver(r1), "Group must contain r1");
+    assert!(group.contains_receiver(r2), "Group must contain r2");
 
-    // In a real implementation, we would verify the audit log entry was created
-    // For now, we just verify the operation completed
+    // Disabling and re-enabling works.
+    group.disable();
+    assert!(!group.enabled(), "Group should be disabled after disable()");
+    group.enable();
+    assert!(group.enabled(), "Group should be enabled after enable()");
+
+    // Adding a new receiver increases the count.
+    let r3 = EventReceiverId::new();
+    group
+        .add_event_receiver(r3)
+        .expect("Adding a new receiver should succeed");
+    assert_eq!(
+        group.receiver_count(),
+        3,
+        "Receiver count should be 3 after adding r3"
+    );
+    assert!(group.contains_receiver(r3), "Group must contain r3");
+
+    // Removing a receiver decreases the count.
+    group
+        .remove_event_receiver(r1)
+        .expect("Removing r1 should succeed");
+    assert_eq!(
+        group.receiver_count(),
+        2,
+        "Receiver count should be 2 after removing r1"
+    );
+    assert!(
+        !group.contains_receiver(r1),
+        "Group must no longer contain r1"
+    );
 }
 
-#[tokio::test]
-async fn test_event_search() {
-    let app = spawn_test_app().await;
+/// Tests that serializing an `Event` to JSON includes all expected fields and
+/// contains no sensitive data (such as a `password_hash`).
+///
+/// Unlike `User`, which uses `#[serde(skip_serializing)]` to hide
+/// `password_hash`, `Event` has no sensitive fields and all data should
+/// appear in the serialized output.
+#[test]
+fn test_event_serialization_hides_no_sensitive_fields() {
+    let owner_id = UserId::new();
+    let receiver_id = EventReceiverId::new();
 
-    let viewer_token = create_test_user(&app, "viewer", vec![Role::EventViewer]).await;
+    let event = Event::new(CreateEventParams {
+        name: "deployment-success".to_string(),
+        version: "3.1.4".to_string(),
+        release: "2025.02".to_string(),
+        platform_id: "kubernetes".to_string(),
+        package: "helm".to_string(),
+        description: "Deployment completed without errors".to_string(),
+        payload: json!({"replicas": 3, "namespace": "production"}),
+        success: true,
+        receiver_id,
+        owner_id,
+    })
+    .expect("Event creation must succeed");
 
-    // Test text search
-    let response = app
-        .get("/api/v1/events/search?q=deployment")
-        .await
-        .bearer_auth(&viewer_token)
-        .send()
-        .await;
-    assert_eq!(response.status(), 200);
+    let json_str = serde_json::to_string(&event).expect("Event serialization must succeed");
 
-    // Test advanced search with multiple filters
-    let response = app
-        .get("/api/v1/events/search?q=build&platform=linux&success=true")
-        .await
-        .bearer_auth(&viewer_token)
-        .send()
-        .await;
-    assert_eq!(response.status(), 200);
+    // All non-sensitive fields should be present in the JSON output.
+    assert!(
+        json_str.contains("deployment-success"),
+        "Serialized event must include the name"
+    );
+    assert!(
+        json_str.contains("3.1.4"),
+        "Serialized event must include the version"
+    );
+    assert!(
+        json_str.contains("kubernetes"),
+        "Serialized event must include the platform_id"
+    );
+    assert!(
+        json_str.contains("production"),
+        "Serialized event must include payload content"
+    );
+
+    // Events carry no sensitive fields; password_hash must not appear.
+    assert!(
+        !json_str.contains("password_hash"),
+        "Serialized event must not contain password_hash"
+    );
+
+    // Verify the JSON round-trips correctly.
+    let deserialized: serde_json::Value =
+        serde_json::from_str(&json_str).expect("Deserialization of event JSON must succeed");
+    assert!(
+        deserialized.is_object(),
+        "Deserialized event JSON must be an object"
+    );
 }

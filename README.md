@@ -578,22 +578,22 @@ details.
 
 XZepr is under active development with production-ready features:
 
-- ✅ Core event tracking
-- ✅ REST and GraphQL APIs
-- ✅ Multi-provider authentication
-- ✅ RBAC authorization
-- ✅ Database persistence with ULID support
-- ✅ Event streaming with CloudEvents 1.0.1 format
-- ✅ Kafka SASL/SCRAM authentication
-- ✅ Automatic Kafka topic creation
-- ✅ Comprehensive observability (Prometheus, Jaeger, OTLP)
-- ✅ Docker deployment
-- ✅ Admin CLI
-- 🚧 Additional OIDC providers
-- 🚧 WebSocket support
-- 🚧 Event replay functionality
-- 🚧 Advanced analytics
-- 🚧 Schema registry integration
+- Core event tracking
+- REST and GraphQL APIs
+- Multi-provider authentication
+- RBAC authorization
+- Database persistence with ULID support
+- Event streaming with CloudEvents 1.0.1 format
+- Kafka SASL/SCRAM authentication
+- Automatic Kafka topic creation
+- Comprehensive observability (Prometheus, Jaeger, OTLP)
+- Docker deployment
+- Admin CLI
+- In progress: Additional OIDC providers
+- In progress: WebSocket support
+- In progress: Event replay functionality
+- In progress: Advanced analytics
+- In progress: Schema registry integration
 
 ---
 
