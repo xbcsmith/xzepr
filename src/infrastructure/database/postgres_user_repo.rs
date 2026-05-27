@@ -570,31 +570,9 @@ impl UserRepository for PostgresUserRepository {
     }
 }
 
-#[async_trait]
-impl crate::auth::api_key::AuthUserRepository for PostgresUserRepository {
-    async fn find_by_id(
-        &self,
-        id: crate::domain::value_objects::UserId,
-    ) -> Result<Option<crate::domain::entities::user::User>, crate::error::AuthError> {
-        <Self as UserRepository>::find_by_id(self, &id)
-            .await
-            .map_err(|e| crate::error::AuthError::StorageError {
-                message: format!("find_by_id: {}", e),
-            })
-    }
-
-    async fn find_by_username(
-        &self,
-        username: &str,
-    ) -> Result<Option<crate::domain::entities::user::User>, crate::error::AuthError> {
-        <Self as UserRepository>::find_by_username(self, username)
-            .await
-            .map_err(|e| crate::error::AuthError::StorageError {
-                message: format!("find_by_username: {}", e),
-            })
-    }
-
-    async fn save(
+impl PostgresUserRepository {
+    /// Upsert a user and synchronize its roles for admin tooling.
+    pub async fn save_admin_user(
         &self,
         user: &crate::domain::entities::user::User,
     ) -> Result<(), crate::error::AuthError> {
@@ -678,7 +656,8 @@ impl crate::auth::api_key::AuthUserRepository for PostgresUserRepository {
         Ok(())
     }
 
-    async fn find_all(
+    /// Return all users for admin tooling.
+    pub async fn find_all_admin_users(
         &self,
     ) -> Result<Vec<crate::domain::entities::user::User>, crate::error::AuthError> {
         <Self as UserRepository>::list(self, i64::MAX, 0)
@@ -688,7 +667,8 @@ impl crate::auth::api_key::AuthUserRepository for PostgresUserRepository {
             })
     }
 
-    async fn add_role(
+    /// Add a role to a user for admin tooling.
+    pub async fn add_role(
         &self,
         user_id: &crate::domain::value_objects::UserId,
         role: crate::auth::rbac::roles::Role,
@@ -706,7 +686,8 @@ impl crate::auth::api_key::AuthUserRepository for PostgresUserRepository {
         Ok(())
     }
 
-    async fn remove_role(
+    /// Remove a role from a user for admin tooling.
+    pub async fn remove_role(
         &self,
         user_id: &crate::domain::value_objects::UserId,
         role: crate::auth::rbac::roles::Role,
@@ -755,20 +736,10 @@ mod tests {
         _assert_user_repository_impl::<PostgresUserRepository>();
     }
 
-    /// Verifies that the three delegating methods on AuthUserRepository compile
-    /// and resolve to the correct types.
-    #[test]
-    fn test_auth_user_repository_delegates_find_by_id() {
-        // Structural test: verifies the delegation compiles with the
-        // correct trait dispatch syntax.  A live DB is not required.
-        fn _assert_impl(_: &impl crate::auth::api_key::AuthUserRepository) {}
-        let _: fn(sqlx::PgPool) -> PostgresUserRepository = PostgresUserRepository::new;
-    }
-
     /// Verifies StorageError is used for non-OIDC persistence failures in
-    /// AuthUserRepository, not OidcError.
+    /// admin user helpers, not OidcError.
     #[test]
-    fn test_auth_user_repository_uses_storage_error_for_failures() {
+    fn test_admin_user_helpers_use_storage_error_for_failures() {
         let err = crate::error::AuthError::StorageError {
             message: "find_by_id: connection refused".to_string(),
         };

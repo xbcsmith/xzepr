@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2025 Brett Smith <xbcsmith@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-//! Mock implementations for use in integration tests.
+//! Test doubles for use in integration tests.
 //!
 //! Error types in these mocks use `String` rather than typed `thiserror`
 //! variants because the implementations are test-only; the extra ceremony
@@ -453,8 +453,8 @@ pub fn create_mock_event(name: &str, success: bool) -> MockEvent {
 pub struct TestConfig {
     /// The database connection URL (may be a mock URL in unit tests).
     pub database_url: String,
-    /// The JWT signing secret for test token generation.
-    pub jwt_secret: String,
+    /// The JWT signing secret key for test token generation.
+    pub jwt_signing_secret: String,
     /// Whether authentication enforcement is active during tests.
     pub enable_auth: bool,
     /// The log level string (e.g., `"debug"`, `"info"`).
@@ -472,7 +472,7 @@ pub struct TestConfig {
 pub fn mock_test_config() -> TestConfig {
     TestConfig {
         database_url: "mock://database".to_string(),
-        jwt_secret: "test-secret-key".to_string(),
+        jwt_signing_secret: "test-secret-key".to_string(),
         enable_auth: true,
         log_level: "debug".to_string(),
     }

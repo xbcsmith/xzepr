@@ -103,6 +103,7 @@ impl OpaDecisionOutcome {
 ///     policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
 ///     bundle_url: None,
 ///     cache_ttl_seconds: 300,
+///     health_path: "/health".to_string(),
 ///     allowed_hosts: vec!["localhost:8181".to_string()],
 ///     fail_safe_mode: OpaFailSafeMode::FailClosed,
 /// };
@@ -134,6 +135,10 @@ pub struct OpaConfig {
     #[serde(default = "default_cache_ttl")]
     pub cache_ttl_seconds: u64,
 
+    /// Health endpoint path used for startup reachability checks.
+    #[serde(default = "default_health_path")]
+    pub health_path: String,
+
     /// Allowed OPA and bundle server hosts for production deployments.
     #[serde(default)]
     pub allowed_hosts: Vec<String>,
@@ -151,6 +156,10 @@ fn default_cache_ttl() -> u64 {
     300
 }
 
+fn default_health_path() -> String {
+    "/health".to_string()
+}
+
 impl Default for OpaConfig {
     fn default() -> Self {
         Self {
@@ -160,6 +169,7 @@ impl Default for OpaConfig {
             policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
             bundle_url: None,
             cache_ttl_seconds: default_cache_ttl(),
+            health_path: default_health_path(),
             allowed_hosts: Vec::new(),
             fail_safe_mode: OpaFailSafeMode::FailClosed,
         }
@@ -185,6 +195,7 @@ impl OpaConfig {
     ///     policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
     ///     bundle_url: None,
     ///     cache_ttl_seconds: 300,
+    ///     health_path: "/health".to_string(),
     ///     allowed_hosts: vec!["localhost:8181".to_string()],
     ///     fail_safe_mode: OpaFailSafeMode::FailClosed,
     /// };
@@ -214,6 +225,12 @@ impl OpaConfig {
             if self.cache_ttl_seconds == 0 {
                 return Err(OpaError::ConfigurationError(
                     "OPA cache TTL must be greater than 0".to_string(),
+                ));
+            }
+
+            if !self.health_path.starts_with('/') {
+                return Err(OpaError::ConfigurationError(
+                    "OPA health_path must start with '/'".to_string(),
                 ));
             }
         }
@@ -665,6 +682,7 @@ mod tests {
             policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
             bundle_url: None,
             cache_ttl_seconds: 300,
+            health_path: "/health".to_string(),
             allowed_hosts: vec!["opa.example.com".to_string()],
             fail_safe_mode: OpaFailSafeMode::FailOpenDevelopment,
         };
@@ -683,6 +701,7 @@ mod tests {
             policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
             bundle_url: None,
             cache_ttl_seconds: 300,
+            health_path: "/health".to_string(),
             allowed_hosts: vec!["opa.example.com".to_string()],
             fail_safe_mode: OpaFailSafeMode::LegacyRbacFallback,
         };

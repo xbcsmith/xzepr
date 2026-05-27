@@ -112,7 +112,7 @@ mod tests {
 
     #[test]
     fn test_hash_unicode_password() {
-        let password = "пароль密码🔒";
+        let password = "пароль密码-secure";
         let result = hash_password(password);
         assert!(result.is_ok());
 

@@ -1077,6 +1077,136 @@ actual system.
 - A final audit finds no stale implementation claims, emojis outside
   `AGENTS.md`, legacy config keys, or hidden demo behavior.
 
+### Phase 15: Finish remaining cleanup deliverables
+
+Phase 15 closes the post-audit gaps that remain after the first fourteen
+cleanup phases. It focuses only on known unfinished deliverables: production
+OIDC session storage, OPA reachability and GraphQL integration, user repository
+boundary unification, ignored external integration tests, API surface pruning,
+and typed auth/resource-context error cleanup.
+
+#### Task 15.1 Complete production OIDC session storage
+
+- Add a production-capable distributed `OidcSessionStore` implementation,
+  preferably Redis-backed, selected through validated runtime settings.
+- Keep the in-memory OIDC session store explicitly limited to development,
+  tests, or single-node deployments where configuration allows it.
+- Enforce per-user OIDC session limits rather than only a global pending-session
+  capacity.
+- Preserve TTL cleanup, one-time state consumption, redirect allowlist
+  validation, and sanitized typed session errors across both store
+  implementations.
+- Document multi-instance OIDC session behavior and operational Redis
+  requirements.
+
+#### Task 15.2 Complete OPA reachability and GraphQL integration
+
+- Add OPA startup reachability or health probing when OPA is enabled, with
+  configurable timeout and fail-safe behavior.
+- Ensure enabled OPA cannot silently degrade to RBAC because the OPA endpoint is
+  unreachable, unhealthy, or misconfigured.
+- Wire OPA authorization into GraphQL through resolver helpers, schema guards,
+  or a GraphQL-specific authorization service that uses the same resource
+  context and fail-safe policy as REST.
+- Add GraphQL OPA inputs for events, receivers, groups, group members, and
+  resource-agnostic operations.
+- Audit and meter GraphQL OPA allow, deny, unavailable fail-closed, and fallback
+  decisions with the same labels used by REST.
+
+#### Task 15.3 Unify user repository boundaries
+
+- Remove `AuthUserRepository` or replace it with an adapter over the canonical
+  domain `UserRepository` without duplicating persistence behavior.
+- Update API key service, admin CLI, auth endpoints, provisioning, and exports
+  to use the canonical user repository boundary.
+- Keep API-key persistence in API-key-specific traits and repositories.
+- Remove duplicate user persistence methods from PostgreSQL repositories when
+  the canonical repository already owns that behavior.
+- Add architecture guard tests preventing new auth-specific user persistence
+  abstractions from bypassing the canonical boundary.
+
+#### Task 15.4 Finish external integration-test gating
+
+- Convert remaining ignored Kafka, SASL, database, Redis, OIDC, and OPA tests to
+  feature-gated or environment-gated tests with actionable prerequisites.
+- Remove ignored tests that only protect against local environment variability
+  and replace them with deterministic isolated tests.
+- Add documentation under `docs/how_to/` or `docs/reference/` that lists exact
+  services, environment variables, ports, credentials, and commands for each
+  external integration suite.
+- Ensure the default test suite contains no empty, tautological, or permanently
+  ignored external placeholders.
+
+#### Task 15.5 Finish API surface pruning
+
+- Remove or narrowly document remaining broad module re-exports, especially
+  middleware and GraphQL exports that expose internal implementation details.
+- Remove third-party type re-exports unless they are intentionally supported
+  public API.
+- Delete or document remaining compatibility modules such as empty PostgreSQL
+  placeholders.
+- Add compile-time API surface tests for the exports that remain deliberately
+  stable.
+
+#### Task 15.6 Finish typed auth and resource-context errors
+
+- Replace string-carrying auth endpoint errors with typed variants that preserve
+  JWT, OIDC, session-store, provisioning, and repository sources until the API
+  boundary.
+- Replace stringified resource-context repository failures with typed
+  `ResourceContextError` variants that preserve source identity.
+- Replace OPA middleware string fallbacks with typed authorization failure
+  variants.
+- Route REST and GraphQL auth, resource-context, and OPA failures through
+  centralized sanitized response mapping with stable public error codes.
+- Remove handler-level string matching for duplicate, not-found, membership,
+  and auth failures.
+
+#### Task 15.7 Testing Requirements
+
+- Add Redis-backed OIDC session store integration tests covering TTL expiration,
+  one-time state consumption, per-user session limits, and multi-instance access.
+- Add OPA health-probe tests for reachable, unreachable, unhealthy, timeout, and
+  fail-safe modes.
+- Add GraphQL OPA tests proving allow, deny, unavailable fail-closed, fallback,
+  and cross-owner denial behavior.
+- Add repository-boundary tests proving API key, admin, auth, and provisioning
+  flows use the canonical user repository.
+- Add feature-gated external integration tests and documentation link checks for
+  Kafka, SASL, database, Redis, OIDC, and OPA prerequisites.
+- Add typed error mapping tests for auth endpoint, resource-context, OPA,
+  repository, REST, and GraphQL error contracts.
+- Add API surface compile tests for deliberately supported exports.
+
+#### Task 15.8 Deliverables
+
+- Production OIDC session storage is distributed, TTL-bound, and enforces
+  per-user session limits.
+- OPA reachability is checked during startup when enabled, and GraphQL uses the
+  same OPA fail-safe policy as REST.
+- User persistence has one canonical repository boundary across auth, admin,
+  provisioning, and API key flows.
+- External integration tests are runnable through documented feature or
+  environment gates with no empty ignored placeholders.
+- Public API exports are minimal, explicit, documented, and covered by compile
+  checks.
+- Auth, resource-context, and OPA errors preserve typed source identity until
+  centralized REST or GraphQL response mapping.
+
+#### Task 15.9 Success Criteria
+
+- Multi-instance production OIDC deployments do not lose sessions or exceed
+  configured per-user limits.
+- Enabling OPA in production proves OPA is reachable before startup completes
+  and prevents GraphQL from bypassing policy checks.
+- User persistence changes happen in one place and cannot diverge between auth,
+  admin, provisioning, and API key paths.
+- The default test suite is deterministic, while external suites are explicitly
+  runnable with documented prerequisites.
+- Public exports reflect supported APIs, not implementation leakage.
+- API clients receive stable sanitized error codes while operators retain typed
+  source context for diagnosis.
+
 ## Recommended Execution Order
 
 1. Complete Phases 1 through 6 where already-started work remains incomplete; do
@@ -1095,8 +1225,11 @@ actual system.
 7. Execute Phase 12 to make database updates atomic and dynamic queries safe.
 8. Execute Phase 13 after behavior is stable so public API and architecture
    cleanup does not hide runtime regressions.
-9. Execute Phase 14 last as the final verification, documentation, and rule
+9. Execute Phase 14 as the broad verification, documentation, and rule
    compliance pass.
+10. Execute Phase 15 last to close the remaining audited deliverables for OIDC,
+    OPA, user repository boundaries, external integration tests, API surface,
+    and typed auth/resource-context errors.
 
 ## Highest-Risk Files to Touch First
 
@@ -1119,6 +1252,7 @@ actual system.
 - `src/auth/oidc/config.rs`
 - `src/auth/oidc/client.rs`
 - `src/auth/oidc/callback.rs`
+- `src/auth/oidc/session_store.rs`
 - `src/opa/types.rs`
 - `src/opa/client.rs`
 - `src/error.rs`
@@ -1127,6 +1261,7 @@ actual system.
 - `src/application/handlers/event_receiver_group_handler.rs`
 - `src/domain/entities/user.rs`
 - `src/auth/api_key.rs`
+- `src/auth/local/password.rs`
 - `src/infrastructure/database/postgres.rs`
 - `src/infrastructure/database/postgres_user_repo.rs`
 - `src/infrastructure/database/postgres_event_repo.rs`
@@ -1139,6 +1274,7 @@ actual system.
 - `tests/database_tests.rs`
 - `tests/integration_tests.rs`
 - `tests/kafka_auth_integration_tests.rs`
+- `docs/how_to/integration_test_prerequisites.md`
 - `docs/explanation/architecture.md`
 - `docs/explanation/phase5_public_api_surface_implementation.md`
 - `docs/explanation/phase6_hardening_implementation.md`
@@ -1152,14 +1288,17 @@ actual system.
   repositories, no stale source-code phase references, and no unsupported routes
   that appear enabled in production configuration.
 - OIDC is fully wired when enabled, absent or explicitly unsupported when
-  disabled, and backed by TTL-bound session storage with a production
-  distributed-store path.
+  disabled, and backed by TTL-bound distributed session storage with enforced
+  per-user session limits for production.
 - OPA is wired into the actual production router with typed, audited,
-  environment-aware fail-safe behavior.
+  environment-aware fail-safe behavior, startup reachability checks, and
+  GraphQL policy enforcement.
 - REST and GraphQL enforce the same owner, membership, and policy rules for
   protected resources.
 - Public API exports are intentional and no longer expose broad third-party or
   internal implementation details.
+- User persistence has one canonical repository boundary across auth, admin,
+  provisioning, and API key flows.
 - Recoverable errors use typed error propagation and preserve source context
   until the API response boundary.
 - REST and GraphQL responses expose stable sanitized public error codes.
@@ -1168,8 +1307,8 @@ actual system.
 - Multi-step persistence operations are transactional and dynamic SQL binds
   runtime values safely.
 - Placeholder tests are removed or converted into useful unit or integration
-  tests, and external integration tests are feature-gated or documented with
-  runnable prerequisites.
+  tests, and external integration tests are feature-gated or environment-gated
+  with runnable documented prerequisites.
 - Production YAML contains no stale legacy keys, and every active config section
   is deserialized, validated, and used by runtime code.
 - Documentation in `docs/explanation/` describes the final architecture and

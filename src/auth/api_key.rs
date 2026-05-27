@@ -9,53 +9,14 @@
 pub use crate::domain::entities::api_key::ApiKey;
 
 use crate::domain::entities::user::User;
+use crate::domain::repositories::user_repo::UserRepository;
 use crate::domain::value_objects::{ApiKeyId, UserId};
-use crate::error::AuthError;
+use crate::error::{AuthError, DomainError};
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
 use rand::Rng;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
-
-/// Repository for user lookup operations required by the auth layer.
-///
-/// This trait is distinct from the more comprehensive
-/// `domain::repositories::user_repo::UserRepository` because the auth layer
-/// needs only a small focused subset of user operations and maps all errors to
-/// `AuthError`.
-///
-/// # Examples
-///
-/// ```rust,ignore
-/// use xzepr::auth::api_key::{AuthUserRepository, ApiKey};
-///
-/// async fn example(repo: &impl AuthUserRepository) {
-///     let user = repo.find_by_id(user_id).await.ok().flatten();
-/// }
-/// ```
-#[async_trait::async_trait]
-pub trait AuthUserRepository: Send + Sync {
-    /// Find a user by their ULID identifier.
-    async fn find_by_id(&self, id: UserId) -> Result<Option<User>, AuthError>;
-    /// Find a user by username.
-    async fn find_by_username(&self, username: &str) -> Result<Option<User>, AuthError>;
-    /// Upsert a user record (create or update by primary key).
-    async fn save(&self, user: &User) -> Result<(), AuthError>;
-    /// Return all users ordered by creation time descending.
-    async fn find_all(&self) -> Result<Vec<User>, AuthError>;
-    /// Add a role to a user.
-    async fn add_role(
-        &self,
-        user_id: &UserId,
-        role: crate::auth::rbac::roles::Role,
-    ) -> Result<(), AuthError>;
-    /// Remove a role from a user.
-    async fn remove_role(
-        &self,
-        user_id: &UserId,
-        role: crate::auth::rbac::roles::Role,
-    ) -> Result<(), AuthError>;
-}
 
 /// Repository for API key persistence.
 ///
@@ -202,7 +163,7 @@ impl Default for KeyDigestConfig {
 /// );
 /// ```
 pub struct ApiKeyService {
-    user_repo: Arc<dyn AuthUserRepository>,
+    user_repo: Arc<dyn UserRepository>,
     api_key_repo: Arc<dyn ApiKeyRepository>,
     digest_config: KeyDigestConfig,
 }
@@ -219,7 +180,7 @@ impl ApiKeyService {
     /// * `user_repo` - Repository for user lookup
     /// * `api_key_repo` - Repository for API key persistence
     pub fn new(
-        user_repo: Arc<dyn AuthUserRepository>,
+        user_repo: Arc<dyn UserRepository>,
         api_key_repo: Arc<dyn ApiKeyRepository>,
     ) -> Self {
         Self {
@@ -239,7 +200,7 @@ impl ApiKeyService {
     /// * `api_key_repo` - Repository for API key persistence
     /// * `digest_config` - Controls the hash algorithm for new keys
     pub fn with_digest_config(
-        user_repo: Arc<dyn AuthUserRepository>,
+        user_repo: Arc<dyn UserRepository>,
         api_key_repo: Arc<dyn ApiKeyRepository>,
         digest_config: KeyDigestConfig,
     ) -> Self {
@@ -329,8 +290,9 @@ impl ApiKeyService {
 
         let user = self
             .user_repo
-            .find_by_id(api_key.user_id)
-            .await?
+            .find_by_id(&api_key.user_id)
+            .await
+            .map_err(map_domain_error_to_auth_storage)?
             .ok_or(AuthError::UserNotFound)?;
 
         Ok(user)
@@ -352,6 +314,12 @@ impl ApiKeyService {
     /// Returns `AuthError` if the repository query fails.
     pub async fn revoke_key(&self, key_id: ApiKeyId) -> Result<(), AuthError> {
         self.api_key_repo.revoke(key_id).await
+    }
+}
+
+fn map_domain_error_to_auth_storage(error: DomainError) -> AuthError {
+    AuthError::StorageError {
+        message: error.to_string(),
     }
 }
 

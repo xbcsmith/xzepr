@@ -2,7 +2,8 @@
 
 ## Overview
 
-This tutorial provides a complete step-by-step demonstration of XZepr using Docker and Docker Compose. You will learn how to:
+This tutorial provides a complete step-by-step demonstration of XZepr using
+Docker and Docker Compose. You will learn how to:
 
 - Start backend services (PostgreSQL, Redpanda, Keycloak)
 - Build and run XZepr in a Docker container
@@ -43,7 +44,8 @@ cd xzepr
 
 ## Step 2: Create TLS Certificates
 
-XZepr requires TLS certificates for secure communication. Generate self-signed certificates for development:
+XZepr requires TLS certificates for secure communication. Generate self-signed
+certificates for development:
 
 ```bash
 # Create certificates directory
@@ -122,11 +124,13 @@ Expected output:
 xzepr        demo        <image-id>    2 minutes ago    XXX MB
 ```
 
-The build process may take 5-10 minutes on first run as it downloads dependencies and compiles the Rust code.
+The build process may take 5-10 minutes on first run as it downloads
+dependencies and compiles the Rust code.
 
 ## Step 5: Initialize the Database
 
-The XZepr Docker image includes sqlx-cli for managing database migrations. Run migrations to set up the schema:
+The XZepr Docker image includes sqlx-cli for managing database migrations. Run
+migrations to set up the schema:
 
 ```bash
 # Run migrations using sqlx-cli built into the Docker image
@@ -191,7 +195,7 @@ docker compose run --rm -T \
 Expected output:
 
 ```text
-✓ User created successfully!
+OK: User created successfully!
   ID: <uuid>
   Username: admin
   Roles: user, admin
@@ -277,7 +281,7 @@ docker compose run --rm -T \
 Expected output:
 
 ```text
-✓ API Key generated successfully!
+OK: API Key generated successfully!
   Key ID: <uuid>
   API Key: xzepr_<random-string>
   Name: Demo API Key
@@ -711,7 +715,7 @@ RECEIVER_RESPONSE=$(curl -s -k -X POST https://localhost:8443/api/v1/receivers \
   }')
 
 RECEIVER_ID=$(echo $RECEIVER_RESPONSE | jq .data)
-echo "✓ Receiver created: $RECEIVER_ID"
+echo "OK: Receiver created: $RECEIVER_ID"
 
 echo ""
 echo "2. Creating event..."
@@ -731,7 +735,7 @@ EVENT_RESPONSE=$(curl -s -k -X POST https://localhost:8443/api/v1/events \
   }")
 
 EVENT_ID=$(echo $EVENT_RESPONSE | jq .data)
-echo "✓ Event created: $EVENT_ID"
+echo "OK: Event created: $EVENT_ID"
 
 echo ""
 echo "3. Creating receiver group..."
@@ -748,7 +752,7 @@ GROUP_RESPONSE=$(curl -s -k -X POST https://localhost:8443/api/v1/groups \
   }")
 
 GROUP_ID=$(echo $GROUP_RESPONSE | jq .data)
-echo "✓ Group created: $GROUP_ID"
+echo "OK: Group created: $GROUP_ID"
 
 echo ""
 echo "4. Verifying via GraphQL..."
@@ -756,7 +760,7 @@ curl -s -k -X POST https://localhost:8443/graphql \
   -H "Content-Type: application/json" \
   -d "{
     \"query\": \"{ eventReceiversById(id: \\\"$RECEIVER_ID\\\") { id name } }\"
-  }" | grep -q "$RECEIVER_ID" && echo "✓ GraphQL query successful"
+  }" | grep -q "$RECEIVER_ID" && echo "OK: GraphQL query successful"
 
 echo ""
 echo "Workflow test complete!"
@@ -946,6 +950,6 @@ You have successfully:
 ## Additional Resources
 
 - XZepr GitHub Repository: `<repository-url>`
-- Redpanda Documentation: https://docs.redpanda.com/
-- GraphQL Specification: https://spec.graphql.org/
-- Docker Documentation: https://docs.docker.com/
+- Redpanda Documentation: <https://docs.redpanda.com/>
+- GraphQL Specification: <https://spec.graphql.org/>
+- Docker Documentation: <https://docs.docker.com/>

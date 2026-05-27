@@ -2,11 +2,16 @@
 
 ## Overview
 
-The XZepr server includes a GraphQL Playground IDE, an interactive web-based GraphQL development environment. This document explains the architecture, implementation details, and design decisions behind the GraphQL API and its accompanying playground interface.
+The XZepr server includes a GraphQL Playground IDE, an interactive web-based
+GraphQL development environment. This document explains the architecture,
+implementation details, and design decisions behind the GraphQL API and its
+accompanying playground interface.
 
 ## What is GraphQL Playground?
 
-GraphQL Playground is an interactive, in-browser GraphQL IDE that provides a user-friendly interface for exploring and testing GraphQL APIs. It offers features like:
+GraphQL Playground is an interactive, in-browser GraphQL IDE that provides a
+user-friendly interface for exploring and testing GraphQL APIs. It offers
+features like:
 
 - Schema introspection and documentation
 - Syntax highlighting and auto-completion
@@ -16,7 +21,8 @@ GraphQL Playground is an interactive, in-browser GraphQL IDE that provides a use
 
 ## Architecture
 
-The GraphQL implementation in XZepr follows a clean architecture pattern with clear separation of concerns:
+The GraphQL implementation in XZepr follows a clean architecture pattern with
+clear separation of concerns:
 
 ### Layer Structure
 
@@ -64,13 +70,15 @@ The GraphQL implementation in XZepr follows a clean architecture pattern with cl
 
 ### GraphQL Handlers
 
-The GraphQL handler implementation is located in `src/api/graphql/handlers.rs` and provides three main endpoints:
+The GraphQL handler implementation is located in `src/api/graphql/handlers.rs`
+and provides three main endpoints:
 
 #### 1. GraphQL Query Endpoint
 
 **Endpoint:** `POST /graphql`
 
-Processes GraphQL queries and mutations. Accepts JSON payloads with the following structure:
+Processes GraphQL queries and mutations. Accepts JSON payloads with the
+following structure:
 
 ```json
 {
@@ -91,7 +99,8 @@ The handler:
 
 **Endpoint:** `GET /graphql/playground`
 
-Serves the GraphQL Playground HTML interface. The playground is configured to send queries to the `/graphql` endpoint.
+Serves the GraphQL Playground HTML interface. The playground is configured to
+send queries to the `/graphql` endpoint.
 
 #### 3. GraphQL Health Check
 
@@ -106,16 +115,20 @@ The GraphQL schema is defined in `src/api/graphql/schema.rs` and includes:
 #### Queries
 
 - `eventReceiversById(id: ID!)` - Get event receivers by ID
-- `eventReceivers(eventReceiver: FindEventReceiverInput!)` - Find event receivers with criteria
+- `eventReceivers(eventReceiver: FindEventReceiverInput!)` - Find event
+  receivers with criteria
 - `eventReceiverGroupsById(id: ID!)` - Get event receiver groups by ID
-- `eventReceiverGroups(eventReceiverGroup: FindEventReceiverGroupInput!)` - Find groups with criteria
+- `eventReceiverGroups(eventReceiverGroup: FindEventReceiverGroupInput!)` - Find
+  groups with criteria
 - `eventsById(id: ID!)` - Get events by ID
 - `events(event: FindEventInput!)` - Find events with criteria
 
 #### Mutations
 
-- `createEventReceiver(eventReceiver: CreateEventReceiverInput!)` - Create a new event receiver
-- `createEventReceiverGroup(eventReceiverGroup: CreateEventReceiverGroupInput!)` - Create a new group
+- `createEventReceiver(eventReceiver: CreateEventReceiverInput!)` - Create a new
+  event receiver
+- `createEventReceiverGroup(eventReceiverGroup: CreateEventReceiverGroupInput!)`
+  - Create a new group
 - `setEventReceiverGroupEnabled(id: ID!)` - Enable a group
 - `setEventReceiverGroupDisabled(id: ID!)` - Disable a group
 - `createEvent(event: CreateEventInput!)` - Create a new event
@@ -148,7 +161,8 @@ Custom GraphQL types are defined in `src/api/graphql/types.rs`:
 
 ### Direct Integration vs. async-graphql-axum
 
-We chose to implement GraphQL handlers directly using `async-graphql` without the `async-graphql-axum` integration crate. This decision was made because:
+We chose to implement GraphQL handlers directly using `async-graphql` without
+the `async-graphql-axum` integration crate. This decision was made because:
 
 1. **Version Compatibility:** Avoids version conflicts between axum dependencies
 2. **Control:** Provides more control over request/response handling
@@ -157,7 +171,8 @@ We chose to implement GraphQL handlers directly using `async-graphql` without th
 
 ### Manual Request/Response Structures
 
-The GraphQL request and response structures are defined manually in the handlers module rather than relying on external types. This provides:
+The GraphQL request and response structures are defined manually in the handlers
+module rather than relying on external types. This provides:
 
 - Clear documentation of the expected API contract
 - Type safety without external dependencies
@@ -184,7 +199,8 @@ This approach:
 
 ### Multiple Router States
 
-The router implementation uses multiple `.with_state()` calls to support both GraphQL and REST endpoints:
+The router implementation uses multiple `.with_state()` calls to support both
+GraphQL and REST endpoints:
 
 ```rust
 Router::new()
@@ -194,13 +210,15 @@ Router::new()
     .with_state(app_state)
 ```
 
-This pattern allows different route groups to have different state types while sharing the same router.
+This pattern allows different route groups to have different state types while
+sharing the same router.
 
 ## Usage Examples
 
 ### Accessing the Playground
 
-Navigate to `https://localhost:8443/graphql/playground` in your browser to access the interactive GraphQL Playground.
+Navigate to `https://localhost:8443/graphql/playground` in your browser to
+access the interactive GraphQL Playground.
 
 ### Example Queries
 
@@ -326,12 +344,17 @@ The GraphQL implementation provides structured error responses:
 
 ### Query Complexity
 
-The GraphQL schema does not currently implement query complexity analysis. For production use, consider adding:
+The GraphQL schema enforces configurable query complexity and depth limits
+through `ComplexityConfig` and `create_schema_with_config()`. Production
+configuration enables enforcement with stricter defaults, while development can
+use permissive settings when needed.
 
-- Maximum query depth limits
-- Query complexity scoring
-- Rate limiting per client
-- Request timeout configuration
+Relevant settings include:
+
+- `graphql.max_complexity` / `XZEPR__GRAPHQL__MAX_COMPLEXITY`
+- `graphql.max_depth` / `XZEPR__GRAPHQL__MAX_DEPTH`
+- `graphql.enforce_complexity` / `XZEPR__GRAPHQL__ENFORCE_COMPLEXITY`
+- Request timeout and rate limiting in the router middleware stack
 
 ### Pagination
 
@@ -346,7 +369,8 @@ query PaginatedReceivers {
 }
 ```
 
-Currently, the repository layer supports limit/offset pagination through the `FindEventReceiverCriteria`.
+Currently, the repository layer supports limit/offset pagination through the
+`FindEventReceiverCriteria`.
 
 ### Caching
 
@@ -360,12 +384,17 @@ Consider implementing:
 
 ### Authentication
 
-The GraphQL endpoints are currently public. For production deployments:
+In the production router, `POST /graphql` is protected by JWT authentication.
+Resolver-level guards use the authenticated user context for role, permission,
+and ownership checks. The GraphQL health route remains public, and the
+Playground route is only exposed when `graphql.playground_enabled` is enabled.
 
-1. Add authentication middleware to protected routes
-2. Implement JWT token validation
-3. Use the existing auth layer for user context
-4. Add field-level permissions based on user roles
+For production deployments:
+
+1. Keep `graphql.playground_enabled` disabled unless explicitly required
+2. Configure JWT signing material under `auth.jwt.*`
+3. Use resolver guards for field-level authorization
+4. Keep rate limiting and request-size validation enabled
 
 ### Input Validation
 
@@ -405,7 +434,8 @@ cargo test api::graphql::handlers
 
 ### Subscriptions
 
-The schema currently uses `EmptySubscription`. Future enhancements could include:
+The schema currently uses `EmptySubscription`. Future enhancements could
+include:
 
 - Real-time event streaming via WebSocket subscriptions
 - Live updates for event receiver status

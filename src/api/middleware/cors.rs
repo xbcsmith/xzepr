@@ -243,6 +243,15 @@ pub fn production_cors_layer() -> Result<CorsLayer, CorsConfigError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, MutexGuard};
+
+    static CORS_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn lock_cors_env() -> MutexGuard<'static, ()> {
+        CORS_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 
     #[test]
     fn test_default_config() {
@@ -263,6 +272,7 @@ mod tests {
 
     #[test]
     fn test_production_config_rejects_wildcard() {
+        let _guard = lock_cors_env();
         std::env::set_var("XZEPR__SECURITY__CORS__ALLOWED_ORIGINS", "*");
         let result = CorsConfig::production();
         assert!(result.is_err());
@@ -274,6 +284,7 @@ mod tests {
 
     #[test]
     fn test_production_config_rejects_http() {
+        let _guard = lock_cors_env();
         std::env::set_var(
             "XZEPR__SECURITY__CORS__ALLOWED_ORIGINS",
             "http://example.com",
@@ -299,6 +310,7 @@ mod tests {
 
     #[test]
     fn test_production_config_accepts_https() {
+        let _guard = lock_cors_env();
         std::env::set_var(
             "XZEPR__SECURITY__CORS__ALLOWED_ORIGINS",
             "https://app.example.com,https://admin.example.com",
@@ -311,6 +323,7 @@ mod tests {
 
     #[test]
     fn test_production_config_accepts_localhost() {
+        let _guard = lock_cors_env();
         std::env::set_var(
             "XZEPR__SECURITY__CORS__ALLOWED_ORIGINS",
             "https://app.example.com,http://localhost:3000",
@@ -321,6 +334,7 @@ mod tests {
 
     #[test]
     fn test_from_env_parsing() {
+        let _guard = lock_cors_env();
         std::env::set_var(
             "XZEPR__SECURITY__CORS__ALLOWED_ORIGINS",
             "https://app1.com, https://app2.com , https://app3.com",

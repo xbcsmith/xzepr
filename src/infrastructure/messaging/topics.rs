@@ -293,8 +293,13 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Requires rdkafka compiled with libsasl2 or openssl support for SCRAM-SHA-256"]
+    #[cfg(feature = "kafka-integration-tests")]
     fn test_topic_manager_with_auth_sasl_scram_sha256() {
+        if !std::env::var("XZEPR_RUN_KAFKA_INTEGRATION_TESTS")
+            .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        {
+            return;
+        }
         // Test with_auth with SASL/SCRAM-SHA-256
         // Note: This test requires rdkafka to be compiled with SASL/SCRAM support
         use crate::infrastructure::messaging::config::{
@@ -318,8 +323,13 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Requires rdkafka compiled with libsasl2 or openssl support for SCRAM-SHA-512"]
+    #[cfg(feature = "kafka-integration-tests")]
     fn test_topic_manager_with_auth_sasl_scram_sha512() {
+        if !std::env::var("XZEPR_RUN_KAFKA_INTEGRATION_TESTS")
+            .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        {
+            return;
+        }
         // Test with_auth with SASL/SCRAM-SHA-512
         // Note: This test requires rdkafka to be compiled with SASL/SCRAM support
         use crate::infrastructure::messaging::config::{
@@ -366,8 +376,13 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Requires rdkafka compiled with libsasl2 or openssl support for SCRAM-SHA-256"]
+    #[cfg(feature = "kafka-integration-tests")]
     fn test_topic_manager_with_auth_multiple_brokers() {
+        if !std::env::var("XZEPR_RUN_KAFKA_INTEGRATION_TESTS")
+            .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        {
+            return;
+        }
         // Test with_auth with multiple brokers and SASL/SCRAM authentication
         // Note: This test requires rdkafka to be compiled with SASL/SCRAM support
         use crate::infrastructure::messaging::config::{

@@ -18,6 +18,7 @@ use crate::domain::repositories::event_receiver_group_repo::EventReceiverGroupRe
 use crate::domain::repositories::event_receiver_repo::EventReceiverRepository;
 use crate::domain::repositories::event_repo::EventRepository;
 use crate::domain::value_objects::{EventId, EventReceiverGroupId, EventReceiverId};
+use crate::error::Error as AppError;
 use crate::opa::types::ResourceContext;
 
 /// Errors that can occur when building an OPA resource context.
@@ -40,8 +41,12 @@ pub enum ResourceContextError {
         id: String,
     },
     /// A repository query failed.
-    #[error("Repository query failed: {0}")]
-    RepositoryFailure(String),
+    #[error("Repository query failed")]
+    RepositoryFailure {
+        /// Source repository error.
+        #[source]
+        source: AppError,
+    },
 }
 
 /// Trait for building resource context from domain entities
@@ -120,7 +125,7 @@ impl ResourceContextBuilder for EventReceiverContextBuilder {
             .receiver_repo
             .find_by_id(receiver_id)
             .await
-            .map_err(|e| ResourceContextError::RepositoryFailure(e.to_string()))?
+            .map_err(|source| ResourceContextError::RepositoryFailure { source })?
             .ok_or_else(|| ResourceContextError::NotFound {
                 resource_type: "EventReceiver".to_string(),
                 id: resource_id.to_string(),
@@ -132,7 +137,7 @@ impl ResourceContextBuilder for EventReceiverContextBuilder {
             .group_repo
             .find_by_event_receiver_id(receiver_id)
             .await
-            .map_err(|e| ResourceContextError::RepositoryFailure(e.to_string()))?;
+            .map_err(|source| ResourceContextError::RepositoryFailure { source })?;
         let group_id = groups.first().map(|group| group.id().to_string());
         let group_members = collect_group_members(self.group_repo.as_ref(), &groups).await?;
 
@@ -195,7 +200,7 @@ impl ResourceContextBuilder for EventContextBuilder {
             .event_repo
             .find_by_id(event_id)
             .await
-            .map_err(|e| ResourceContextError::RepositoryFailure(e.to_string()))?
+            .map_err(|source| ResourceContextError::RepositoryFailure { source })?
             .ok_or_else(|| ResourceContextError::NotFound {
                 resource_type: "Event".to_string(),
                 id: resource_id.to_string(),
@@ -207,7 +212,7 @@ impl ResourceContextBuilder for EventContextBuilder {
             .receiver_repo
             .find_by_id(receiver_id)
             .await
-            .map_err(|e| ResourceContextError::RepositoryFailure(e.to_string()))?
+            .map_err(|source| ResourceContextError::RepositoryFailure { source })?
             .ok_or_else(|| ResourceContextError::NotFound {
                 resource_type: "EventReceiver".to_string(),
                 id: receiver_id.to_string(),
@@ -219,7 +224,7 @@ impl ResourceContextBuilder for EventContextBuilder {
             .group_repo
             .find_by_event_receiver_id(receiver_id)
             .await
-            .map_err(|e| ResourceContextError::RepositoryFailure(e.to_string()))?;
+            .map_err(|source| ResourceContextError::RepositoryFailure { source })?;
         let group_id = groups.first().map(|group| group.id().to_string());
         let group_members = collect_group_members(self.group_repo.as_ref(), &groups).await?;
 
@@ -271,7 +276,7 @@ impl ResourceContextBuilder for EventReceiverGroupContextBuilder {
             .group_repo
             .find_by_id(group_id)
             .await
-            .map_err(|e| ResourceContextError::RepositoryFailure(e.to_string()))?
+            .map_err(|source| ResourceContextError::RepositoryFailure { source })?
             .ok_or_else(|| ResourceContextError::NotFound {
                 resource_type: "EventReceiverGroup".to_string(),
                 id: resource_id.to_string(),
@@ -283,7 +288,7 @@ impl ResourceContextBuilder for EventReceiverGroupContextBuilder {
             .group_repo
             .get_group_members(group_id)
             .await
-            .map_err(|e| ResourceContextError::RepositoryFailure(e.to_string()))?
+            .map_err(|source| ResourceContextError::RepositoryFailure { source })?
             .into_iter()
             .map(|member_id| member_id.to_string())
             .collect();
@@ -309,7 +314,7 @@ async fn collect_group_members(
         let group_members = group_repo
             .get_group_members(group.id())
             .await
-            .map_err(|e| ResourceContextError::RepositoryFailure(e.to_string()))?;
+            .map_err(|source| ResourceContextError::RepositoryFailure { source })?;
         members.extend(
             group_members
                 .into_iter()

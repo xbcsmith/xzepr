@@ -16,7 +16,8 @@ use crate::api::middleware::{
     jwt_auth_middleware, rbac_enforcement_middleware, JwtMiddlewareState,
 };
 
-use crate::api::graphql::{create_schema, graphql_handler, graphql_health, graphql_playground};
+use crate::api::graphql::schema::create_schema;
+use crate::api::graphql::{graphql_handler, graphql_health, graphql_playground};
 use crate::api::rest::events::{
     create_event, create_event_receiver, create_event_receiver_group, delete_event_receiver,
     delete_event_receiver_group, get_event, get_event_receiver, get_event_receiver_group,

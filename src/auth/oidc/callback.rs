@@ -206,6 +206,14 @@ pub struct OidcSession {
 
     /// Original redirect URL (where to send user after login)
     pub redirect_to: Option<String>,
+
+    /// Optional stable principal hint used for pending-session concurrency limits.
+    ///
+    /// This value is captured before the provider callback, so it is only a
+    /// pre-authentication hint. After callback, application token/session
+    /// limits must use the provisioned application user ID.
+    #[serde(default)]
+    pub session_principal: Option<String>,
 }
 
 /// User data extracted from OIDC claims
@@ -660,6 +668,7 @@ mod tests {
             pkce_verifier: Some("verifier".to_string()),
             nonce: "nonce123".to_string(),
             redirect_to: Some("/dashboard".to_string()),
+            session_principal: Some("alice@example.com".to_string()),
         };
 
         let json = serde_json::to_string(&session).unwrap();

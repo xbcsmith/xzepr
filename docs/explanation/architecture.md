@@ -4,139 +4,71 @@
 
 ### Overview
 
-The RBAC (Role-Based Access Control) system is **partially implemented**. The
-core components are complete and well-tested, but enforcement middleware is not
-yet wired up to REST API routes.
+The RBAC (Role-Based Access Control) system is wired into the production API
+surface. Protected REST routes require JWT authentication and are authorized by
+either the built-in RBAC middleware or OPA when an OPA middleware state is
+provided. GraphQL execution also requires JWT authentication, and GraphQL
+resolvers use role, permission, and ownership guards.
 
-### Implementation Status Summary
+OIDC support is part of the active authentication layer. The auth module exports
+OIDC components, the production router registers OIDC login and callback routes,
+and those routes are enabled when an OIDC client is configured.
 
-#### FULLY IMPLEMENTED AND TESTED
+### Current Implementation Summary
 
 **1. Role System** (`src/auth/rbac/roles.rs`)
 
 - Four roles: Admin, EventManager, EventViewer, User
-- Complete permission mapping for each role
-- 44 passing unit tests
+- Permission mapping for event, receiver, group, and administrative actions
 - Serialization/deserialization support
-- String conversion (FromStr/Display)
+- String conversion through FromStr and Display
 
 **2. Permission System** (`src/auth/rbac/permissions.rs`)
 
-- 14 permissions across three resource types:
-  - Events: Create, Read, Update, Delete
-  - Receivers: Create, Read, Update, Delete
-  - Groups: Create, Read, Update, Delete
-  - Admin: UserManage, RoleManage
-- `from_action()` method for resource/action mapping
-- All tests passing
+- Permission definitions across events, receivers, groups, and administration
+- Resource/action mapping for route and policy checks
+- Used by GraphQL guards and REST authorization middleware
 
 **3. User Entity with RBAC** (`src/domain/entities/user.rs`)
 
-- `has_role()` method for role checking
-- `has_permission()` method for permission checking
-- Support for multiple auth providers (Local, Keycloak, ApiKey)
-- Password hashing with Argon2
-- Comprehensive test coverage
+- Role and permission checks at the domain entity boundary
+- Support for local, Keycloak/OIDC, and API key auth providers
+- Password hashing with Argon2 for local users
 
 **4. JWT with RBAC Integration** (`src/auth/jwt/`)
 
-- Claims structure includes roles and permissions
-- Role checking: `has_role()`, `has_any_role()`, `has_all_roles()`
-- Permission checking: `has_permission()`, `has_any_permission()`,
-  `has_all_permissions()`
-- Full JWT middleware with `AuthenticatedUser` extraction
-- Token validation and expiration handling
-- All tests passing
+- Claims include roles and permissions
+- JWT middleware validates tokens, handles expiration, and extracts the
+  authenticated user
+- Claim helpers support role and permission checks
 
-**5. GraphQL RBAC Guards** (`src/api/graphql/guards.rs`)
+**5. REST and GraphQL Enforcement**
 
-- `require_auth()` - Basic authentication check
-- `require_roles()` - Enforce specific roles
-- `require_permissions()` - Enforce specific permissions
-- `require_roles_and_permissions()` - Combined enforcement
-- Helper functions: `require_admin()`, `require_user()`
-- Fully integrated with Claims
+- `build_protected_router()` applies JWT authentication and RBAC enforcement to
+  protected REST routes
+- `build_production_router()` applies JWT authentication to protected REST and
+  GraphQL routes
+- OPA authorization can replace built-in RBAC for protected REST route groups
+- GraphQL schemas are built with configurable complexity and depth limits
 
-#### PARTIALLY IMPLEMENTED
+### Current Routing Behavior
 
-**1. RBAC Middleware** (`src/auth/rbac/middleware.rs`)
+1. **Public routes**: health, metrics, status, auth login/refresh, OIDC
+   redirects, GraphQL health, and the GraphQL Playground when explicitly
+   enabled.
+2. **Protected REST routes**: event, receiver, group, group membership, and
+   logout routes require JWT authentication and route authorization.
+3. **Protected GraphQL route**: `POST /graphql` requires JWT authentication;
+   resolver-level guards enforce roles, permissions, and ownership.
+4. **OIDC routes**: OIDC login and callback handlers are registered with real
+   handlers when OIDC is configured, otherwise they return the disabled OIDC
+   response.
 
-- Code skeleton exists but has compilation issues
-- References undefined types and imports
-- Not properly integrated with the rest of the codebase
-- NOT imported or used anywhere in the application
-- Needs refactoring to use existing JWT middleware patterns
+### Code Quality Notes
 
-#### NOT IMPLEMENTED / NOT WIRED UP
-
-**1. REST API Route Protection**
-
-- `build_protected_router()` exists but middleware is commented out
-- No RBAC enforcement on REST endpoints
-- All routes are currently public/open
-- TODO: Apply JWT middleware with role/permission guards
-
-**2. OIDC Integration**
-
-- Module structure exists but is commented out in `src/auth/mod.rs`
-- Keycloak integration not fully implemented
-- TODO: Complete OIDC provider integration
-
-### What Works Right Now
-
-1. **GraphQL API**: Fully protected with role and permission guards
-2. **JWT Authentication**: Token generation, validation, and claims extraction
-3. **User Management**: Role and permission assignment at user level
-4. **Domain Logic**: All RBAC checks in business logic work correctly
-
-### What Doesn't Work Yet
-
-1. **REST API Protection**: No middleware applied to HTTP routes
-2. **Automatic Role Enforcement**: Must be manually checked in handlers
-3. **OIDC Authentication**: Keycloak integration incomplete
-4. **API Key with RBAC**: API key auth exists but RBAC integration unclear
-
-### Next Steps to Complete RBAC
-
-1. **Fix RBAC Middleware** (`src/auth/rbac/middleware.rs`):
-
-   - Remove undefined type references
-   - Use existing JWT middleware patterns
-   - Integrate with `AuthenticatedUser` from JWT middleware
-
-2. **Wire Up REST Routes** (`src/api/rest/routes.rs`):
-
-   - Uncomment and configure middleware in `build_protected_router()`
-   - Apply JWT authentication middleware
-   - Add role/permission guards to specific routes
-
-3. **Create Route Guards**:
-
-   - Implement `require_permission()` middleware for REST
-   - Implement `require_roles()` middleware for REST
-   - Follow patterns from GraphQL guards
-
-4. **Testing**:
-   - Add integration tests for protected endpoints
-   - Test permission denial scenarios
-   - Verify role-based access control
-
-### Code Quality
-
-All implemented RBAC components have:
-
-- Comprehensive unit tests (100+ tests total)
-- Proper error handling
-- Documentation comments
-- Zero clippy warnings
-- Proper serialization support
-
-### Conclusion
-
-**The RBAC system is ~80% complete.** The hard parts (role/permission design,
-JWT integration, user entity) are done and tested. The remaining work is
-integration: applying existing middleware to REST routes and fixing the RBAC
-middleware module.
+The documented architecture now reflects the active router and auth modules:
+REST RBAC is wired, OIDC is exported and routed, and token validation is handled
+by the JWT and OIDC services rather than being a future placeholder.
 
 ---
 
@@ -297,7 +229,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let role = Role::from_str(&role)?;
             user_repo.add_role(user.id(), role).await?;
 
-            println!("✓ User created successfully!");
+            println!("OK: User created successfully!");
             println!("  ID: {}", user.id());
             println!("  Username: {}", user.username());
         }
@@ -327,7 +259,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let role = Role::from_str(&role)?;
 
             user_repo.add_role(user.id(), role).await?;
-            println!("✓ Role '{}' added to user '{}'", role, username);
+            println!("OK: Role '{}' added to user '{}'", role, username);
         }
 
         Commands::RemoveRole { username, role } => {
@@ -336,7 +268,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let role = Role::from_str(&role)?;
 
             user_repo.remove_role(user.id(), role).await?;
-            println!("✓ Role '{}' removed from user '{}'", role, username);
+            println!("OK: Role '{}' removed from user '{}'", role, username);
         }
 
         Commands::GenerateApiKey { username, name, expires_days } => {
@@ -351,7 +283,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .generate_api_key(user.id(), name, expires_at)
                 .await?;
 
-            println!("✓ API key generated successfully!");
+            println!("OK: API key generated successfully!");
             println!("\nWARNING: Save this key now - it won't be shown again!");
             println!("\n  API Key: {}", key);
             println!("  Key ID:  {}", api_key.id());
@@ -390,7 +322,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::RevokeApiKey { key_id } => {
             let key_id = ApiKeyId::parse(&key_id)?;
             api_key_service.revoke_key(key_id).await?;
-            println!("✓ API key revoked successfully");
+            println!("OK: API key revoked successfully");
         }
     }
 
@@ -923,9 +855,9 @@ database:
 
 1. **Start with Foundation**
 
-   - Set up project structure ✓
-   - Add TLS configuration ✓
-   - Create user domain model ✓
+   - Set up project structure (complete)
+   - Add TLS configuration (complete)
+   - Create user domain model (complete)
 
 2. **Implement Local Auth First** (Simplest)
 
@@ -1413,10 +1345,10 @@ impl KeycloakClient {
     }
 
     pub async fn verify_token(&self, token: &str) -> Result<OidcClaims, OidcError> {
-        // Verify and decode JWT token
-        // Extract user info from claims
-        // Map to internal user representation
-        todo!("Implement token verification")
+        // Validate the token with discovered provider metadata and JWKS.
+        // Verify issuer, audience, expiration, and nonce/state as applicable.
+        // Extract user info and roles from verified claims.
+        verify_oidc_token(token, &self.client).await
     }
 }
 

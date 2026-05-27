@@ -6,7 +6,7 @@ use clap::{Parser, Subcommand};
 use sqlx::PgPool;
 use std::str::FromStr;
 use std::sync::Arc;
-use xzepr::auth::api_key::AuthUserRepository;
+use xzepr::domain::repositories::user_repo::UserRepository;
 use xzepr::infrastructure::database::{PostgresApiKeyRepository, PostgresUserRepository};
 use xzepr::{ApiKeyId, ApiKeyService, Role, Settings, User};
 
@@ -125,7 +125,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let user = User::new_local(username, email, password)
                     .map_err(|err| -> Box<dyn std::error::Error> { Box::new(err) })?;
 
-                user_repo.save(&user).await?;
+                user_repo.save_admin_user(&user).await?;
 
                 if role != Role::User {
                     user_repo.add_role(user.id(), role).await?;
@@ -146,7 +146,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         Commands::ListUsers => {
-            let users = user_repo.find_all().await?;
+            let users = user_repo.find_all_admin_users().await?;
             println!(
                 "\n{:<36} {:<20} {:<30} {:<15}",
                 "ID", "Username", "Email", "Roles"

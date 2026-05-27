@@ -338,38 +338,42 @@ All configuration can be overridden with environment variables:
 
 ```bash
 # Server configuration
-export XZEPR_SERVER_HOST="0.0.0.0"
-export XZEPR_SERVER_PORT=8443
-export XZEPR_SERVER_ENABLE_HTTPS=true
+export XZEPR__SERVER__HOST="0.0.0.0"
+export XZEPR__SERVER__PORT=8443
+export XZEPR__SERVER__ENABLE_HTTPS=true
 
 # Database
-export DATABASE_URL="postgres://xzepr:password@localhost:5432/xzepr"
+export XZEPR__DATABASE__URL="postgres://xzepr:password@localhost:5432/xzepr"
 
 # Authentication
-export XZEPR_AUTH_JWT_SECRET="your-secret-key-min-32-chars"
-export XZEPR_AUTH_JWT_EXPIRATION_HOURS=24
+export XZEPR__AUTH__ENABLE_LOCAL_AUTH=true
+export XZEPR__AUTH__ENABLE_OIDC=true
+export XZEPR__AUTH__JWT__ALGORITHM="RS256"
+export XZEPR__AUTH__JWT__ACCESS_TOKEN_EXPIRATION_SECONDS=900
+export XZEPR__AUTH__JWT__REFRESH_TOKEN_EXPIRATION_SECONDS=604800
+export XZEPR__AUTH__JWT__PRIVATE_KEY_PATH="/etc/xzepr/keys/jwt_rsa"
+export XZEPR__AUTH__JWT__PUBLIC_KEY_PATH="/etc/xzepr/keys/jwt_rsa.pub"
+export XZEPR__AUTH__KEYCLOAK__ISSUER_URL="https://keycloak.example.com/realms/xzepr"
+export XZEPR__AUTH__KEYCLOAK__CLIENT_ID="xzepr-client"
+export XZEPR__AUTH__KEYCLOAK__CLIENT_SECRET="change-me"
 
 # Kafka/Redpanda
-export XZEPR_KAFKA_BROKERS="localhost:9092"
-export XZEPR_KAFKA_DEFAULT_TOPIC="xzepr.dev.events"
-export XZEPR_KAFKA_SASL_MECHANISM="SCRAM-SHA-256"
-export XZEPR_KAFKA_SASL_USERNAME="admin"
-export XZEPR_KAFKA_SASL_PASSWORD="admin-secret"
-# Kafka Authentication (optional)
-export XZEPR_KAFKA_SECURITY_PROTOCOL="SASL_SSL"
-export XZEPR_KAFKA_SASL_MECHANISM="SCRAM-SHA-256"
-export XZEPR_KAFKA_SASL_USERNAME="kafka-user"
-export XZEPR_KAFKA_SASL_PASSWORD="kafka-password"
-export XZEPR_KAFKA_SSL_CA_LOCATION="/path/to/ca-cert.pem"
+export XZEPR__KAFKA__BROKERS="localhost:9092"
+export XZEPR__KAFKA__DEFAULT_TOPIC="xzepr.dev.events"
+export XZEPR__KAFKA__AUTH__SECURITY_PROTOCOL="SASL_SSL"
+export XZEPR__KAFKA__AUTH__SASL__MECHANISM="SCRAM-SHA-256"
+export XZEPR__KAFKA__AUTH__SASL__USERNAME="kafka-user"
+export XZEPR__KAFKA__AUTH__SASL__PASSWORD="kafka-password"
+export XZEPR__KAFKA__AUTH__SSL__CA_LOCATION="/path/to/ca-cert.pem"
 
 # TLS
-export XZEPR_TLS_CERT_PATH="certs/cert.pem"
-export XZEPR_TLS_KEY_PATH="certs/key.pem"
+export XZEPR__TLS__CERT_PATH="certs/cert.pem"
+export XZEPR__TLS__KEY_PATH="certs/key.pem"
 
 # Observability
 export RUST_LOG="info,xzepr=debug"
-export XZEPR_OTLP_ENDPOINT="http://localhost:4317"
-export XZEPR_JAEGER_ENDPOINT="http://localhost:14268/api/traces"
+export XZEPR__ENABLE_OTLP=true
+export XZEPR__OTLP_ENDPOINT="http://localhost:4317"
 ```
 
 See [Configuration Reference](docs/reference/configuration.md) for complete

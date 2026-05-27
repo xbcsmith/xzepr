@@ -23,9 +23,11 @@ use xzepr::application::handlers::{EventHandler, EventReceiverGroupHandler, Even
 use xzepr::auth::jwt::{Algorithm, JwtConfig, JwtService};
 use xzepr::auth::oidc::{
     InMemoryOidcSessionStore, OidcCallbackHandler, OidcClient, OidcConfig, OidcSessionStore,
+    RedisOidcSessionStore,
 };
 use xzepr::auth::provisioning::UserProvisioningService;
 use xzepr::infrastructure::audit::AuditLogger;
+use xzepr::infrastructure::config::OidcSessionStoreBackend;
 use xzepr::infrastructure::database::{
     PostgresEventReceiverGroupRepository, PostgresEventReceiverRepository, PostgresEventRepository,
     PostgresUserRepository,
@@ -61,12 +63,10 @@ async fn build_auth_state<R: xzepr::domain::repositories::user_repo::UserReposit
 ) -> Result<AuthState<R>> {
     if !settings.auth.enable_oidc {
         info!("OIDC authentication disabled");
-        return Ok(AuthState::new(
-            jwt_service,
-            None,
-            None,
-            provisioning_service,
-        ));
+        return Ok(
+            AuthState::new(jwt_service, None, None, provisioning_service)
+                .with_local_auth_enabled(settings.auth.enable_local_auth),
+        );
     }
 
     let keycloak = settings
@@ -98,16 +98,33 @@ async fn build_auth_state<R: xzepr::domain::repositories::user_repo::UserReposit
     let session_ttl = Duration::from_secs(keycloak.session_ttl_seconds);
     // Use 10x the per-user limit as a total-capacity ceiling for pending sessions.
     let max_pending = keycloak.max_sessions_per_user.saturating_mul(10).max(100);
-    let session_store = Arc::new(InMemoryOidcSessionStore::new(max_pending, session_ttl));
-
-    // Spawn a background task to evict expired sessions every 60 seconds.
-    session_store
-        .clone()
-        .spawn_cleanup_task(Duration::from_secs(60));
+    let session_store: Arc<dyn OidcSessionStore> = match keycloak.session_store.backend {
+        OidcSessionStoreBackend::Memory => {
+            let store = Arc::new(InMemoryOidcSessionStore::new_with_principal_limit(
+                max_pending,
+                keycloak.max_sessions_per_user,
+                session_ttl,
+            ));
+            store.clone().spawn_cleanup_task(Duration::from_secs(60));
+            store
+        }
+        OidcSessionStoreBackend::Redis => Arc::new(
+            RedisOidcSessionStore::new(
+                keycloak.session_store.redis_url.as_deref().context(
+                    "OIDC Redis session store requires auth.keycloak.session_store.redis_url",
+                )?,
+                keycloak.session_store.key_prefix.clone(),
+                keycloak.max_sessions_per_user,
+            )
+            .await
+            .context("Failed to initialize Redis-backed OIDC session store")?,
+        ),
+    };
 
     let allowed_redirect_hosts = keycloak.allowed_redirect_hosts.clone();
 
     info!(
+        local_auth_enabled = settings.auth.enable_local_auth,
         session_ttl_seconds = keycloak.session_ttl_seconds,
         max_pending,
         allowed_hosts = ?allowed_redirect_hosts,
@@ -122,18 +139,19 @@ async fn build_auth_state<R: xzepr::domain::repositories::user_repo::UserReposit
         provisioning_service,
         allowed_redirect_hosts,
         session_ttl,
-    ))
+    )
+    .with_local_auth_enabled(settings.auth.enable_local_auth))
 }
 
 /// Build the OPA middleware state when OPA authorization is enabled.
 ///
 /// Reads the OPA configuration from `settings.opa`, constructs an `OpaClient`,
 /// audit logger, resource context builders, and returns a fully initialized
-/// [`OpaMiddlewareState`]. Returns `None` when OPA is disabled.
+/// [`OpaMiddlewareState`]. Returns `Ok(None)` when OPA is disabled.
 ///
-/// OPA failures during construction are logged as warnings and return `None`
-/// (OPA disabled gracefully) rather than aborting server startup, unless the
-/// failure is a configuration error that would leave the server insecure.
+/// When OPA is enabled, client construction errors fail startup instead of
+/// silently disabling authorization. This keeps configured policy enforcement
+/// fail-safe for the canonical runtime path.
 ///
 /// # Arguments
 ///
@@ -148,24 +166,21 @@ async fn build_opa_state(
     receiver_repo: Arc<PostgresEventReceiverRepository>,
     group_repo: Arc<PostgresEventReceiverGroupRepository>,
     metrics: Option<Arc<PrometheusMetrics>>,
-) -> Option<OpaMiddlewareState> {
+) -> Result<Option<OpaMiddlewareState>> {
     let opa_config = match &settings.opa {
         Some(cfg) if cfg.enabled => cfg.clone(),
         _ => {
             info!("OPA authorization disabled");
-            return None;
+            return Ok(None);
         }
     };
 
     let fail_safe_mode = opa_config.fail_safe_mode;
 
-    let opa_client = match OpaClient::new(opa_config) {
-        Ok(client) => Arc::new(client),
-        Err(e) => {
-            warn!(error = %e, "Failed to build OPA client; OPA authorization disabled");
-            return None;
-        }
-    };
+    let opa_client = Arc::new(
+        OpaClient::new(opa_config)
+            .context("Failed to build OPA client while OPA authorization is enabled")?,
+    );
 
     let audit_logger = Arc::new(AuditLogger::new());
 
@@ -195,9 +210,11 @@ async fn build_opa_state(
         warn!(
             "OPA fail_safe_mode is fail_open_development but RUST_ENV=production; \
              this combination is rejected by validate_production() and should not be reachable. \
-             Disabling OPA to prevent accidental fail-open."
+             Startup will fail to prevent accidental fail-open authorization."
         );
-        return None;
+        bail!(
+            "OPA fail_open_development is invalid in production; refusing to start with fail-open authorization"
+        );
     }
 
     if fail_safe_mode == OpaFailSafeMode::LegacyRbacFallback {
@@ -207,6 +224,11 @@ async fn build_opa_state(
         );
     }
 
+    opa_client
+        .health_check()
+        .await
+        .context("OPA health check failed while OPA authorization is enabled")?;
+
     info!(
         url = %opa_client.config().url,
         fail_safe_mode = ?fail_safe_mode,
@@ -214,14 +236,14 @@ async fn build_opa_state(
         "OPA authorization enabled"
     );
 
-    Some(OpaMiddlewareState::new(
+    Ok(Some(OpaMiddlewareState::new(
         opa_client,
         audit_logger,
         metrics,
         context_builders,
         fail_safe_mode,
         is_production,
-    ))
+    )))
 }
 
 #[tokio::main]
@@ -297,7 +319,7 @@ async fn main() -> Result<()> {
         group_repo.clone(),
         router_config.metrics.clone(),
     )
-    .await;
+    .await?;
     let app =
         build_production_router(api_state, auth_state, jwt_state, router_config, opa_state).await;
 

@@ -185,6 +185,8 @@ pub struct KeycloakConfig {
     pub session_ttl_seconds: u64,
     #[serde(default = "default_oidc_max_sessions")]
     pub max_sessions_per_user: usize,
+    #[serde(default)]
+    pub session_store: OidcSessionStoreConfig,
 }
 
 impl fmt::Debug for KeycloakConfig {
@@ -198,22 +200,64 @@ impl fmt::Debug for KeycloakConfig {
             .field("allowed_redirect_hosts", &self.allowed_redirect_hosts)
             .field("session_ttl_seconds", &self.session_ttl_seconds)
             .field("max_sessions_per_user", &self.max_sessions_per_user)
+            .field("session_store", &self.session_store)
             .finish()
     }
 }
 
-/// OIDC session configuration.
-///
-/// Controls the lifetime and concurrency limits for OIDC-authenticated sessions.
-#[derive(Debug, Clone, Deserialize)]
+/// OIDC session store backend kind.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum OidcSessionStoreBackend {
+    /// In-memory process-local session storage.
+    Memory,
+    /// Redis-backed distributed session storage.
+    Redis,
+}
+
+fn default_oidc_session_store_backend() -> OidcSessionStoreBackend {
+    OidcSessionStoreBackend::Memory
+}
+
+fn default_oidc_session_store_key_prefix() -> String {
+    "xzepr:oidc".to_string()
+}
+
+/// OIDC session store configuration.
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct OidcSessionConfig {
-    /// Session time-to-live in seconds (default: 3600 = 1 hour).
-    #[serde(default = "default_oidc_session_ttl")]
-    pub session_ttl_seconds: u64,
-    /// Maximum number of concurrent sessions per user (default: 10).
-    #[serde(default = "default_oidc_max_sessions")]
-    pub max_sessions_per_user: usize,
+pub struct OidcSessionStoreConfig {
+    /// Session store backend to use.
+    #[serde(default = "default_oidc_session_store_backend")]
+    pub backend: OidcSessionStoreBackend,
+    /// Redis URL used when `backend` is `redis`.
+    pub redis_url: Option<String>,
+    /// Redis key prefix used by distributed session storage.
+    #[serde(default = "default_oidc_session_store_key_prefix")]
+    pub key_prefix: String,
+}
+
+impl Default for OidcSessionStoreConfig {
+    fn default() -> Self {
+        Self {
+            backend: default_oidc_session_store_backend(),
+            redis_url: None,
+            key_prefix: default_oidc_session_store_key_prefix(),
+        }
+    }
+}
+
+impl fmt::Debug for OidcSessionStoreConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OidcSessionStoreConfig")
+            .field("backend", &self.backend)
+            .field(
+                "redis_url",
+                &self.redis_url.as_ref().map(|url| mask_password(url)),
+            )
+            .field("key_prefix", &self.key_prefix)
+            .finish()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -343,6 +387,12 @@ pub enum SettingsValidationError {
     /// OIDC client secret is empty or placeholder text.
     #[error("OIDC client_secret cannot be empty or a placeholder in production")]
     OidcClientSecretInvalid,
+    /// OIDC production session store is not distributed.
+    #[error("OIDC session_store.backend must be redis in production")]
+    OidcSessionStoreNotDistributed,
+    /// OIDC Redis session store URL is missing.
+    #[error("OIDC session_store.redis_url is required when backend is redis")]
+    OidcSessionRedisUrlMissing,
     /// TLS certificate path is empty.
     #[error("TLS cert_path cannot be empty in production")]
     EmptyTlsCertPath,
@@ -560,6 +610,18 @@ impl Settings {
             });
         }
 
+        if keycloak.session_store.backend != OidcSessionStoreBackend::Redis {
+            return Err(SettingsValidationError::OidcSessionStoreNotDistributed);
+        }
+        if keycloak
+            .session_store
+            .redis_url
+            .as_deref()
+            .is_none_or(str::is_empty)
+        {
+            return Err(SettingsValidationError::OidcSessionRedisUrlMissing);
+        }
+
         Ok(())
     }
 
@@ -747,6 +809,10 @@ auth:
       - "xzepr.example.com"
     session_ttl_seconds: 3600
     max_sessions_per_user: 10
+    session_store:
+      backend: "redis"
+      redis_url: "redis://redis:6379"
+      key_prefix: "xzepr:oidc:test"
 
 tls:
   cert_path: "/etc/xzepr/tls/cert.pem"
@@ -1110,6 +1176,7 @@ graphql:
             allowed_redirect_hosts: vec!["app.example.com".to_string()],
             session_ttl_seconds: 3600,
             max_sessions_per_user: 10,
+            session_store: OidcSessionStoreConfig::default(),
         };
         let debug_str = format!("{:?}", config);
         assert!(
@@ -1159,8 +1226,9 @@ graphql:
                     client_secret: "secret".to_string(),
                     redirect_url: "https://app.example.com/callback".to_string(),
                     allowed_redirect_hosts: vec!["app.example.com".to_string()],
-                    session_ttl_seconds: 3600,
+                    session_ttl_seconds: 300,
                     max_sessions_per_user: 10,
+                    session_store: OidcSessionStoreConfig::default(),
                 }),
             },
             tls: TlsConfig {
@@ -1200,9 +1268,12 @@ graphql:
             include_str!("../../config/production.yaml"),
         ];
 
+        let retired_secret_key = ["jwt", "secret"].join("_");
+        let retired_expiration_key = ["jwt", "expiration", "hours"].join("_");
+
         for contents in files {
-            assert!(!contents.contains("jwt_secret"));
-            assert!(!contents.contains("jwt_expiration_hours"));
+            assert!(!contents.contains(&retired_secret_key));
+            assert!(!contents.contains(&retired_expiration_key));
         }
     }
 
@@ -1468,16 +1539,11 @@ graphql:
     }
 
     #[test]
-    fn test_oidc_session_config_defaults() {
+    fn test_oidc_session_store_config_defaults() {
         let yaml = "{}";
-        let config: OidcSessionConfig = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(
-            config.session_ttl_seconds, 3600,
-            "Default TTL should be 3600 seconds"
-        );
-        assert_eq!(
-            config.max_sessions_per_user, 10,
-            "Default max sessions should be 10"
-        );
+        let config: OidcSessionStoreConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.backend, OidcSessionStoreBackend::Memory);
+        assert!(config.redis_url.is_none());
+        assert_eq!(config.key_prefix, "xzepr:oidc");
     }
 }

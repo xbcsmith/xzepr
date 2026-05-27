@@ -224,23 +224,34 @@ impl EventReceiverGroupHandler {
 
         // Publish system event to Kafka if publisher is configured
         if let Some(publisher) = &self.event_publisher {
-            let system_event = build_group_created_event(&event_receiver_group);
-            if let Err(e) = publisher
-                .publish_with_group(&system_event, &event_receiver_group)
-                .await
-            {
-                error!(
-                    group_id = %group_id,
-                    error = %e,
-                    "Failed to publish group creation event to Kafka"
-                );
-                // Note: We don't fail the request since the group was saved to the database
-            } else {
-                info!(
-                    group_id = %group_id,
-                    event_id = %system_event.id(),
-                    "Group creation event published to Kafka successfully"
-                );
+            match build_group_created_event(&event_receiver_group) {
+                Ok(system_event) => {
+                    if let Err(e) = publisher
+                        .publish_with_group(&system_event, &event_receiver_group)
+                        .await
+                    {
+                        error!(
+                            group_id = %group_id,
+                            error = %e,
+                            "Failed to publish group creation event to Kafka"
+                        );
+                        // Note: We don't fail the request since the group was saved to the database
+                    } else {
+                        info!(
+                            group_id = %group_id,
+                            event_id = %system_event.id(),
+                            "Group creation event published to Kafka successfully"
+                        );
+                    }
+                }
+                Err(e) => {
+                    error!(
+                        group_id = %group_id,
+                        error = %e,
+                        "Failed to build group creation lifecycle event"
+                    );
+                    // Note: We don't fail the request since the group was saved to the database
+                }
             }
         }
 

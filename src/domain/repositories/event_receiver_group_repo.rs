@@ -150,7 +150,8 @@ pub trait EventReceiverGroupRepository: Send + Sync {
         _user_id: UserId,
     ) -> Result<Option<GroupMembershipRecord>> {
         Err(crate::error::Error::Internal {
-            message: "Group membership record lookup is not implemented".to_string(),
+            message: "Group membership record lookup is not supported by this repository"
+                .to_string(),
         })
     }
 
@@ -160,7 +161,8 @@ pub trait EventReceiverGroupRepository: Send + Sync {
         _group_id: EventReceiverGroupId,
     ) -> Result<Vec<GroupMembershipRecord>> {
         Err(crate::error::Error::Internal {
-            message: "Group membership record listing is not implemented".to_string(),
+            message: "Group membership record listing is not supported by this repository"
+                .to_string(),
         })
     }
 

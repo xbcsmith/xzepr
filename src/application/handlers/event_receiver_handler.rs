@@ -127,23 +127,34 @@ impl EventReceiverHandler {
 
         // Publish system event to Kafka if publisher is configured
         if let Some(publisher) = &self.event_publisher {
-            let system_event = build_receiver_created_event(&event_receiver);
-            if let Err(e) = publisher
-                .publish_with_receiver(&system_event, &event_receiver)
-                .await
-            {
-                error!(
-                    receiver_id = %receiver_id,
-                    error = %e,
-                    "Failed to publish receiver creation event to Kafka"
-                );
-                // Note: We don't fail the request since the receiver was saved to the database
-            } else {
-                info!(
-                    receiver_id = %receiver_id,
-                    event_id = %system_event.id(),
-                    "Receiver creation event published to Kafka successfully"
-                );
+            match build_receiver_created_event(&event_receiver) {
+                Ok(system_event) => {
+                    if let Err(e) = publisher
+                        .publish_with_receiver(&system_event, &event_receiver)
+                        .await
+                    {
+                        error!(
+                            receiver_id = %receiver_id,
+                            error = %e,
+                            "Failed to publish receiver creation event to Kafka"
+                        );
+                        // Note: We don't fail the request since the receiver was saved to the database
+                    } else {
+                        info!(
+                            receiver_id = %receiver_id,
+                            event_id = %system_event.id(),
+                            "Receiver creation event published to Kafka successfully"
+                        );
+                    }
+                }
+                Err(e) => {
+                    error!(
+                        receiver_id = %receiver_id,
+                        error = %e,
+                        "Failed to build receiver creation lifecycle event"
+                    );
+                    // Note: We don't fail the request since the receiver was saved to the database
+                }
             }
         }
 

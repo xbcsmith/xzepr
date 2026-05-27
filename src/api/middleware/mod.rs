@@ -76,6 +76,3 @@ pub use validation::{
     body_size_limit_middleware, sanitize, validate_request, FieldError, ValidationConfig,
     ValidationErrorResponse, ValidationState, DEFAULT_MAX_BODY_SIZE, MAX_UPLOAD_SIZE,
 };
-
-// Re-export for convenience
-pub use tower_http::cors::CorsLayer;

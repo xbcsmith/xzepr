@@ -507,6 +507,7 @@ fn test_opa_client_disabled_returns_false() {
         policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
         bundle_url: None,
         cache_ttl_seconds: 300,
+        health_path: "/health".to_string(),
         allowed_hosts: vec![],
         fail_safe_mode: OpaFailSafeMode::FailClosed,
     };

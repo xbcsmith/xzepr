@@ -432,8 +432,8 @@ impl OidcClient {
         _id_token: &str,
         _nonce: &str,
     ) -> Result<OidcClaims, OidcError> {
-        // Parse ID token string - for now, we'll skip direct verification
-        // In production, you'd want to properly parse and verify the token
+        // Direct ID token verification is intentionally unsupported on this path.
+        // `exchange_code` performs provider-backed validation and claim extraction.
         Err(OidcError::TokenVerification(
             "Direct ID token verification not supported - use exchange_code instead".to_string(),
         ))

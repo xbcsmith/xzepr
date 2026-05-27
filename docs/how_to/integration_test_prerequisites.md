@@ -1,13 +1,14 @@
 # Integration Test Prerequisites
 
-This document describes the external services and environment variables required
-to run the optional integration tests that are gated with `#[ignore]`.
+This document describes the external services, Cargo features, and environment
+variables required to run optional integration tests.
 
 ## Default Test Suite
 
-The default test suite runs entirely without external services. All tests that
-require running infrastructure are gated with `#[ignore]` so that CI and local
-development remain fast and dependency-free.
+The default test suite runs entirely without external services. Tests that
+require running infrastructure are gated by Cargo features and explicit
+environment variables so that CI and local development remain fast and
+dependency-free.
 
 Run the default suite:
 
@@ -20,8 +21,10 @@ RBAC enforcement tests, and auth tests.
 
 ## Kafka and Redpanda Tests
 
-Tests in `tests/kafka_auth_integration_tests.rs` marked with `#[ignore]` require
-a running Kafka or Redpanda broker with authentication enabled.
+Live tests in `tests/kafka_auth_integration_tests.rs` require the
+`kafka-integration-tests` Cargo feature and
+`XZEPR_RUN_KAFKA_INTEGRATION_TESTS=true`. They require a running Kafka or
+Redpanda broker with authentication enabled.
 
 ### Required broker configuration
 
@@ -37,39 +40,34 @@ a running Kafka or Redpanda broker with authentication enabled.
 # Start Redpanda locally via Docker Compose
 docker compose up -d redpanda-0
 
-# Run all Kafka integration tests (single-threaded to avoid env-var races)
-cargo test --test kafka_auth_integration_tests -- --ignored --test-threads=1
+# Run all Kafka integration tests
+XZEPR_RUN_KAFKA_INTEGRATION_TESTS=true \
+  cargo test --features kafka-integration-tests --test kafka_auth_integration_tests
 ```
 
 ### Notes on thread safety
 
-Several environment-variable tests in `kafka_auth_integration_tests.rs` are
-gated with:
-
-```rust
-#[ignore = "Environment variable tests may fail when run in parallel; use --test-threads=1"]
-```
-
-These tests mutate process-level environment variables and must run
-single-threaded. Always pass `--test-threads=1` when running the ignored Kafka
-tests.
+Environment-variable tests in `kafka_auth_integration_tests.rs` serialize access
+to process-level environment variables and run in the default suite. Live broker
+tests return early unless `XZEPR_RUN_KAFKA_INTEGRATION_TESTS` is set.
 
 ## PostgreSQL Database Tests
 
-Tests in `tests/database_tests.rs` exercise database repositories. The current
-implementations use domain-layer construction helpers and do not require a live
-database for the default suite. Tests that perform real SQL queries must be
-gated with `#[ignore]` and require a running PostgreSQL instance.
+Tests in `tests/database_tests.rs` exercise database repositories. The default
+suite does not require a live database. Tests that perform real SQL queries are
+external-service tests and require a running PostgreSQL instance.
 
 ### Required environment variables
 
+- `XZEPR_RUN_DATABASE_INTEGRATION_TESTS=true`: Enables live database tests
 - `DATABASE_URL`: PostgreSQL connection URL
 
 ### Example
 
 ```bash
-DATABASE_URL=postgres://xzepr:password@localhost:5432/xzepr cargo test \
-  --test database_tests -- --ignored
+XZEPR_RUN_DATABASE_INTEGRATION_TESTS=true \
+  DATABASE_URL=postgres://xzepr:password@localhost:5432/xzepr \
+  cargo test --features database-integration-tests --test database_tests
 ```
 
 ### Start PostgreSQL via Docker Compose

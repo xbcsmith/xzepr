@@ -21,8 +21,11 @@ services:
       - XZEPR__KAFKA__BROKERS=redpanda-0:9092
 
       # Authentication configuration
-      - XZEPR__AUTH__JWT_SECRET=${JWT_SECRET:-your-super-secure-jwt-secret-change-this}
-      - XZEPR__AUTH__JWT_EXPIRATION_HOURS=24
+      - XZEPR__AUTH__JWT__ALGORITHM=${JWT_ALGORITHM:-RS256}
+      - XZEPR__AUTH__JWT__ACCESS_TOKEN_EXPIRATION_SECONDS=${JWT_ACCESS_TOKEN_EXPIRATION_SECONDS:-900}
+      - XZEPR__AUTH__JWT__REFRESH_TOKEN_EXPIRATION_SECONDS=${JWT_REFRESH_TOKEN_EXPIRATION_SECONDS:-604800}
+      - XZEPR__AUTH__JWT__PRIVATE_KEY_PATH=${JWT_PRIVATE_KEY_PATH:-/etc/xzepr/keys/jwt_rsa}
+      - XZEPR__AUTH__JWT__PUBLIC_KEY_PATH=${JWT_PUBLIC_KEY_PATH:-/etc/xzepr/keys/jwt_rsa.pub}
       - XZEPR__AUTH__ENABLE_LOCAL_AUTH=true
       - XZEPR__AUTH__ENABLE_OIDC=false
 
@@ -35,6 +38,8 @@ services:
     volumes:
       # Mount TLS certificates
       - ./certs:/app/certs:ro
+      # Mount JWT signing keys
+      - ./keys:/etc/xzepr/keys:ro
       # Mount configuration overrides
       - ./config:/app/config:ro
       # Application logs

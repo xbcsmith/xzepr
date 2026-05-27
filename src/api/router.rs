@@ -211,7 +211,9 @@ where
             crate::api::middleware::rate_limit::rate_limit_middleware,
         ));
 
-    // Local auth routes (always registered; handlers enforce local-auth-enabled at runtime)
+    // Local login is always registered and rejects in the handler when disabled.
+    // Refresh stays available for application JWT refresh tokens, including tokens
+    // issued after OIDC callbacks.
     let public_auth_routes = Router::new()
         .route("/api/v1/auth/login", post(login::<R>))
         .route("/api/v1/auth/refresh", post(refresh_token::<R>))
@@ -270,17 +272,31 @@ where
         crate::api::middleware::rate_limit::rate_limit_middleware,
     ));
 
-    let protected_graphql_routes = Router::new()
-        .route("/graphql", post(graphql_handler))
-        .with_state(schema)
-        .layer(middleware::from_fn_with_state(
-            rate_limiter.clone(),
-            crate::api::middleware::rate_limit::rate_limit_middleware,
-        ))
-        .layer(middleware::from_fn_with_state(
-            jwt_state.clone(),
-            jwt_auth_middleware,
-        ));
+    let protected_graphql_routes = {
+        let base = Router::new()
+            .route("/graphql", post(graphql_handler))
+            .with_state(schema)
+            .layer(middleware::from_fn_with_state(
+                rate_limiter.clone(),
+                crate::api::middleware::rate_limit::rate_limit_middleware,
+            ));
+
+        if let Some(ref opa) = opa_state {
+            base.layer(middleware::from_fn_with_state(
+                opa.clone(),
+                opa_authorize_middleware,
+            ))
+            .layer(middleware::from_fn_with_state(
+                jwt_state.clone(),
+                jwt_auth_middleware,
+            ))
+        } else {
+            base.layer(middleware::from_fn_with_state(
+                jwt_state.clone(),
+                jwt_auth_middleware,
+            ))
+        }
+    };
 
     let protected_group_membership_routes = {
         let base = Router::new()
@@ -511,8 +527,8 @@ async fn metrics_handler(config: State<Arc<PrometheusMetrics>>) -> String {
 
 /// Handler for OIDC endpoints when OIDC is not enabled.
 ///
-/// Returns HTTP 501 Not Implemented to clearly communicate that the feature
-/// is intentionally disabled, rather than letting callers infer partial behavior
+/// Returns HTTP 501 to clearly communicate that the feature is intentionally
+/// disabled, rather than letting callers infer partial behavior
 /// from a 404 or a configuration error.
 async fn oidc_not_enabled<R: UserRepository>(
     State(_auth_state): State<AuthState<R>>,

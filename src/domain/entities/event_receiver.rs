@@ -299,7 +299,6 @@ impl EventReceiver {
 
     /// Validates an event payload against this receiver's schema
     pub fn validate_event_payload(&self, payload: &JsonValue) -> Result<(), DomainError> {
-        // Basic validation - in a real implementation, you'd use a proper JSON schema validator
         if !payload.is_object() {
             return Err(DomainError::ValidationError {
                 field: "payload".to_string(),
@@ -307,7 +306,6 @@ impl EventReceiver {
             });
         }
 
-        // Additional schema validation could be implemented here
         Ok(())
     }
 

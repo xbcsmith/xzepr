@@ -158,7 +158,7 @@ pub async fn graphql_health() -> (StatusCode, Json<serde_json::Value>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::graphql::create_schema;
+    use crate::api::graphql::schema::create_schema;
     use crate::application::handlers::{
         EventHandler, EventReceiverGroupHandler, EventReceiverHandler,
     };

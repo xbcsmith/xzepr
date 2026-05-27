@@ -55,6 +55,10 @@ pub enum AuthError {
     #[error("Internal server error: {0}")]
     Internal(String),
 
+    /// Local username/password authentication is not enabled in the current configuration.
+    #[error("Local authentication is not enabled")]
+    LocalAuthDisabled,
+
     /// OIDC authentication is not enabled in the current configuration.
     #[error("OIDC authentication is not enabled")]
     OidcDisabled,
@@ -111,6 +115,10 @@ impl IntoResponse for AuthError {
                     "Internal server error".to_string(),
                 )
             }
+            AuthError::LocalAuthDisabled => (
+                StatusCode::FORBIDDEN,
+                "Local authentication is not enabled".to_string(),
+            ),
             AuthError::OidcDisabled => (
                 StatusCode::NOT_IMPLEMENTED,
                 "OIDC authentication is not enabled".to_string(),
@@ -193,12 +201,16 @@ pub struct RefreshRequest {
 pub struct OidcLoginQuery {
     /// Optional redirect URL after successful authentication
     pub redirect_to: Option<String>,
+    /// Optional stable login hint used for pending-session limit keys.
+    pub login_hint: Option<String>,
 }
 
 /// Authentication service state
 pub struct AuthState<R: UserRepository> {
     /// JWT service for token operations
     pub jwt_service: Arc<JwtService>,
+    /// Whether local username/password authentication is enabled.
+    pub enable_local_auth: bool,
     /// OIDC client (optional)
     pub oidc_client: Option<Arc<OidcClient>>,
     /// OIDC callback handler (optional)
@@ -230,6 +242,7 @@ impl<R: UserRepository> AuthState<R> {
     ) -> Self {
         Self {
             jwt_service,
+            enable_local_auth: true,
             oidc_client,
             oidc_callback_handler,
             session_store: Arc::new(NullOidcSessionStore),
@@ -265,6 +278,7 @@ impl<R: UserRepository> AuthState<R> {
     ) -> Self {
         Self {
             jwt_service,
+            enable_local_auth: true,
             oidc_client: Some(oidc_client),
             oidc_callback_handler: Some(oidc_callback_handler),
             session_store,
@@ -273,12 +287,26 @@ impl<R: UserRepository> AuthState<R> {
             oidc_session_ttl,
         }
     }
+
+    /// Return this state with local username/password authentication toggled.
+    ///
+    /// This keeps constructor signatures stable while allowing runtime settings
+    /// to control whether `/api/v1/auth/login` accepts local credentials.
+    ///
+    /// # Arguments
+    ///
+    /// * `enable_local_auth` - Whether local username/password login is enabled
+    pub fn with_local_auth_enabled(mut self, enable_local_auth: bool) -> Self {
+        self.enable_local_auth = enable_local_auth;
+        self
+    }
 }
 
 impl<R: UserRepository> Clone for AuthState<R> {
     fn clone(&self) -> Self {
         Self {
             jwt_service: Arc::clone(&self.jwt_service),
+            enable_local_auth: self.enable_local_auth,
             oidc_client: self.oidc_client.as_ref().map(Arc::clone),
             oidc_callback_handler: self.oidc_callback_handler.as_ref().map(Arc::clone),
             session_store: Arc::clone(&self.session_store),
@@ -305,6 +333,10 @@ pub async fn login<R: UserRepository>(
     State(auth_state): State<AuthState<R>>,
     Json(request): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, AuthError> {
+    if !auth_state.enable_local_auth {
+        return Err(AuthError::LocalAuthDisabled);
+    }
+
     let user = auth_state
         .provisioning_service
         .user_repository()
@@ -383,6 +415,7 @@ pub async fn oidc_login<R: UserRepository>(
         pkce_verifier: auth_request.pkce_verifier.clone(),
         nonce: auth_request.nonce.clone(),
         redirect_to: query.redirect_to,
+        session_principal: query.login_hint,
     };
 
     auth_state
@@ -606,6 +639,100 @@ fn permission_to_string(permission: &crate::auth::rbac::Permission) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::auth::jwt::{Algorithm, JwtConfig, JwtService};
+    use crate::auth::provisioning::UserProvisioningService;
+    use crate::domain::entities::user::{AuthProvider, User};
+    use crate::domain::repositories::user_repo::UserRepository;
+    use crate::domain::value_objects::UserId;
+    use crate::error::DomainError;
+    use async_trait::async_trait;
+
+    struct NoopRepo;
+
+    #[async_trait]
+    impl UserRepository for NoopRepo {
+        async fn find_by_id(&self, _: &UserId) -> Result<Option<User>, DomainError> {
+            Ok(None)
+        }
+
+        async fn find_by_username(&self, _: &str) -> Result<Option<User>, DomainError> {
+            Ok(None)
+        }
+
+        async fn find_by_email(&self, _: &str) -> Result<Option<User>, DomainError> {
+            Ok(None)
+        }
+
+        async fn find_by_oidc_subject(&self, _: &str) -> Result<Option<User>, DomainError> {
+            Ok(None)
+        }
+
+        async fn create(&self, u: User) -> Result<User, DomainError> {
+            Ok(u)
+        }
+
+        async fn update(&self, u: User) -> Result<User, DomainError> {
+            Ok(u)
+        }
+
+        async fn delete(&self, _: &UserId) -> Result<(), DomainError> {
+            Ok(())
+        }
+
+        async fn username_exists(&self, _: &str) -> Result<bool, DomainError> {
+            Ok(false)
+        }
+
+        async fn email_exists(&self, _: &str) -> Result<bool, DomainError> {
+            Ok(false)
+        }
+
+        async fn create_or_update_oidc_user(
+            &self,
+            _: String,
+            _: String,
+            _: Option<String>,
+            _: Option<String>,
+        ) -> Result<User, DomainError> {
+            Err(DomainError::InvalidData(
+                "OIDC user upsert is unsupported in this unit test repository".to_string(),
+            ))
+        }
+
+        async fn list(&self, _: i64, _: i64) -> Result<Vec<User>, DomainError> {
+            Ok(vec![])
+        }
+
+        async fn count(&self) -> Result<i64, DomainError> {
+            Ok(0)
+        }
+
+        async fn find_by_provider(&self, _: &AuthProvider) -> Result<Vec<User>, DomainError> {
+            Ok(vec![])
+        }
+    }
+
+    fn auth_state_for_test(enable_local_auth: bool) -> AuthState<NoopRepo> {
+        let jwt_service = Arc::new(
+            JwtService::from_config(JwtConfig {
+                access_token_expiration_seconds: 900,
+                refresh_token_expiration_seconds: 604800,
+                issuer: "test".to_string(),
+                audience: "test".to_string(),
+                algorithm: Algorithm::HS256,
+                private_key_path: None,
+                public_key_path: None,
+                secret_key: Some("test-secret-at-least-32-characters-long-ok".to_string()),
+                enable_token_rotation: false,
+                leeway_seconds: 60,
+            })
+            // SAFETY: HS256 with a non-empty secret key is always valid
+            .unwrap(),
+        );
+        let provisioning = Arc::new(UserProvisioningService::new(Arc::new(NoopRepo)));
+        AuthState::new(jwt_service, None, None, provisioning)
+            .with_local_auth_enabled(enable_local_auth)
+    }
 
     #[test]
     fn test_error_response_new() {
@@ -660,6 +787,13 @@ mod tests {
         let error = AuthError::OidcDisabled;
         let response = error.into_response();
         assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+    }
+
+    #[test]
+    fn test_auth_error_local_auth_disabled_returns_403() {
+        let error = AuthError::LocalAuthDisabled;
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
     #[test]
@@ -751,6 +885,10 @@ mod tests {
             AuthError::OidcDisabled.to_string(),
             "OIDC authentication is not enabled"
         );
+        assert_eq!(
+            AuthError::LocalAuthDisabled.to_string(),
+            "Local authentication is not enabled"
+        );
         assert_eq!(AuthError::SessionMissing.to_string(), "Session not found");
         assert_eq!(AuthError::SessionExpired.to_string(), "Session has expired");
         assert!(AuthError::InvalidRedirectTarget("http://x.com".to_string())
@@ -766,89 +904,54 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_login_with_local_auth_disabled_returns_stable_sanitized_error() {
+        let state = auth_state_for_test(false);
+        let request = LoginRequest {
+            username: "disabled_user".to_string(),
+            password: "super-secret-password".to_string(),
+        };
+
+        let result = login(State(state), Json(request)).await;
+        let Err(error) = result else {
+            unreachable!("local login must reject when local authentication is disabled");
+        };
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        // SAFETY: usize::MAX is the upper bound; the response body is a small JSON blob.
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body collection must succeed");
+        let body: ErrorResponse =
+            serde_json::from_slice(&bytes).expect("auth error response should be valid JSON");
+        assert_eq!(body.error, "auth_error");
+        assert_eq!(body.message, "Local authentication is not enabled");
+
+        let body_text = String::from_utf8_lossy(&bytes);
+        assert!(!body_text.contains("disabled_user"));
+        assert!(!body_text.contains("super-secret-password"));
+    }
+
+    #[tokio::test]
+    async fn test_refresh_with_local_auth_disabled_uses_refresh_token_validation() {
+        let state = auth_state_for_test(false);
+        let request = RefreshRequest {
+            refresh_token: "not-a-valid-refresh-token".to_string(),
+        };
+
+        let result = refresh_token(State(state), Json(request)).await;
+        assert!(matches!(result, Err(AuthError::Jwt(_))));
+    }
+
     #[test]
     fn test_auth_state_new_uses_null_session_store() {
         // Verify the default constructor creates a valid state without panicking.
         // The NullOidcSessionStore is used when OIDC is not configured.
         // We only test that construction succeeds; runtime behavior is tested
         // in handler-level tests.
-        use crate::auth::jwt::{Algorithm, JwtConfig, JwtService};
-        use crate::auth::provisioning::UserProvisioningService;
-        use crate::domain::entities::user::{AuthProvider, User};
-        use crate::domain::repositories::user_repo::UserRepository;
-        use crate::domain::value_objects::UserId;
-        use crate::error::DomainError;
-        use async_trait::async_trait;
-
-        struct NoopRepo;
-
-        #[async_trait]
-        impl UserRepository for NoopRepo {
-            async fn find_by_id(&self, _: &UserId) -> Result<Option<User>, DomainError> {
-                Ok(None)
-            }
-            async fn find_by_username(&self, _: &str) -> Result<Option<User>, DomainError> {
-                Ok(None)
-            }
-            async fn find_by_email(&self, _: &str) -> Result<Option<User>, DomainError> {
-                Ok(None)
-            }
-            async fn find_by_oidc_subject(&self, _: &str) -> Result<Option<User>, DomainError> {
-                Ok(None)
-            }
-            async fn create(&self, u: User) -> Result<User, DomainError> {
-                Ok(u)
-            }
-            async fn update(&self, u: User) -> Result<User, DomainError> {
-                Ok(u)
-            }
-            async fn delete(&self, _: &UserId) -> Result<(), DomainError> {
-                Ok(())
-            }
-            async fn username_exists(&self, _: &str) -> Result<bool, DomainError> {
-                Ok(false)
-            }
-            async fn email_exists(&self, _: &str) -> Result<bool, DomainError> {
-                Ok(false)
-            }
-            async fn create_or_update_oidc_user(
-                &self,
-                _: String,
-                _: String,
-                _: Option<String>,
-                _: Option<String>,
-            ) -> Result<User, DomainError> {
-                Err(DomainError::InvalidData("not implemented".to_string()))
-            }
-            async fn list(&self, _: i64, _: i64) -> Result<Vec<User>, DomainError> {
-                Ok(vec![])
-            }
-            async fn count(&self) -> Result<i64, DomainError> {
-                Ok(0)
-            }
-            async fn find_by_provider(&self, _: &AuthProvider) -> Result<Vec<User>, DomainError> {
-                Ok(vec![])
-            }
-        }
-
-        let jwt_service = Arc::new(
-            JwtService::from_config(JwtConfig {
-                access_token_expiration_seconds: 900,
-                refresh_token_expiration_seconds: 604800,
-                issuer: "test".to_string(),
-                audience: "test".to_string(),
-                algorithm: Algorithm::HS256,
-                private_key_path: None,
-                public_key_path: None,
-                secret_key: Some("test-secret-at-least-32-characters-long-ok".to_string()),
-                enable_token_rotation: false,
-                leeway_seconds: 60,
-            })
-            // SAFETY: HS256 with a non-empty secret key is always valid
-            .unwrap(),
-        );
-        let provisioning = Arc::new(UserProvisioningService::new(Arc::new(NoopRepo)));
-        let state = AuthState::new(jwt_service, None, None, provisioning);
+        let state = auth_state_for_test(true);
+        assert!(state.enable_local_auth);
         assert!(state.oidc_client.is_none());
         assert!(state.oidc_allowed_redirect_hosts.is_empty());
     }

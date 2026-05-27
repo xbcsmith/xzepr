@@ -3,6 +3,8 @@
 
 // src/infrastructure/database/postgres_event_repo.rs
 
+use super::repo_helpers::classify_sqlx_error;
+
 use crate::domain::entities::event::{DatabaseEventFields, Event};
 use crate::domain::repositories::event_repo::{EventRepository, FindEventCriteria};
 use crate::domain::value_objects::{EventId, EventReceiverId};
@@ -836,32 +838,6 @@ impl EventRepository for PostgresEventRepository {
 
         Ok(result)
     }
-}
-
-/// Maps a [`sqlx::Error`] to the most specific application error available.
-///
-/// If the error is a unique or foreign-key constraint violation, it is mapped
-/// to [`crate::error::RepositoryError::ConstraintViolation`] so that callers
-/// can distinguish conflict responses from generic database failures.
-/// All other errors fall through to [`crate::error::Error::Database`].
-fn classify_sqlx_error(e: sqlx::Error) -> crate::error::Error {
-    if let sqlx::Error::Database(ref db_err) = e {
-        if db_err.is_unique_violation() {
-            return crate::error::Error::Repository(
-                crate::error::RepositoryError::ConstraintViolation {
-                    constraint: db_err.constraint().unwrap_or("unique").to_string(),
-                },
-            );
-        }
-        if db_err.is_foreign_key_violation() {
-            return crate::error::Error::Repository(
-                crate::error::RepositoryError::ConstraintViolation {
-                    constraint: db_err.constraint().unwrap_or("foreign_key").to_string(),
-                },
-            );
-        }
-    }
-    crate::error::Error::Database(e)
 }
 
 #[cfg(test)]

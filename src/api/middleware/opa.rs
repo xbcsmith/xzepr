@@ -322,9 +322,7 @@ pub async fn opa_authorize_middleware(
             outcome = %outcome.as_metric_label(),
             "Authorization denied"
         );
-        Err(AuthorizationError::Forbidden {
-            reason: "Access denied".to_string(),
-        })
+        Err(AuthorizationError::Forbidden)
     }
 }
 
@@ -432,20 +430,14 @@ async fn build_resource_context_for_path(
     };
 
     builder.build_context(id).await.map_err(|e| match e {
-        ResourceContextError::NotFound { .. } => AuthorizationError::Forbidden {
-            reason: "Resource not found".to_string(),
-        },
-        ResourceContextError::InvalidId { .. } => AuthorizationError::Forbidden {
-            reason: "Invalid resource identifier".to_string(),
-        },
-        ResourceContextError::RepositoryFailure(msg) => {
+        ResourceContextError::NotFound { .. } => AuthorizationError::ResourceNotFound,
+        ResourceContextError::InvalidId { .. } => AuthorizationError::InvalidResourceIdentifier,
+        ResourceContextError::RepositoryFailure { source } => {
             error!(
-                error = %msg,
+                error = %source,
                 "Repository failure building OPA resource context"
             );
-            AuthorizationError::InternalError {
-                message: "Authorization context unavailable".to_string(),
-            }
+            AuthorizationError::InternalError
         }
     })
 }
@@ -629,19 +621,31 @@ async fn log_authorization_decision(
 /// - `InternalError` maps to `500 Internal Server Error`.
 #[derive(Debug)]
 pub enum AuthorizationError {
-    /// Access forbidden by policy, resource not found, or malformed ID.
-    Forbidden { reason: String },
+    /// Access forbidden by policy.
+    Forbidden,
+    /// The requested resource was not found.
+    ResourceNotFound,
+    /// The requested resource identifier was malformed.
+    InvalidResourceIdentifier,
     /// Internal error during authorization (e.g., repository failure).
-    InternalError { message: String },
+    InternalError,
 }
 
 impl IntoResponse for AuthorizationError {
     fn into_response(self) -> Response {
         let (status, message) = match self {
-            AuthorizationError::Forbidden { reason } => (StatusCode::FORBIDDEN, reason),
-            AuthorizationError::InternalError { message } => {
-                (StatusCode::INTERNAL_SERVER_ERROR, message)
+            AuthorizationError::Forbidden => (StatusCode::FORBIDDEN, "Access denied".to_string()),
+            AuthorizationError::ResourceNotFound => {
+                (StatusCode::FORBIDDEN, "Resource not found".to_string())
             }
+            AuthorizationError::InvalidResourceIdentifier => (
+                StatusCode::FORBIDDEN,
+                "Invalid resource identifier".to_string(),
+            ),
+            AuthorizationError::InternalError => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Authorization context unavailable".to_string(),
+            ),
         };
 
         let body = serde_json::json!({
@@ -656,10 +660,12 @@ impl IntoResponse for AuthorizationError {
 impl std::fmt::Display for AuthorizationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AuthorizationError::Forbidden { reason } => write!(f, "Forbidden: {}", reason),
-            AuthorizationError::InternalError { message } => {
-                write!(f, "Internal error: {}", message)
+            AuthorizationError::Forbidden => write!(f, "Forbidden"),
+            AuthorizationError::ResourceNotFound => write!(f, "Resource not found"),
+            AuthorizationError::InvalidResourceIdentifier => {
+                write!(f, "Invalid resource identifier")
             }
+            AuthorizationError::InternalError => write!(f, "Internal authorization error"),
         }
     }
 }

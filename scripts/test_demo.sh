@@ -150,10 +150,10 @@ run_demo() {
     receiver_id=$(extract_id "$receiver_response")
 
     if [ -n "$receiver_id" ]; then
-        print_status "✓ Event receiver created with ID: $receiver_id"
+        print_status "OK: Event receiver created with ID: $receiver_id"
         echo "Response: $receiver_response" | jq .
     else
-        print_error "✗ Failed to create event receiver"
+        print_error "ERROR: Failed to create event receiver"
         echo "Response: $receiver_response"
         return 1
     fi
@@ -185,10 +185,10 @@ EOF
     event_id=$(extract_id "$event_response")
 
     if [ -n "$event_id" ]; then
-        print_status "✓ Event created with ID: $event_id"
+        print_status "OK: Event created with ID: $event_id"
         echo "Response: $event_response" | jq .
     else
-        print_error "✗ Failed to create event"
+        print_error "ERROR: Failed to create event"
         echo "Response: $event_response"
         return 1
     fi
@@ -215,10 +215,10 @@ EOF
     group_id=$(extract_id "$group_response")
 
     if [ -n "$group_id" ]; then
-        print_status "✓ Event receiver group created with ID: $group_id"
+        print_status "OK: Event receiver group created with ID: $group_id"
         echo "Response: $group_response" | jq .
     else
-        print_error "✗ Failed to create event receiver group"
+        print_error "ERROR: Failed to create event receiver group"
         echo "Response: $group_response"
         return 1
     fi
@@ -290,7 +290,7 @@ EOF
         new_receiver_id=$(extract_id "$response")
 
         if [ -n "$new_receiver_id" ]; then
-            print_status "✓ Created CDEvents receiver: $name ($new_receiver_id)"
+            print_status "OK: Created CDEvents receiver: $name ($new_receiver_id)"
             created_receivers+=("$new_receiver_id")
 
             # Create a sample event for this receiver
@@ -321,10 +321,10 @@ EOF
             sample_event_id=$(extract_id "$event_response")
 
             if [ -n "$sample_event_id" ]; then
-                print_status "  ✓ Created sample event: $sample_event_id"
+                print_status "  OK: Created sample event: $sample_event_id"
             fi
         else
-            print_warning "✗ Failed to create receiver: $name"
+            print_warning "ERROR: Failed to create receiver: $name"
         fi
     done
     echo
@@ -352,7 +352,7 @@ EOF
         cdevents_group_id=$(extract_id "$cdevents_group_response")
 
         if [ -n "$cdevents_group_id" ]; then
-            print_status "✓ CDEvents group created: $cdevents_group_id"
+            print_status "OK: CDEvents group created: $cdevents_group_id"
             echo "Group contains ${#created_receivers[@]} receivers"
         fi
     fi
@@ -371,11 +371,11 @@ EOF
     echo
 
     print_step "Demo completed successfully!"
-    print_status "✓ Created event receiver: $receiver_id"
-    print_status "✓ Created event: $event_id"
-    print_status "✓ Created event receiver group: $group_id"
-    print_status "✓ Created ${#created_receivers[@]} additional CDEvents receivers"
-    print_status "✓ Total receivers in system: $receiver_count"
+    print_status "OK: Created event receiver: $receiver_id"
+    print_status "OK: Created event: $event_id"
+    print_status "OK: Created event receiver group: $group_id"
+    print_status "OK: Created ${#created_receivers[@]} additional CDEvents receivers"
+    print_status "OK: Total receivers in system: $receiver_count"
     echo
     print_status "All functionality from 03-curl.md and generate_epr_events.py has been demonstrated!"
 }

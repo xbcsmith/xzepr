@@ -12,8 +12,8 @@
 //! - ID token verification
 //! - User provisioning from OIDC claims
 //! - Role mapping from provider-specific claims (e.g., Keycloak realm_access.roles)
-//! - Session storage via [`session_store::OidcSessionStore`] with an
-//!   in-memory implementation and a no-op null implementation
+//! - Session storage via [`session_store::OidcSessionStore`] with in-memory,
+//!   Redis-backed, and no-op implementations
 //!
 //! # Examples
 //!
@@ -91,5 +91,6 @@ pub use callback::{
 pub use client::{AuthorizationRequest, OidcAuthResult, OidcClaims, OidcClient, OidcError};
 pub use config::OidcConfig;
 pub use session_store::{
-    InMemoryOidcSessionStore, NullOidcSessionStore, OidcSessionStore, SessionStoreError,
+    InMemoryOidcSessionStore, NullOidcSessionStore, OidcSessionStore, RedisOidcSessionStore,
+    SessionStoreError,
 };

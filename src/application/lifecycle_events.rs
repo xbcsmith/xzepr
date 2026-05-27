@@ -16,6 +16,7 @@ use crate::domain::entities::event::{CreateEventParams, Event};
 use crate::domain::entities::event_receiver::EventReceiver;
 use crate::domain::entities::event_receiver_group::EventReceiverGroup;
 use crate::domain::value_objects::EventReceiverId;
+use crate::error::DomainError;
 use serde_json::json;
 
 /// Builds the system event that is published when an [`EventReceiver`] is created.
@@ -32,12 +33,34 @@ use serde_json::json;
 ///
 /// A domain [`Event`] representing the receiver-creation lifecycle transition.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics only if [`Event::new`] fails, which cannot happen in practice because
-/// all field values are controlled at compile time and the receiver has already
-/// passed validation during construction.
-pub fn build_receiver_created_event(receiver: &EventReceiver) -> Event {
+/// Returns [`DomainError`] if the generated event fails domain validation.
+///
+/// # Examples
+///
+/// ```
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// use serde_json::json;
+/// use xzepr::application::lifecycle_events::build_receiver_created_event;
+/// use xzepr::domain::entities::event_receiver::EventReceiver;
+/// use xzepr::domain::value_objects::UserId;
+///
+/// let receiver = EventReceiver::new(
+///     "docs-receiver".to_string(),
+///     "webhook".to_string(),
+///     "1.0.0".to_string(),
+///     "Receiver used in lifecycle event documentation".to_string(),
+///     json!({"type": "object"}),
+///     UserId::new(),
+/// )?;
+///
+/// let event = build_receiver_created_event(&receiver)?;
+/// assert_eq!(event.name(), "xzepr.event.receiver.created");
+/// # Ok(())
+/// # }
+/// ```
+pub fn build_receiver_created_event(receiver: &EventReceiver) -> Result<Event, DomainError> {
     let payload = json!({
         "receiver_id": receiver.id().to_string(),
         "name": receiver.name(),
@@ -47,8 +70,6 @@ pub fn build_receiver_created_event(receiver: &EventReceiver) -> Event {
         "description": receiver.description(),
     });
 
-    // SAFETY: All field values are literal strings or receiver attributes that
-    // have already been validated during EventReceiver construction.
     Event::new(CreateEventParams {
         name: "xzepr.event.receiver.created".to_string(),
         version: "1.0.0".to_string(),
@@ -61,7 +82,6 @@ pub fn build_receiver_created_event(receiver: &EventReceiver) -> Event {
         receiver_id: receiver.id(),
         owner_id: receiver.owner_id(),
     })
-    .expect("Failed to create system event for receiver creation")
 }
 
 /// Builds the system event that is published when an [`EventReceiverGroup`] is created.
@@ -77,12 +97,35 @@ pub fn build_receiver_created_event(receiver: &EventReceiver) -> Event {
 ///
 /// A domain [`Event`] representing the group-creation lifecycle transition.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics only if [`Event::new`] fails, which cannot happen in practice because
-/// all field values are controlled at compile time and the group has already
-/// passed validation during construction.
-pub fn build_group_created_event(group: &EventReceiverGroup) -> Event {
+/// Returns [`DomainError`] if the generated event fails domain validation.
+///
+/// # Examples
+///
+/// ```
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// use xzepr::application::lifecycle_events::build_group_created_event;
+/// use xzepr::domain::entities::event_receiver_group::EventReceiverGroup;
+/// use xzepr::domain::value_objects::{EventReceiverId, UserId};
+///
+/// let receiver_id = EventReceiverId::new();
+/// let group = EventReceiverGroup::new(
+///     "docs-group".to_string(),
+///     "webhook_group".to_string(),
+///     "1.0.0".to_string(),
+///     "Group used in lifecycle event documentation".to_string(),
+///     true,
+///     vec![receiver_id],
+///     UserId::new(),
+/// )?;
+///
+/// let event = build_group_created_event(&group)?;
+/// assert_eq!(event.name(), "xzepr.event.receiver.group.created");
+/// # Ok(())
+/// # }
+/// ```
+pub fn build_group_created_event(group: &EventReceiverGroup) -> Result<Event, DomainError> {
     let receiver_ids: Vec<String> = group
         .event_receiver_ids()
         .iter()
@@ -110,8 +153,6 @@ pub fn build_group_created_event(group: &EventReceiverGroup) -> Event {
         .copied()
         .unwrap_or_else(|| EventReceiverId::from(group.id().as_ulid()));
 
-    // SAFETY: All field values are literal strings or group attributes that
-    // have already been validated during EventReceiverGroup construction.
     Event::new(CreateEventParams {
         name: "xzepr.event.receiver.group.created".to_string(),
         version: "1.0.0".to_string(),
@@ -124,7 +165,6 @@ pub fn build_group_created_event(group: &EventReceiverGroup) -> Event {
         receiver_id,
         owner_id: group.owner_id(),
     })
-    .expect("Failed to create system event for group creation")
 }
 
 #[cfg(test)]
@@ -163,28 +203,32 @@ mod tests {
     #[test]
     fn test_build_receiver_created_event_sets_correct_name() {
         let receiver = make_test_receiver();
-        let event = build_receiver_created_event(&receiver);
+        let event = build_receiver_created_event(&receiver)
+            .expect("receiver lifecycle event construction must succeed");
         assert_eq!(event.name(), "xzepr.event.receiver.created");
     }
 
     #[test]
     fn test_build_receiver_created_event_owner_matches_receiver() {
         let receiver = make_test_receiver();
-        let event = build_receiver_created_event(&receiver);
+        let event = build_receiver_created_event(&receiver)
+            .expect("receiver lifecycle event construction must succeed");
         assert_eq!(event.owner_id(), receiver.owner_id());
     }
 
     #[test]
     fn test_build_receiver_created_event_receiver_id_matches() {
         let receiver = make_test_receiver();
-        let event = build_receiver_created_event(&receiver);
+        let event = build_receiver_created_event(&receiver)
+            .expect("receiver lifecycle event construction must succeed");
         assert_eq!(event.event_receiver_id(), receiver.id());
     }
 
     #[test]
     fn test_build_receiver_created_event_payload_contains_fingerprint() {
         let receiver = make_test_receiver();
-        let event = build_receiver_created_event(&receiver);
+        let event = build_receiver_created_event(&receiver)
+            .expect("receiver lifecycle event construction must succeed");
         let payload = event.payload();
         assert!(payload.get("fingerprint").is_some());
     }
@@ -193,7 +237,8 @@ mod tests {
     fn test_build_group_created_event_sets_correct_name() {
         let receiver_id = EventReceiverId::new();
         let group = make_test_group_with_receivers(vec![receiver_id]);
-        let event = build_group_created_event(&group);
+        let event = build_group_created_event(&group)
+            .expect("group lifecycle event construction must succeed");
         assert_eq!(event.name(), "xzepr.event.receiver.group.created");
     }
 
@@ -201,7 +246,8 @@ mod tests {
     fn test_build_group_created_event_owner_matches_group() {
         let receiver_id = EventReceiverId::new();
         let group = make_test_group_with_receivers(vec![receiver_id]);
-        let event = build_group_created_event(&group);
+        let event = build_group_created_event(&group)
+            .expect("group lifecycle event construction must succeed");
         assert_eq!(event.owner_id(), group.owner_id());
     }
 
@@ -209,15 +255,16 @@ mod tests {
     fn test_build_group_created_event_receiver_id_is_first_group_member() {
         let receiver_id = EventReceiverId::new();
         let group = make_test_group_with_receivers(vec![receiver_id]);
-        let event = build_group_created_event(&group);
+        let event = build_group_created_event(&group)
+            .expect("group lifecycle event construction must succeed");
         assert_eq!(event.event_receiver_id(), receiver_id);
     }
 
     #[test]
     fn test_build_group_created_event_empty_group_uses_synthetic_receiver_id() {
         let group = make_test_group_with_receivers(vec![]);
-        // Must not panic; synthetic receiver ID derived from group ID.
-        let event = build_group_created_event(&group);
+        let event = build_group_created_event(&group)
+            .expect("group lifecycle event construction must succeed");
         assert_eq!(event.name(), "xzepr.event.receiver.group.created");
     }
 
@@ -225,7 +272,8 @@ mod tests {
     fn test_build_group_created_event_payload_contains_receiver_count() {
         let receiver_id = EventReceiverId::new();
         let group = make_test_group_with_receivers(vec![receiver_id]);
-        let event = build_group_created_event(&group);
+        let event = build_group_created_event(&group)
+            .expect("group lifecycle event construction must succeed");
         let payload = event.payload();
         assert!(payload.get("receiver_count").is_some());
     }

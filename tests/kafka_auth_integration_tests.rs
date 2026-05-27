@@ -11,29 +11,38 @@
 //! ## Test Execution Notes
 //!
 //! ### Environment Variable Tests
-//! Tests that use environment variables may fail when run in parallel due to
-//! shared process environment. To run these tests reliably, use:
+//! Environment-variable tests serialize access to the process environment so
+//! they can run safely in the default test suite.
 //!
-//! ```bash
-//! cargo test --test kafka_auth_integration_tests -- --test-threads=1
-//! ```
-//!
-//! ### Ignored Integration Tests
-//! Some tests are marked with #[ignore] because they require:
+//! ### Live Integration Tests
+//! Live broker tests are compiled with the `kafka-integration-tests` feature and
+//! require:
 //! - A running Kafka broker with SASL/SCRAM authentication enabled
 //! - rdkafka compiled with libsasl2 or openssl support
 //! - Valid SSL certificates for SSL/TLS tests
 //!
-//! To run ignored tests:
+//! To run live tests:
 //! ```bash
-//! cargo test --test kafka_auth_integration_tests -- --ignored --test-threads=1
+//! XZEPR_RUN_KAFKA_INTEGRATION_TESTS=true \
+//!   cargo test --features kafka-integration-tests --test kafka_auth_integration_tests
 //! ```
 
 use xzepr::infrastructure::messaging::config::{
     KafkaAuthConfig, SaslConfig, SaslMechanism, SecurityProtocol, SslConfig,
 };
+#[cfg(feature = "kafka-integration-tests")]
 use xzepr::infrastructure::messaging::producer::KafkaEventPublisher;
+#[cfg(feature = "kafka-integration-tests")]
 use xzepr::infrastructure::messaging::topics::TopicManager;
+
+static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(feature = "kafka-integration-tests")]
+fn live_kafka_integration_enabled() -> bool {
+    std::env::var("XZEPR_RUN_KAFKA_INTEGRATION_TESTS")
+        .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
 
 // Helper function to create SASL/SCRAM-SHA-256 config
 fn create_scram_sha256_config() -> KafkaAuthConfig {
@@ -227,6 +236,9 @@ fn test_kafka_auth_config_serialization_ssl_only() {
 
 #[test]
 fn test_kafka_auth_config_from_env_none() {
+    let _guard = ENV_MUTEX
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     // Test that from_env returns None when no environment variables are set
     // Note: We cannot reliably test this in a multi-threaded test environment
     // because other tests may set environment variables
@@ -261,8 +273,10 @@ fn test_kafka_auth_config_from_env_none() {
 }
 
 #[test]
-#[ignore = "Environment variable tests may fail when run in parallel; use --test-threads=1"]
 fn test_kafka_auth_config_from_env_scram_sha256() {
+    let _guard = ENV_MUTEX
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     // Test that from_env correctly parses SCRAM-SHA-256 configuration
     // Save original values
     let original_protocol = std::env::var("KAFKA_SECURITY_PROTOCOL").ok();
@@ -307,8 +321,10 @@ fn test_kafka_auth_config_from_env_scram_sha256() {
 }
 
 #[test]
-#[ignore = "Environment variable tests may fail when run in parallel; use --test-threads=1"]
 fn test_kafka_auth_config_from_env_scram_sha512() {
+    let _guard = ENV_MUTEX
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     // Test that from_env correctly parses SCRAM-SHA-512 configuration
     // Save original values
     let original_protocol = std::env::var("KAFKA_SECURITY_PROTOCOL").ok();
@@ -353,8 +369,10 @@ fn test_kafka_auth_config_from_env_scram_sha512() {
 }
 
 #[test]
-#[ignore = "Environment variable tests may fail when run in parallel; use --test-threads=1"]
 fn test_kafka_auth_config_from_env_ssl() {
+    let _guard = ENV_MUTEX
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     // Test that from_env correctly parses SSL configuration
     // Note: This test expects an error because the certificate files don't exist
     // In a real scenario, valid certificate files would be provided
@@ -399,8 +417,11 @@ fn test_kafka_auth_config_from_env_ssl() {
 }
 
 #[test]
-#[ignore = "Requires running Kafka broker with SASL/SCRAM-SHA-256 authentication"]
+#[cfg(feature = "kafka-integration-tests")]
 fn test_producer_connection_with_scram_sha256() {
+    if !live_kafka_integration_enabled() {
+        return;
+    }
     // Integration test: Connect to Kafka with SCRAM-SHA-256
     // This test requires:
     // - A running Kafka broker on localhost:19092
@@ -419,8 +440,11 @@ fn test_producer_connection_with_scram_sha256() {
 }
 
 #[test]
-#[ignore = "Requires running Kafka broker with SASL/SCRAM-SHA-512 authentication"]
+#[cfg(feature = "kafka-integration-tests")]
 fn test_producer_connection_with_scram_sha512() {
+    if !live_kafka_integration_enabled() {
+        return;
+    }
     // Integration test: Connect to Kafka with SCRAM-SHA-512
     // This test requires:
     // - A running Kafka broker on localhost:19092
@@ -439,8 +463,11 @@ fn test_producer_connection_with_scram_sha512() {
 }
 
 #[test]
-#[ignore = "Requires running Kafka broker with SASL/PLAIN authentication"]
+#[cfg(feature = "kafka-integration-tests")]
 fn test_producer_connection_with_sasl_plain() {
+    if !live_kafka_integration_enabled() {
+        return;
+    }
     // Integration test: Connect to Kafka with SASL/PLAIN
     // This test requires:
     // - A running Kafka broker on localhost:19092
@@ -459,8 +486,11 @@ fn test_producer_connection_with_sasl_plain() {
 }
 
 #[test]
-#[ignore = "Requires running Kafka broker with SSL/TLS authentication"]
+#[cfg(feature = "kafka-integration-tests")]
 fn test_producer_connection_with_ssl() {
+    if !live_kafka_integration_enabled() {
+        return;
+    }
     // Integration test: Connect to Kafka with SSL/TLS
     // This test requires:
     // - A running Kafka broker on localhost:19093 with SSL enabled
@@ -477,8 +507,11 @@ fn test_producer_connection_with_ssl() {
 }
 
 #[test]
-#[ignore = "Requires running Kafka broker with SASL/SCRAM-SHA-256 authentication"]
+#[cfg(feature = "kafka-integration-tests")]
 fn test_topic_manager_connection_with_scram_sha256() {
+    if !live_kafka_integration_enabled() {
+        return;
+    }
     // Integration test: Connect TopicManager to Kafka with SCRAM-SHA-256
     // This test requires:
     // - A running Kafka broker on localhost:19092
@@ -496,8 +529,11 @@ fn test_topic_manager_connection_with_scram_sha256() {
 }
 
 #[test]
-#[ignore = "Requires running Kafka broker with SASL/SCRAM-SHA-512 authentication"]
+#[cfg(feature = "kafka-integration-tests")]
 fn test_topic_manager_connection_with_scram_sha512() {
+    if !live_kafka_integration_enabled() {
+        return;
+    }
     // Integration test: Connect TopicManager to Kafka with SCRAM-SHA-512
     // This test requires:
     // - A running Kafka broker on localhost:19092
@@ -515,8 +551,11 @@ fn test_topic_manager_connection_with_scram_sha512() {
 }
 
 #[tokio::test]
-#[ignore = "Requires running Kafka broker with SASL/SCRAM authentication and topic creation permissions"]
+#[cfg(feature = "kafka-integration-tests")]
 async fn test_end_to_end_topic_creation_with_auth() {
+    if !live_kafka_integration_enabled() {
+        return;
+    }
     // End-to-end integration test: Create topic with authentication
     // This test requires:
     // - A running Kafka broker on localhost:19092
@@ -539,8 +578,11 @@ async fn test_end_to_end_topic_creation_with_auth() {
 }
 
 #[tokio::test]
-#[ignore = "Requires running Kafka broker with SASL/SCRAM authentication"]
+#[cfg(feature = "kafka-integration-tests")]
 async fn test_end_to_end_event_publishing_with_auth() {
+    if !live_kafka_integration_enabled() {
+        return;
+    }
     // End-to-end integration test: Publish event with authentication
     // This test requires:
     // - A running Kafka broker on localhost:19092
@@ -584,8 +626,11 @@ async fn test_end_to_end_event_publishing_with_auth() {
 }
 
 #[test]
-#[ignore = "Requires running Kafka broker with invalid credentials to test failure"]
+#[cfg(feature = "kafka-integration-tests")]
 fn test_producer_connection_fails_with_invalid_credentials() {
+    if !live_kafka_integration_enabled() {
+        return;
+    }
     // Integration test: Verify connection fails with invalid credentials
     // This test requires:
     // - A running Kafka broker on localhost:19092

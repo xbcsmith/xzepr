@@ -126,6 +126,35 @@ impl OpaClient {
         })
     }
 
+    /// Checks OPA reachability using the configured health endpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OpaError`] if OPA is disabled, unreachable, or returns a
+    /// non-success status from the health endpoint.
+    pub async fn health_check(&self) -> Result<(), OpaError> {
+        if !self.config.enabled {
+            return Ok(());
+        }
+
+        let url = format!("{}{}", self.config.url, self.config.health_path);
+        let response = self
+            .http_client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| OpaError::RequestFailed(e.to_string()))?;
+
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(OpaError::InvalidResponse(format!(
+                "OPA health endpoint returned status: {}",
+                response.status()
+            )))
+        }
+    }
+
     /// Evaluates a policy with caching
     ///
     /// Checks the cache first, and if not found, queries OPA and caches the result.
@@ -523,6 +552,38 @@ mod tests {
 
         let result = OpaClient::new(config);
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_health_check_disabled_client_returns_ok() {
+        let config = OpaConfig {
+            enabled: false,
+            url: "http://localhost:1".to_string(),
+            timeout_seconds: 1,
+            policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
+            bundle_url: None,
+            cache_ttl_seconds: 300,
+            ..OpaConfig::default()
+        };
+
+        let client = OpaClient::new(config).expect("test config should build client");
+        assert!(client.health_check().await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_health_check_unreachable_server_returns_error() {
+        let config = OpaConfig {
+            enabled: true,
+            url: "http://localhost:1".to_string(),
+            timeout_seconds: 1,
+            policy_path: "/v1/data/xzepr/rbac/allow".to_string(),
+            bundle_url: None,
+            cache_ttl_seconds: 300,
+            ..OpaConfig::default()
+        };
+
+        let client = OpaClient::new(config).expect("test config should build client");
+        assert!(client.health_check().await.is_err());
     }
 
     #[test]

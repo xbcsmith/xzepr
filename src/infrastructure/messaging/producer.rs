@@ -270,7 +270,9 @@ impl EventPublisher for KafkaEventPublisher {
 mod tests {
     use super::*;
     use crate::domain::entities::event::CreateEventParams;
+    #[cfg(feature = "kafka-integration-tests")]
     use crate::domain::entities::event_receiver::EventReceiver;
+    #[cfg(feature = "kafka-integration-tests")]
     use crate::domain::entities::event_receiver_group::EventReceiverGroup;
     use crate::domain::value_objects::{EventReceiverId, UserId};
 
@@ -342,8 +344,13 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Requires rdkafka compiled with libsasl2 or openssl support for SCRAM-SHA-256"]
+    #[cfg(feature = "kafka-integration-tests")]
     fn test_kafka_publisher_with_auth_sasl_scram_sha256() {
+        if !std::env::var("XZEPR_RUN_KAFKA_INTEGRATION_TESTS")
+            .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        {
+            return;
+        }
         // Test with_auth with SASL/SCRAM-SHA-256
         // Note: This test requires rdkafka to be compiled with SASL/SCRAM support
         use crate::infrastructure::messaging::config::{
@@ -368,8 +375,13 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Requires rdkafka compiled with libsasl2 or openssl support for SCRAM-SHA-512"]
+    #[cfg(feature = "kafka-integration-tests")]
     fn test_kafka_publisher_with_auth_sasl_scram_sha512() {
+        if !std::env::var("XZEPR_RUN_KAFKA_INTEGRATION_TESTS")
+            .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        {
+            return;
+        }
         // Test with_auth with SASL/SCRAM-SHA-512
         // Note: This test requires rdkafka to be compiled with SASL/SCRAM support
         use crate::infrastructure::messaging::config::{
@@ -418,8 +430,13 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Requires rdkafka compiled with libsasl2 or openssl support for SCRAM-SHA-256"]
+    #[cfg(feature = "kafka-integration-tests")]
     fn test_kafka_publisher_with_auth_multiple_brokers() {
+        if !std::env::var("XZEPR_RUN_KAFKA_INTEGRATION_TESTS")
+            .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        {
+            return;
+        }
         // Test with_auth with multiple brokers and SASL/SCRAM authentication
         // Note: This test requires rdkafka to be compiled with SASL/SCRAM support
         use crate::infrastructure::messaging::config::{
@@ -457,6 +474,7 @@ mod tests {
     }
 
     /// Helper: build a minimal valid Event for tests.
+    #[cfg(feature = "kafka-integration-tests")]
     fn make_test_event() -> Event {
         let receiver_id = EventReceiverId::new();
         // SAFETY: All inputs are controlled test values; validation cannot fail.
@@ -476,6 +494,7 @@ mod tests {
     }
 
     /// Helper: build a minimal valid EventReceiver for tests.
+    #[cfg(feature = "kafka-integration-tests")]
     fn make_test_receiver() -> EventReceiver {
         // SAFETY: All inputs are controlled test values; validation cannot fail.
         EventReceiver::new(
@@ -490,6 +509,7 @@ mod tests {
     }
 
     /// Helper: build a minimal valid EventReceiverGroup for tests.
+    #[cfg(feature = "kafka-integration-tests")]
     fn make_test_group() -> EventReceiverGroup {
         // SAFETY: All inputs are controlled test values; validation cannot fail.
         EventReceiverGroup::new(
@@ -516,8 +536,13 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "Requires a running Kafka / Redpanda instance"]
+    #[cfg(feature = "kafka-integration-tests")]
     async fn test_event_publisher_publish_delegates_to_kafka() {
+        if !std::env::var("XZEPR_RUN_KAFKA_INTEGRATION_TESTS")
+            .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        {
+            return;
+        }
         // SAFETY: test is ignored without a live broker.
         let publisher = KafkaEventPublisher::new("localhost:9092", "test-topic").unwrap();
         let event = make_test_event();
@@ -526,8 +551,13 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "Requires a running Kafka / Redpanda instance"]
+    #[cfg(feature = "kafka-integration-tests")]
     async fn test_event_publisher_publish_with_receiver() {
+        if !std::env::var("XZEPR_RUN_KAFKA_INTEGRATION_TESTS")
+            .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        {
+            return;
+        }
         // SAFETY: test is ignored without a live broker.
         let publisher = KafkaEventPublisher::new("localhost:9092", "test-topic").unwrap();
         let event = make_test_event();
@@ -537,8 +567,13 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "Requires a running Kafka / Redpanda instance"]
+    #[cfg(feature = "kafka-integration-tests")]
     async fn test_event_publisher_publish_with_group() {
+        if !std::env::var("XZEPR_RUN_KAFKA_INTEGRATION_TESTS")
+            .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        {
+            return;
+        }
         // SAFETY: test is ignored without a live broker.
         let publisher = KafkaEventPublisher::new("localhost:9092", "test-topic").unwrap();
         let event = make_test_event();

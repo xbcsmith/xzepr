@@ -22,8 +22,8 @@ first.
 
 Development-specific settings optimized for local development:
 
-- Longer JWT expiration for convenience
 - Local host binding
+- HS256 JWT signing with `auth.jwt.secret_key` for local-only use
 - Development secrets (not for production!)
 
 ### production.yaml
@@ -43,10 +43,19 @@ database:
   url: "postgres://..." # PostgreSQL connection string
 
 auth:
-  jwt_secret: "..." # JWT signing secret (32+ chars)
-  jwt_expiration_hours: 24 # JWT token lifetime
   enable_local_auth: true # Enable username/password auth
   enable_oidc: true # Enable Keycloak OIDC
+  jwt:
+    access_token_expiration_seconds: 900 # Access token lifetime
+    refresh_token_expiration_seconds: 604800 # Refresh token lifetime
+    issuer: "xzepr" # Token issuer
+    audience: "xzepr-api" # Token audience
+    algorithm: "RS256" # Production signing algorithm
+    private_key_path: "/etc/xzepr/keys/jwt_rsa" # RS256 private key
+    public_key_path: "/etc/xzepr/keys/jwt_rsa.pub" # RS256 public key
+    secret_key: null # HS256 local-only signing secret
+    enable_token_rotation: true # Rotate refresh tokens
+    leeway_seconds: 60 # Clock skew allowance
   keycloak:
     issuer_url: "..." # Keycloak realm URL
     client_id: "..." # OAuth2 client ID
@@ -69,7 +78,10 @@ Override any configuration value using environment variables with the prefix
 ```bash
 # Format: XZEPR__SECTION__SUBSECTION__KEY=value
 export XZEPR__DATABASE__URL="postgres://user:pass@host:5432/db"
-export XZEPR__AUTH__JWT_SECRET="my-super-secret-key-at-least-32-chars"
+export XZEPR__AUTH__JWT__ALGORITHM="RS256"
+export XZEPR__AUTH__JWT__PRIVATE_KEY_PATH="/etc/xzepr/keys/jwt_rsa"
+export XZEPR__AUTH__JWT__PUBLIC_KEY_PATH="/etc/xzepr/keys/jwt_rsa.pub"
+export XZEPR__AUTH__JWT__ACCESS_TOKEN_EXPIRATION_SECONDS="900"
 export XZEPR__SERVER__PORT="9443"
 
 # Nested sections use double underscores
@@ -108,8 +120,10 @@ RUST_ENV=development cargo run --bin xzepr
 # Set environment
 export RUST_ENV=production
 
-# Override sensitive values
-export XZEPR__AUTH__JWT_SECRET="$(openssl rand -base64 32)"
+# Override sensitive values and signing key locations
+export XZEPR__AUTH__JWT__ALGORITHM="RS256"
+export XZEPR__AUTH__JWT__PRIVATE_KEY_PATH="/etc/xzepr/keys/jwt_rsa"
+export XZEPR__AUTH__JWT__PUBLIC_KEY_PATH="/etc/xzepr/keys/jwt_rsa.pub"
 export XZEPR__DATABASE__URL="postgres://xzepr:$DB_PASSWORD@postgres:5432/xzepr"
 export XZEPR__AUTH__KEYCLOAK__CLIENT_SECRET="$KEYCLOAK_SECRET"
 
@@ -131,13 +145,16 @@ RUST_ENV=production make admin ARGS="list-users"
 
 ## Security Best Practices
 
-### JWT Secret
+### JWT Signing Material
 
-- **Minimum length**: 32 characters
-- **Complexity**: Use cryptographically random strings
-- **Generation**: `openssl rand -base64 32`
-- **Storage**: Store in environment variables or secrets manager, never in
-  config files
+- **Production algorithm**: Use `auth.jwt.algorithm: "RS256"` with separate
+  `auth.jwt.private_key_path` and `auth.jwt.public_key_path` values
+- **Local-only algorithm**: Use `auth.jwt.secret_key` only with `HS256` for
+  development or tests
+- **Key generation**: Generate RSA keys with your platform key management tool
+  or secrets manager workflow
+- **Storage**: Store signing keys in a secrets manager or mounted secret volume,
+  never directly in committed configuration files
 
 ### Database Credentials
 
@@ -167,15 +184,15 @@ required values are missing or invalid.
 
 Common validation errors:
 
-```
-Error: missing field `jwt_secret`
-→ Set XZEPR__AUTH__JWT_SECRET environment variable
+```text
+Error: missing JWT signing material for RS256
+-> Set XZEPR__AUTH__JWT__PRIVATE_KEY_PATH and XZEPR__AUTH__JWT__PUBLIC_KEY_PATH
 
 Error: invalid database URL
-→ Check XZEPR__DATABASE__URL format
+-> Check XZEPR__DATABASE__URL format
 
 Error: TLS certificate not found
-→ Generate certs: make certs-generate
+-> Generate certs: make certs-generate
 ```
 
 ## Development Setup
@@ -212,14 +229,18 @@ When running in Docker, configuration can be provided via:
 
    ```yaml
    environment:
-     - XZEPR__AUTH__JWT_SECRET=${JWT_SECRET}
+     - XZEPR__AUTH__JWT__ALGORITHM=RS256
+     - XZEPR__AUTH__JWT__PRIVATE_KEY_PATH=/run/secrets/jwt_private_key
+     - XZEPR__AUTH__JWT__PUBLIC_KEY_PATH=/run/secrets/jwt_public_key
      - XZEPR__DATABASE__URL=${DATABASE_URL}
    ```
 
 3. **Docker secrets** (recommended for production):
+
    ```yaml
    secrets:
-     - jwt_secret
+     - jwt_private_key
+     - jwt_public_key
      - db_password
    ```
 
@@ -227,7 +248,7 @@ When running in Docker, configuration can be provided via:
 
 ### Missing configuration file
 
-```
+```text
 Error: configuration file not found
 ```
 
@@ -235,7 +256,7 @@ Error: configuration file not found
 
 ### Invalid YAML syntax
 
-```
+```text
 Error: while parsing a flow mapping
 ```
 

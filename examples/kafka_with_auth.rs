@@ -71,22 +71,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Example 1: Load configuration from environment variables
     println!("Example 1: Loading authentication from environment variables");
     match load_from_environment().await {
-        Ok(_) => println!("✓ Environment variable configuration successful\n"),
-        Err(e) => println!("✗ Environment variable configuration failed: {}\n", e),
+        Ok(_) => println!("OK: Environment variable configuration successful\n"),
+        Err(e) => println!("ERROR: Environment variable configuration failed: {}\n", e),
     }
 
     // Example 2: Create publisher with SCRAM-SHA-256 and SSL
     println!("Example 2: Creating publisher with SCRAM-SHA-256 + SSL");
     match create_scram_sha256_publisher().await {
-        Ok(_) => println!("✓ SCRAM-SHA-256 publisher created successfully\n"),
-        Err(e) => println!("✗ SCRAM-SHA-256 publisher creation failed: {}\n", e),
+        Ok(_) => println!("OK: SCRAM-SHA-256 publisher created successfully\n"),
+        Err(e) => println!("ERROR: SCRAM-SHA-256 publisher creation failed: {}\n", e),
     }
 
     // Example 3: Create publisher with SCRAM-SHA-512 and SSL
     println!("Example 3: Creating publisher with SCRAM-SHA-512 + SSL");
     match create_scram_sha512_publisher().await {
-        Ok(_) => println!("✓ SCRAM-SHA-512 publisher created successfully\n"),
-        Err(e) => println!("✗ SCRAM-SHA-512 publisher creation failed: {}\n", e),
+        Ok(_) => println!("OK: SCRAM-SHA-512 publisher created successfully\n"),
+        Err(e) => println!("ERROR: SCRAM-SHA-512 publisher creation failed: {}\n", e),
     }
 
     // Example 4: Show configuration summary
@@ -116,9 +116,9 @@ async fn load_from_environment() -> Result<(), Box<dyn std::error::Error>> {
     // Validate configuration if present
     if let Some(ref config) = auth_config {
         config.validate()?;
-        println!("  ✓ Authentication configuration loaded and validated");
+        println!("  OK: Authentication configuration loaded and validated");
     } else {
-        println!("  ⚠ No authentication configured (using PLAINTEXT)");
+        println!("  WARNING: No authentication configured (using PLAINTEXT)");
     }
 
     // Get broker addresses
@@ -131,7 +131,7 @@ async fn load_from_environment() -> Result<(), Box<dyn std::error::Error>> {
     let _publisher =
         KafkaEventPublisher::with_auth(&brokers, "xzepr-events", auth_config.as_ref())?;
 
-    println!("  ✓ Publisher created with environment-based authentication");
+    println!("  OK: Publisher created with environment-based authentication");
 
     Ok(())
 }
@@ -166,7 +166,7 @@ async fn create_scram_sha256_publisher() -> Result<(), Box<dyn std::error::Error
 
     // Validate configuration before using
     if let Err(e) = auth_config.validate() {
-        println!("  ⚠ Configuration validation failed: {}", e);
+        println!("  WARNING: Configuration validation failed: {}", e);
         println!("  (This is expected if certificate files don't exist)");
         return Err(e.into());
     }
@@ -176,9 +176,9 @@ async fn create_scram_sha256_publisher() -> Result<(), Box<dyn std::error::Error
     // Create publisher
     let _publisher = KafkaEventPublisher::with_auth(&brokers, "xzepr-events", Some(&auth_config))?;
 
-    println!("  ✓ Publisher created with SCRAM-SHA-256 authentication");
-    println!("  ✓ SSL/TLS encryption enabled");
-    println!("  ✓ CA certificate: {}", ca_cert);
+    println!("  OK: Publisher created with SCRAM-SHA-256 authentication");
+    println!("  OK: SSL/TLS encryption enabled");
+    println!("  OK: CA certificate: {}", ca_cert);
 
     Ok(())
 }
@@ -202,7 +202,7 @@ async fn create_scram_sha512_publisher() -> Result<(), Box<dyn std::error::Error
 
     // Validate configuration
     if let Err(e) = auth_config.validate() {
-        println!("  ⚠ Configuration validation failed: {}", e);
+        println!("  WARNING: Configuration validation failed: {}", e);
         println!("  (This is expected if certificate files don't exist)");
         return Err(e.into());
     }
@@ -212,9 +212,9 @@ async fn create_scram_sha512_publisher() -> Result<(), Box<dyn std::error::Error
     // Create publisher
     let _publisher = KafkaEventPublisher::with_auth(&brokers, "xzepr-events", Some(&auth_config))?;
 
-    println!("  ✓ Publisher created with SCRAM-SHA-512 authentication");
-    println!("  ✓ Using enhanced security mechanism");
-    println!("  ✓ Username: {}", username);
+    println!("  OK: Publisher created with SCRAM-SHA-512 authentication");
+    println!("  OK: Using enhanced security mechanism");
+    println!("  OK: Username: {}", username);
 
     Ok(())
 }

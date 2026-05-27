@@ -7,9 +7,10 @@
 //! Sessions are keyed by the `state` parameter issued during the authorization
 //! request and consumed exactly once during the callback.
 //!
-//! Two implementations are provided:
+//! Three implementations are provided:
 //!
-//! - [`InMemoryOidcSessionStore`]: suitable for single-node deployments.
+//! - [`InMemoryOidcSessionStore`]: suitable for development and single-node deployments.
+//! - [`RedisOidcSessionStore`]: distributed storage suitable for production.
 //! - [`NullOidcSessionStore`]: no-op implementation for OIDC-disabled builds
 //!   and unit tests that do not require real session persistence.
 
@@ -19,6 +20,8 @@ use std::time::{Duration, Instant};
 
 use thiserror::Error;
 use tokio::sync::RwLock;
+
+use redis::AsyncCommands;
 
 use super::callback::OidcSession;
 
@@ -36,6 +39,17 @@ pub enum SessionStoreError {
     /// The store has reached its maximum number of pending sessions.
     #[error("Session store at capacity ({0} pending sessions)")]
     CapacityExceeded(usize),
+
+    /// A principal has reached the configured pending session limit.
+    #[error("Principal '{principal}' has {pending} pending sessions; maximum is {max}")]
+    PrincipalLimitExceeded {
+        /// Principal key used for limit tracking.
+        principal: String,
+        /// Current pending session count for the principal.
+        pending: usize,
+        /// Maximum pending sessions allowed for the principal.
+        max: usize,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -119,6 +133,15 @@ struct StoredSession {
     expires_at: Instant,
 }
 
+fn session_principal(session: &OidcSession) -> String {
+    session
+        .session_principal
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("anonymous")
+        .to_string()
+}
+
 // ---------------------------------------------------------------------------
 // InMemoryOidcSessionStore
 // ---------------------------------------------------------------------------
@@ -148,6 +171,7 @@ struct StoredSession {
 ///     pkce_verifier: None,
 ///     nonce: "mynonce".to_string(),
 ///     redirect_to: None,
+///     session_principal: Some("alice@example.com".to_string()),
 /// };
 /// store.insert("mystate".to_string(), session, Duration::from_secs(60)).await.unwrap();
 /// let result = store.take("mystate").await.unwrap();
@@ -160,6 +184,9 @@ pub struct InMemoryOidcSessionStore {
 
     /// Maximum number of concurrently pending (non-expired) sessions.
     max_pending: usize,
+
+    /// Maximum pending sessions per principal hint.
+    max_pending_per_principal: usize,
 
     /// Default TTL used when callers do not supply their own duration.
     default_ttl: Duration,
@@ -183,9 +210,25 @@ impl InMemoryOidcSessionStore {
     /// assert_eq!(store.max_pending(), 500);
     /// ```
     pub fn new(max_pending: usize, default_ttl: Duration) -> Self {
+        Self::new_with_principal_limit(max_pending, max_pending, default_ttl)
+    }
+
+    /// Create a new in-memory session store with a per-principal limit.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_pending` - Maximum number of concurrently pending sessions
+    /// * `max_pending_per_principal` - Maximum pending sessions per principal hint
+    /// * `default_ttl` - Default TTL for sessions inserted via this store
+    pub fn new_with_principal_limit(
+        max_pending: usize,
+        max_pending_per_principal: usize,
+        default_ttl: Duration,
+    ) -> Self {
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             max_pending,
+            max_pending_per_principal,
             default_ttl,
         }
     }
@@ -286,6 +329,21 @@ impl OidcSessionStore for InMemoryOidcSessionStore {
             if pending >= self.max_pending {
                 return Err(SessionStoreError::CapacityExceeded(pending));
             }
+
+            let principal = session_principal(&session);
+            let principal_pending = sessions
+                .values()
+                .filter(|stored| {
+                    stored.expires_at >= now && session_principal(&stored.session) == principal
+                })
+                .count();
+            if principal_pending >= self.max_pending_per_principal {
+                return Err(SessionStoreError::PrincipalLimitExceeded {
+                    principal,
+                    pending: principal_pending,
+                    max: self.max_pending_per_principal,
+                });
+            }
         }
 
         sessions.insert(
@@ -329,6 +387,154 @@ impl OidcSessionStore for InMemoryOidcSessionStore {
 }
 
 // ---------------------------------------------------------------------------
+// RedisOidcSessionStore
+// ---------------------------------------------------------------------------
+
+/// Redis-backed OIDC session store for multi-instance production deployments.
+///
+/// Session payloads are stored with Redis key TTLs. State consumption uses
+/// `GETDEL`, so callbacks consume state exactly once across all application
+/// instances sharing the same Redis database.
+pub struct RedisOidcSessionStore {
+    /// Redis connection manager.
+    manager: redis::aio::ConnectionManager,
+    /// Prefix for all keys created by this store.
+    key_prefix: String,
+    /// Maximum pending sessions per principal hint.
+    max_pending_per_principal: usize,
+}
+
+impl RedisOidcSessionStore {
+    /// Create a Redis-backed OIDC session store.
+    ///
+    /// # Arguments
+    ///
+    /// * `redis_url` - Redis connection URL
+    /// * `key_prefix` - Prefix for session keys
+    /// * `max_pending_per_principal` - Maximum pending sessions per principal hint
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SessionStoreError::Backend`] if the Redis client or connection
+    /// manager cannot be created.
+    pub async fn new(
+        redis_url: &str,
+        key_prefix: impl Into<String>,
+        max_pending_per_principal: usize,
+    ) -> Result<Self, SessionStoreError> {
+        let client = redis::Client::open(redis_url)
+            .map_err(|e| SessionStoreError::Backend(e.to_string()))?;
+        let manager = client
+            .get_connection_manager()
+            .await
+            .map_err(|e| SessionStoreError::Backend(e.to_string()))?;
+        Ok(Self {
+            manager,
+            key_prefix: key_prefix.into(),
+            max_pending_per_principal,
+        })
+    }
+
+    fn session_key(&self, state: &str) -> String {
+        format!("{}:session:{}", self.key_prefix, state)
+    }
+
+    fn principal_key(&self, principal: &str) -> String {
+        format!("{}:principal:{}", self.key_prefix, principal)
+    }
+}
+
+#[async_trait::async_trait]
+impl OidcSessionStore for RedisOidcSessionStore {
+    async fn insert(
+        &self,
+        state: String,
+        session: OidcSession,
+        ttl: Duration,
+    ) -> Result<(), SessionStoreError> {
+        let principal = session_principal(&session);
+        let mut conn = self.manager.clone();
+        let principal_key = self.principal_key(&principal);
+        let pending: usize = conn
+            .scard(&principal_key)
+            .await
+            .map_err(|e| SessionStoreError::Backend(e.to_string()))?;
+        if pending >= self.max_pending_per_principal {
+            return Err(SessionStoreError::PrincipalLimitExceeded {
+                principal,
+                pending,
+                max: self.max_pending_per_principal,
+            });
+        }
+
+        let payload = serde_json::to_string(&session)
+            .map_err(|e| SessionStoreError::Backend(e.to_string()))?;
+        let session_key = self.session_key(&state);
+        let ttl_seconds = ttl.as_secs().max(1);
+
+        let _: () = redis::pipe()
+            .atomic()
+            .cmd("SET")
+            .arg(&session_key)
+            .arg(payload)
+            .arg("EX")
+            .arg(ttl_seconds)
+            .ignore()
+            .cmd("SADD")
+            .arg(&principal_key)
+            .arg(&state)
+            .ignore()
+            .cmd("EXPIRE")
+            .arg(&principal_key)
+            .arg(ttl_seconds)
+            .ignore()
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| SessionStoreError::Backend(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn take(&self, state: &str) -> Result<Option<OidcSession>, SessionStoreError> {
+        let mut conn = self.manager.clone();
+        let session_key = self.session_key(state);
+        let payload: Option<String> = redis::cmd("GETDEL")
+            .arg(&session_key)
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| SessionStoreError::Backend(e.to_string()))?;
+
+        let Some(payload) = payload else {
+            return Ok(None);
+        };
+
+        let session: OidcSession = serde_json::from_str(&payload)
+            .map_err(|e| SessionStoreError::Backend(e.to_string()))?;
+        let principal = session_principal(&session);
+        let _: usize = conn
+            .srem(self.principal_key(&principal), state)
+            .await
+            .map_err(|e| SessionStoreError::Backend(e.to_string()))?;
+
+        Ok(Some(session))
+    }
+
+    async fn cleanup_expired(&self) -> Result<usize, SessionStoreError> {
+        Ok(0)
+    }
+
+    async fn pending_count(&self) -> Result<usize, SessionStoreError> {
+        let mut conn = self.manager.clone();
+        let pattern = format!("{}:session:*", self.key_prefix);
+        let keys: Vec<String> = conn
+            .keys(pattern)
+            .await
+            .map_err(|e| SessionStoreError::Backend(e.to_string()))?;
+        Ok(keys.len())
+    }
+}
+
+// ---------------------------------------------------------------------------
 // NullOidcSessionStore
 // ---------------------------------------------------------------------------
 
@@ -352,6 +558,7 @@ impl OidcSessionStore for InMemoryOidcSessionStore {
 ///     pkce_verifier: None,
 ///     nonce: "n".to_string(),
 ///     redirect_to: None,
+///     session_principal: None,
 /// };
 /// store.insert("s".to_string(), session, Duration::from_secs(60)).await.unwrap();
 /// let result = store.take("s").await.unwrap();
@@ -397,11 +604,16 @@ mod tests {
     // -----------------------------------------------------------------------
 
     fn make_session(state: &str) -> OidcSession {
+        make_session_for_principal(state, "alice@example.com")
+    }
+
+    fn make_session_for_principal(state: &str, principal: &str) -> OidcSession {
         OidcSession {
             state: state.to_string(),
             pkce_verifier: Some("verifier".to_string()),
             nonce: "nonce".to_string(),
             redirect_to: None,
+            session_principal: Some(principal.to_string()),
         }
     }
 
@@ -497,6 +709,65 @@ mod tests {
             matches!(err, SessionStoreError::CapacityExceeded(2)),
             "expected CapacityExceeded(2), got: {err}"
         );
+    }
+
+    #[tokio::test]
+    async fn test_per_principal_limit_returns_error() {
+        let store = Arc::new(InMemoryOidcSessionStore::new_with_principal_limit(
+            10,
+            1,
+            Duration::from_secs(300),
+        ));
+
+        store
+            .insert(
+                "s1".to_string(),
+                make_session_for_principal("s1", "alice@example.com"),
+                Duration::from_secs(60),
+            )
+            .await
+            .expect("first principal session should succeed");
+
+        let err = store
+            .insert(
+                "s2".to_string(),
+                make_session_for_principal("s2", "alice@example.com"),
+                Duration::from_secs(60),
+            )
+            .await
+            .expect_err("second session for same principal must fail");
+
+        assert!(matches!(
+            err,
+            SessionStoreError::PrincipalLimitExceeded { ref principal, pending: 1, max: 1 }
+                if principal == "alice@example.com"
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_per_principal_limit_allows_different_principals() {
+        let store = Arc::new(InMemoryOidcSessionStore::new_with_principal_limit(
+            10,
+            1,
+            Duration::from_secs(300),
+        ));
+
+        store
+            .insert(
+                "s1".to_string(),
+                make_session_for_principal("s1", "alice@example.com"),
+                Duration::from_secs(60),
+            )
+            .await
+            .expect("first principal session should succeed");
+        store
+            .insert(
+                "s2".to_string(),
+                make_session_for_principal("s2", "bob@example.com"),
+                Duration::from_secs(60),
+            )
+            .await
+            .expect("different principal should not consume alice limit");
     }
 
     #[tokio::test]

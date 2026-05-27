@@ -8,7 +8,7 @@
 //! timestamp correctness, role management via direct field access, and
 //! concurrent entity creation.
 //!
-//! Tests that require a live PostgreSQL connection are marked `#[ignore]` and
+//! Tests that require a live PostgreSQL connection are feature-gated and
 //! documented with the prerequisites needed to run them.
 
 mod common;
@@ -315,18 +315,35 @@ fn test_user_builder_pattern() {
     assert!(user.enabled(), "Built user should be enabled");
 }
 
-/// Placeholder test demonstrating how to run database integration tests.
+/// Verifies live PostgreSQL connectivity for database-backed integration tests.
 ///
-/// This test requires a running PostgreSQL instance.
-/// See docs/how-to/integration_test_prerequisites.md for setup instructions.
+/// This test requires a running PostgreSQL instance and a `DATABASE_URL` value.
+/// See `docs/how_to/integration_test_prerequisites.md` for setup instructions.
 ///
-/// Run with: DATABASE_URL=postgres://... cargo test --test database_tests -- --ignored
+/// Run with: `DATABASE_URL=postgres://... cargo test --features database-integration-tests --test database_tests`.
 #[tokio::test]
-#[ignore = "Requires a running PostgreSQL database. See docs/how-to/integration_test_prerequisites.md"]
-async fn test_database_integration_requires_postgres() {
+#[cfg(feature = "database-integration-tests")]
+async fn test_database_integration_connects_to_postgres() -> anyhow::Result<()> {
+    use anyhow::Context;
+
+    let run_live = std::env::var("XZEPR_RUN_DATABASE_INTEGRATION_TESTS")
+        .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    if !run_live {
+        return Ok(());
+    }
+
     let database_url = std::env::var("DATABASE_URL")
-        .expect("DATABASE_URL must be set to run database integration tests");
-    // Actual database integration test would use sqlx::PgPool::connect(&database_url).await
-    // to verify real database operations. See docs/how-to/integration_test_prerequisites.md.
-    assert!(!database_url.is_empty(), "DATABASE_URL must not be empty");
+        .context("DATABASE_URL must be set to run database integration tests")?;
+    let pool = sqlx::PgPool::connect(&database_url)
+        .await
+        .context("failed to connect to PostgreSQL using DATABASE_URL")?;
+
+    let value: i32 = sqlx::query_scalar("SELECT 1")
+        .fetch_one(&pool)
+        .await
+        .context("failed to execute PostgreSQL smoke query")?;
+
+    assert_eq!(value, 1, "PostgreSQL smoke query must return 1");
+    Ok(())
 }

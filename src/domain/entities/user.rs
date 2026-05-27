@@ -12,7 +12,7 @@
 //! The identical functions `hash_password` and `verify_password` also exist in
 //! `crate::auth::local::password`.
 //!
-//! **Decision (Phase 13)**: Retain the domain copies as a documented exception.
+//! **Decision**: Retain the domain copies as a documented exception.
 //! The duplication exists to keep entity construction self-contained without
 //! requiring a dependency on the auth layer.  The long-term path is to accept
 //! a pre-hashed credential at `new_local` construction time and move all
@@ -24,7 +24,7 @@
 //! depend on `crate::auth::rbac`.  This creates a domain-to-auth import that
 //! inverts the intended layering.
 //!
-//! **Decision (Phase 13)**: Retain as a documented exception.  `Role` and
+//! **Decision**: Retain as a documented exception.  `Role` and
 //! `Permission` represent fundamental user identity data and are properly a
 //! domain concept.  The correct long-term fix is to relocate `Role` and
 //! `Permission` to a shared `domain::rbac` module.  That refactoring touches
