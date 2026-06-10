@@ -10,6 +10,8 @@ pub mod group_membership;
 pub mod routes;
 
 pub use auth::{AuthState, LoginRequest, LoginResponse, RefreshRequest};
+use axum::http::StatusCode;
+use axum::response::Json;
 pub use dtos::{
     map_app_error_to_rest_response, AddMemberRequest, CreateEventReceiverGroupRequest,
     CreateEventReceiverGroupResponse, CreateEventReceiverRequest, CreateEventReceiverResponse,
@@ -22,10 +24,6 @@ pub use events::AppState;
 pub use group_membership::{
     add_group_member, list_group_members, remove_group_member, GroupMembershipState,
 };
-pub use routes::build_protected_router;
-
-use axum::http::StatusCode;
-use axum::response::Json;
 
 /// Common result type for REST handlers
 pub type RestResult<T> = Result<T, (StatusCode, Json<ErrorResponse>)>;

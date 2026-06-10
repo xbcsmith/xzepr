@@ -112,6 +112,40 @@ pub enum AuthError {
         /// Internal description for logging (never exposed in HTTP responses).
         message: String,
     },
+
+    /// A SQL constraint was violated during an API key storage operation.
+    ///
+    /// Carries the constraint name for diagnostic logging. Never exposed in
+    /// API responses.
+    #[error("API key constraint violation")]
+    ApiKeyConstraintViolation {
+        /// Name of the constraint that was violated (e.g., `"unique:key_hash"`, `"fk:user_id"`).
+        constraint: String,
+    },
+
+    /// A concurrency conflict occurred during an API key storage operation.
+    #[error("API key concurrency conflict")]
+    ApiKeyConcurrencyConflict,
+
+    /// A database row could not be decoded to an API key field.
+    ///
+    /// Carries the column name and decode detail for diagnostic logging only.
+    #[error("API key row decode error")]
+    ApiKeyRowDecodeError {
+        /// The column that failed to decode.
+        column: String,
+        /// Internal detail for logging (not exposed to API clients).
+        detail: String,
+    },
+
+    /// An ID stored in the API keys table is not a valid ULID.
+    ///
+    /// Carries the parse detail for diagnostic logging only.
+    #[error("Invalid API key ID")]
+    ApiKeyInvalidId {
+        /// Internal detail for logging (not exposed to API clients).
+        detail: String,
+    },
 }
 
 /// Authorization-related errors

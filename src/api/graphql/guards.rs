@@ -15,6 +15,13 @@ use crate::domain::value_objects::UserId;
 ///
 /// Checks if a user is authenticated by looking for Claims in the context
 ///
+/// # Warning
+///
+/// This function checks for [`Claims`] in the GraphQL context. The production
+/// `graphql_handler` injects [`AuthenticatedUser`], not `Claims`. Production
+/// resolvers must call [`require_authenticated_user`] instead; this function is
+/// for test helpers and internal use only.
+///
 /// # Example
 ///
 /// ```ignore
@@ -28,12 +35,19 @@ use crate::domain::value_objects::UserId;
 /// ```
 pub fn require_auth<'a>(ctx: &Context<'a>) -> Result<&'a Claims> {
     ctx.data_opt::<Claims>()
-        .ok_or_else(|| Error::new("Unauthorized: Authentication required"))
+        .ok_or_else(|| error_codes::unauthenticated("Unauthorized: Authentication required"))
 }
 
 /// Role-based access control check
 ///
 /// Ensures that an authenticated user has at least one of the required roles
+///
+/// # Warning
+///
+/// This function checks for [`Claims`] in the GraphQL context. The production
+/// `graphql_handler` injects [`AuthenticatedUser`], not `Claims`. Production
+/// resolvers must call [`require_authenticated_user`] instead; this function is
+/// for test helpers and internal use only.
 ///
 /// # Example
 ///
@@ -62,7 +76,7 @@ pub fn require_roles<'a>(ctx: &Context<'a>, required_roles: &[&str]) -> Result<&
     if has_required_role {
         Ok(claims)
     } else {
-        Err(Error::new(format!(
+        Err(error_codes::forbidden(&format!(
             "Forbidden: Requires one of these roles: {}",
             required_roles.join(", ")
         )))
@@ -72,6 +86,13 @@ pub fn require_roles<'a>(ctx: &Context<'a>, required_roles: &[&str]) -> Result<&
 /// Permission-based access control check
 ///
 /// Ensures that an authenticated user has at least one of the required permissions
+///
+/// # Warning
+///
+/// This function checks for [`Claims`] in the GraphQL context. The production
+/// `graphql_handler` injects [`AuthenticatedUser`], not `Claims`. Production
+/// resolvers must call [`require_authenticated_user`] instead; this function is
+/// for test helpers and internal use only.
 ///
 /// # Example
 ///
@@ -98,7 +119,7 @@ pub fn require_permissions<'a>(
     if has_required_permission {
         Ok(claims)
     } else {
-        Err(Error::new(format!(
+        Err(error_codes::forbidden(&format!(
             "Forbidden: Requires one of these permissions: {}",
             required_permissions.join(", ")
         )))
@@ -538,6 +559,47 @@ mod tests {
         let schema = build_test_schema_with_claims(Some(claims));
         let response = schema.execute("{ eventsWriteField }").await;
         assert!(!response.errors.is_empty(), "expected a permission error");
+    }
+
+    #[tokio::test]
+    async fn test_require_auth_without_claims_returns_unauthenticated_code() {
+        let schema = build_test_schema_with_claims(None);
+        let response = schema.execute("{ protectedField }").await;
+        assert!(
+            !response.errors.is_empty(),
+            "expected an authentication error"
+        );
+        assert_eq!(
+            server_error_code(&response.errors[0]),
+            Some(crate::api::graphql::error_codes::CODE_UNAUTHENTICATED.to_string()),
+            "expected UNAUTHENTICATED extension code from require_auth"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_require_roles_without_required_role_returns_forbidden_code() {
+        let claims = create_test_claims(vec!["user".to_string()], vec![]);
+        let schema = build_test_schema_with_claims(Some(claims));
+        let response = schema.execute("{ adminField }").await;
+        assert!(!response.errors.is_empty(), "expected a role error");
+        assert_eq!(
+            server_error_code(&response.errors[0]),
+            Some(crate::api::graphql::error_codes::CODE_FORBIDDEN.to_string()),
+            "expected FORBIDDEN extension code from require_roles"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_require_permissions_without_required_permission_returns_forbidden_code() {
+        let claims = create_test_claims(vec![], vec![]);
+        let schema = build_test_schema_with_claims(Some(claims));
+        let response = schema.execute("{ eventsWriteField }").await;
+        assert!(!response.errors.is_empty(), "expected a permission error");
+        assert_eq!(
+            server_error_code(&response.errors[0]),
+            Some(crate::api::graphql::error_codes::CODE_FORBIDDEN.to_string()),
+            "expected FORBIDDEN extension code from require_permissions"
+        );
     }
 
     #[tokio::test]

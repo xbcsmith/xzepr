@@ -23,7 +23,7 @@ use thiserror::Error;
 use crate::auth::jwt::service::JwtService;
 use crate::auth::oidc::{
     validate_redirect_to, NullOidcSessionStore, OidcCallbackHandler, OidcCallbackQuery, OidcClient,
-    OidcSession, OidcSessionStore, RedirectValidationError,
+    OidcSession, OidcSessionStore, OidcSessionTakeResult, RedirectValidationError,
 };
 use crate::auth::provisioning::UserProvisioningService;
 use crate::domain::repositories::user_repo::UserRepository;
@@ -35,25 +35,41 @@ pub enum AuthError {
     #[error("Invalid credentials")]
     InvalidCredentials,
 
-    /// OIDC error
-    #[error("OIDC error: {0}")]
-    Oidc(String),
+    /// JWT validation failed. The typed source is preserved for logging.
+    #[error("JWT validation failed")]
+    JwtValidation(crate::auth::jwt::error::JwtError),
 
-    /// JWT error
-    #[error("JWT error: {0}")]
-    Jwt(String),
+    /// JWT token revocation failed.
+    #[error("JWT revocation failed")]
+    JwtRevocationFailed(crate::auth::jwt::error::JwtError),
 
-    /// Session error
-    #[error("Session error: {0}")]
-    Session(String),
+    /// JWT token generation or signing failed.
+    #[error("Token generation failed")]
+    TokenGenerationFailed(crate::auth::jwt::error::JwtError),
 
-    /// Configuration error
-    #[error("Configuration error: {0}")]
-    Config(String),
+    /// The Authorization header is absent.
+    #[error("Missing authorization header")]
+    JwtMissingHeader,
 
-    /// Internal error
-    #[error("Internal server error: {0}")]
-    Internal(String),
+    /// The Authorization header value contains non-UTF-8 bytes.
+    #[error("Invalid authorization header")]
+    JwtInvalidHeader,
+
+    /// The Authorization header does not use the Bearer scheme.
+    #[error("Authorization must use Bearer scheme")]
+    JwtBearerSchemeMissing,
+
+    /// The token subject claim is not a valid user ID. Source is logged at the call site.
+    #[error("Invalid token subject")]
+    JwtInvalidSubject,
+
+    /// An OIDC session-store operation failed.
+    #[error("Session store error")]
+    SessionStoreFailure(crate::auth::oidc::session_store::SessionStoreError),
+
+    /// A user repository operation failed during authentication. Source is logged at the call site.
+    #[error("Repository error during authentication")]
+    RepositoryFailure,
 
     /// Local username/password authentication is not enabled in the current configuration.
     #[error("Local authentication is not enabled")]
@@ -89,27 +105,49 @@ impl IntoResponse for AuthError {
         use tracing::error;
         let (status, message) = match self {
             AuthError::InvalidCredentials => (StatusCode::UNAUTHORIZED, self.to_string()),
-            AuthError::Oidc(ref detail) => {
-                error!(detail = %detail, "OIDC authentication error");
-                (StatusCode::BAD_REQUEST, "Authentication error".to_string())
-            }
-            AuthError::Jwt(ref detail) => {
-                error!(detail = %detail, "JWT processing error");
+            AuthError::JwtValidation(ref e) => {
+                error!(source = %e, "JWT validation failed");
                 (StatusCode::UNAUTHORIZED, "Authentication error".to_string())
             }
-            AuthError::Session(ref detail) => {
-                error!(detail = %detail, "Session error");
-                (StatusCode::BAD_REQUEST, "Session error".to_string())
-            }
-            AuthError::Config(ref detail) => {
-                error!(detail = %detail, "Auth configuration error");
+            AuthError::JwtRevocationFailed(ref e) => {
+                error!(source = %e, "JWT revocation failed");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    "Configuration error".to_string(),
+                    "Internal server error".to_string(),
                 )
             }
-            AuthError::Internal(ref detail) => {
-                error!(detail = %detail, "Internal auth error");
+            AuthError::TokenGenerationFailed(ref e) => {
+                error!(source = %e, "Token generation failed");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".to_string(),
+                )
+            }
+            AuthError::JwtMissingHeader => (
+                StatusCode::UNAUTHORIZED,
+                "Missing authorization header".to_string(),
+            ),
+            AuthError::JwtInvalidHeader => (
+                StatusCode::BAD_REQUEST,
+                "Invalid authorization header".to_string(),
+            ),
+            AuthError::JwtBearerSchemeMissing => (
+                StatusCode::BAD_REQUEST,
+                "Authorization must use Bearer scheme".to_string(),
+            ),
+            AuthError::JwtInvalidSubject => {
+                // source was already logged at the call site
+                (StatusCode::UNAUTHORIZED, "Authentication error".to_string())
+            }
+            AuthError::SessionStoreFailure(ref e) => {
+                error!(source = %e, "Session store failure");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Session error".to_string(),
+                )
+            }
+            AuthError::RepositoryFailure => {
+                // source was already logged at the call site
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Internal server error".to_string(),
@@ -342,7 +380,10 @@ pub async fn login<R: UserRepository>(
         .user_repository()
         .find_by_username(&request.username)
         .await
-        .map_err(|e| AuthError::Internal(format!("User lookup failed: {}", e)))?
+        .map_err(|e| {
+            tracing::error!(error = %e, "User lookup failed during login");
+            AuthError::RepositoryFailure
+        })?
         .ok_or(AuthError::InvalidCredentials)?;
 
     if !user.enabled() {
@@ -357,10 +398,8 @@ pub async fn login<R: UserRepository>(
         return Err(AuthError::InvalidCredentials);
     }
 
-    let token_pair = generate_jwt_pair_from_user(&auth_state.jwt_service, &user).map_err(|e| {
-        tracing::error!(error = %e, "JWT generation failed during login");
-        AuthError::Internal("Token generation failed".to_string())
-    })?;
+    let token_pair = generate_jwt_pair_from_user(&auth_state.jwt_service, &user)
+        .map_err(AuthError::TokenGenerationFailed)?;
 
     Ok(Json(LoginResponse {
         access_token: token_pair.access_token,
@@ -426,7 +465,7 @@ pub async fn oidc_login<R: UserRepository>(
             auth_state.oidc_session_ttl,
         )
         .await
-        .map_err(|e| AuthError::Session(format!("Session store error: {}", e)))?;
+        .map_err(AuthError::SessionStoreFailure)?;
 
     Ok(Redirect::temporary(&auth_request.url))
 }
@@ -454,12 +493,16 @@ pub async fn oidc_callback<R: UserRepository>(
         .ok_or(AuthError::OidcDisabled)?;
 
     // Consume the session exactly once (prevents state-replay attacks)
-    let session = auth_state
+    let session = match auth_state
         .session_store
-        .take(&query.state)
+        .take_with_status(&query.state)
         .await
-        .map_err(|e| AuthError::Session(format!("Session store error: {}", e)))?
-        .ok_or(AuthError::SessionMissing)?;
+        .map_err(AuthError::SessionStoreFailure)?
+    {
+        OidcSessionTakeResult::Found(session) => session,
+        OidcSessionTakeResult::Missing => return Err(AuthError::SessionMissing),
+        OidcSessionTakeResult::Expired => return Err(AuthError::SessionExpired),
+    };
 
     // Exchange provider code for tokens and extract user claims.
     // Provider tokens are intentionally discarded; only app-issued JWTs are returned.
@@ -474,10 +517,8 @@ pub async fn oidc_callback<R: UserRepository>(
         .await
         .map_err(|_| AuthError::ProvisioningFailed)?;
 
-    let token_pair = generate_jwt_pair_from_user(&auth_state.jwt_service, &user).map_err(|e| {
-        tracing::error!(error = %e, "JWT generation failed during OIDC callback");
-        AuthError::Internal("Token generation failed".to_string())
-    })?;
+    let token_pair = generate_jwt_pair_from_user(&auth_state.jwt_service, &user)
+        .map_err(AuthError::TokenGenerationFailed)?;
 
     Ok(Json(LoginResponse {
         access_token: token_pair.access_token,
@@ -507,17 +548,22 @@ pub async fn refresh_token<R: UserRepository>(
         .jwt_service
         .validate_token(&request.refresh_token)
         .await
-        .map_err(|e| AuthError::Jwt(e.to_string()))?;
+        .map_err(AuthError::JwtValidation)?;
 
-    let user_id = crate::domain::value_objects::UserId::parse(&claims.sub)
-        .map_err(|e| AuthError::Jwt(format!("Invalid token subject: {}", e)))?;
+    let user_id = crate::domain::value_objects::UserId::parse(&claims.sub).map_err(|e| {
+        tracing::error!(error = %e, "Invalid token subject during token refresh");
+        AuthError::JwtInvalidSubject
+    })?;
 
     let user = auth_state
         .provisioning_service
         .user_repository()
         .find_by_id(&user_id)
         .await
-        .map_err(|e| AuthError::Internal(format!("User lookup failed: {}", e)))?
+        .map_err(|e| {
+            tracing::error!(error = %e, "User lookup failed during token refresh");
+            AuthError::RepositoryFailure
+        })?
         .ok_or(AuthError::InvalidCredentials)?;
 
     if !user.enabled() {
@@ -530,7 +576,7 @@ pub async fn refresh_token<R: UserRepository>(
         .jwt_service
         .refresh_access_token(&request.refresh_token, roles, permissions)
         .await
-        .map_err(|e| AuthError::Jwt(e.to_string()))?;
+        .map_err(AuthError::TokenGenerationFailed)?;
 
     Ok(Json(LoginResponse {
         access_token: token_pair.access_token,
@@ -561,13 +607,13 @@ pub async fn logout<R: UserRepository>(
         .jwt_service
         .validate_token(token)
         .await
-        .map_err(|e| AuthError::Jwt(e.to_string()))?;
+        .map_err(AuthError::JwtValidation)?;
 
     auth_state
         .jwt_service
         .revoke_token(token)
         .await
-        .map_err(|e| AuthError::Jwt(e.to_string()))?;
+        .map_err(AuthError::JwtRevocationFailed)?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -612,13 +658,13 @@ fn permissions_from_user(user: &crate::domain::entities::user::User) -> Vec<Stri
 fn extract_bearer_token(headers: &HeaderMap) -> Result<&str, AuthError> {
     let value = headers
         .get(header::AUTHORIZATION)
-        .ok_or_else(|| AuthError::Jwt("Missing Authorization header".to_string()))?
+        .ok_or(AuthError::JwtMissingHeader)?
         .to_str()
-        .map_err(|_| AuthError::Jwt("Invalid Authorization header".to_string()))?;
+        .map_err(|_| AuthError::JwtInvalidHeader)?;
 
     value
         .strip_prefix("Bearer ")
-        .ok_or_else(|| AuthError::Jwt("Authorization header must use Bearer scheme".to_string()))
+        .ok_or(AuthError::JwtBearerSchemeMissing)
 }
 
 /// Convert Role to string representation
@@ -774,12 +820,6 @@ mod tests {
     fn test_auth_error_display() {
         let error = AuthError::InvalidCredentials;
         assert_eq!(error.to_string(), "Invalid credentials");
-
-        let error = AuthError::Oidc("provider error".to_string());
-        assert!(error.to_string().contains("OIDC error"));
-
-        let error = AuthError::Session("expired".to_string());
-        assert!(error.to_string().contains("Session error"));
     }
 
     #[test]
@@ -832,8 +872,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_auth_error_oidc_does_not_expose_internal_detail() {
-        let err = AuthError::Oidc("sensitive_db_secret".to_string());
+    async fn test_auth_error_session_store_failure_does_not_expose_internal_detail() {
+        use crate::auth::oidc::session_store::SessionStoreError;
+        let err = AuthError::SessionStoreFailure(SessionStoreError::Backend(
+            "redis://user:secret@host:6379".to_string(),
+        ));
         let response = err.into_response();
         // SAFETY: usize::MAX is the upper bound; the response body is a small JSON blob.
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -841,16 +884,20 @@ mod tests {
             .expect("body collection must succeed for this small JSON response");
         let body = String::from_utf8_lossy(&bytes);
         assert!(
-            !body.contains("sensitive_db_secret"),
-            "OIDC error detail must not leak to clients; got: {}",
+            !body.contains("redis://user:secret@host:6379"),
+            "Session store error must not leak backend details to clients; got: {}",
             body
         );
     }
 
     #[tokio::test]
-    async fn test_auth_error_jwt_does_not_expose_internal_detail() {
-        let err = AuthError::Jwt("private_key_path=/etc/secret.pem".to_string());
+    async fn test_auth_error_jwt_validation_does_not_expose_internal_detail() {
+        use crate::auth::jwt::error::JwtError;
+        let err = AuthError::JwtValidation(JwtError::DecodingError(
+            "private_key_path=/etc/secret.pem".to_string(),
+        ));
         let response = err.into_response();
+        let status = response.status();
         // SAFETY: usize::MAX is the upper bound; the response body is a small JSON blob.
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
@@ -861,22 +908,14 @@ mod tests {
             "JWT error detail must not leak to clients; got: {}",
             body
         );
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
 
-    #[tokio::test]
-    async fn test_auth_error_session_does_not_expose_internal_detail() {
-        let err = AuthError::Session("redis://user:password@host:6379".to_string());
-        let response = err.into_response();
-        // SAFETY: usize::MAX is the upper bound; the response body is a small JSON blob.
-        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("body collection must succeed");
-        let body = String::from_utf8_lossy(&bytes);
-        assert!(
-            !body.contains("redis://user:password@host:6379"),
-            "Session error detail must not leak to clients; got: {}",
-            body
-        );
+    #[test]
+    fn test_auth_error_repository_failure_returns_500() {
+        let error = AuthError::RepositoryFailure;
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 
     #[test]
@@ -901,6 +940,26 @@ mod tests {
         assert_eq!(
             AuthError::ProvisioningFailed.to_string(),
             "User provisioning failed"
+        );
+        assert_eq!(
+            AuthError::JwtMissingHeader.to_string(),
+            "Missing authorization header"
+        );
+        assert_eq!(
+            AuthError::JwtInvalidHeader.to_string(),
+            "Invalid authorization header"
+        );
+        assert_eq!(
+            AuthError::JwtBearerSchemeMissing.to_string(),
+            "Authorization must use Bearer scheme"
+        );
+        assert_eq!(
+            AuthError::JwtInvalidSubject.to_string(),
+            "Invalid token subject"
+        );
+        assert_eq!(
+            AuthError::RepositoryFailure.to_string(),
+            "Repository error during authentication"
         );
     }
 
@@ -941,7 +1000,52 @@ mod tests {
         };
 
         let result = refresh_token(State(state), Json(request)).await;
-        assert!(matches!(result, Err(AuthError::Jwt(_))));
+        assert!(matches!(result, Err(AuthError::JwtValidation(_))));
+    }
+
+    #[test]
+    fn test_auth_error_jwt_missing_header_returns_401() {
+        let error = AuthError::JwtMissingHeader;
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_auth_error_jwt_invalid_header_returns_400() {
+        let error = AuthError::JwtInvalidHeader;
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn test_auth_error_jwt_bearer_scheme_missing_returns_400() {
+        let error = AuthError::JwtBearerSchemeMissing;
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn test_auth_error_jwt_revocation_failed_returns_500() {
+        use crate::auth::jwt::error::JwtError;
+        let error =
+            AuthError::JwtRevocationFailed(JwtError::BlacklistError("store down".to_string()));
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn test_auth_error_token_generation_failed_returns_500() {
+        use crate::auth::jwt::error::JwtError;
+        let error = AuthError::TokenGenerationFailed(JwtError::KeyError("key expired".to_string()));
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn test_auth_error_jwt_invalid_subject_returns_401() {
+        let error = AuthError::JwtInvalidSubject;
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[test]

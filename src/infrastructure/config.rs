@@ -1293,18 +1293,34 @@ graphql:
     }
 
     #[test]
-    fn test_production_yaml_deserializes_authoritative_sections() {
+    fn test_production_yaml_deserializes_authoritative_sections() -> Result<(), String> {
         let settings: Settings = serde_yaml::from_str(include_str!("../../config/production.yaml"))
-            .expect("production YAML should deserialize");
+            .map_err(|e| e.to_string())?;
 
         assert_eq!(settings.security.cors.allowed_origins.len(), 2);
         assert_eq!(settings.graphql.max_complexity, 50);
         assert_eq!(settings.graphql.max_depth, 8);
         assert!(settings.graphql.enforce_complexity);
-        let keycloak = settings.auth.keycloak.as_ref().unwrap();
+        let keycloak = settings
+            .auth
+            .keycloak
+            .as_ref()
+            .ok_or_else(|| "production YAML must include auth.keycloak".to_string())?;
         assert_eq!(keycloak.allowed_redirect_hosts, vec!["xzepr.example.com"]);
-        let opa = settings.opa.as_ref().unwrap();
+        assert_eq!(
+            keycloak.session_store.backend,
+            OidcSessionStoreBackend::Redis
+        );
+        assert_eq!(
+            keycloak.session_store.redis_url.as_deref(),
+            Some("redis://redis:6379")
+        );
+        let opa = settings
+            .opa
+            .as_ref()
+            .ok_or_else(|| "production YAML must include OPA config".to_string())?;
         assert!(!opa.allowed_hosts.is_empty());
+        Ok(())
     }
 
     #[test]
@@ -1315,9 +1331,22 @@ graphql:
     }
 
     #[test]
-    fn test_validate_production_accepts_valid_settings() {
+    fn test_validate_production_accepts_valid_settings() -> Result<(), String> {
         let settings = valid_production_settings();
+        let keycloak =
+            settings.auth.keycloak.as_ref().ok_or_else(|| {
+                "valid production settings must include auth.keycloak".to_string()
+            })?;
+        assert_eq!(
+            keycloak.session_store.backend,
+            OidcSessionStoreBackend::Redis
+        );
+        assert_eq!(
+            keycloak.session_store.redis_url.as_deref(),
+            Some("redis://redis:6379")
+        );
         assert!(settings.validate_production().is_ok());
+        Ok(())
     }
 
     #[test]
@@ -1379,6 +1408,40 @@ graphql:
                 SecurityConfigError::MissingRedisUrl
             ))
         ));
+    }
+
+    #[test]
+    fn test_validate_production_rejects_memory_oidc_session_store() -> Result<(), String> {
+        let mut settings = valid_production_settings();
+        let keycloak =
+            settings.auth.keycloak.as_mut().ok_or_else(|| {
+                "valid production settings must include auth.keycloak".to_string()
+            })?;
+        keycloak.session_store.backend = OidcSessionStoreBackend::Memory;
+        keycloak.session_store.redis_url = Some("redis://redis:6379".to_string());
+        let result = settings.validate_production();
+        assert!(matches!(
+            result,
+            Err(SettingsValidationError::OidcSessionStoreNotDistributed)
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_validate_production_rejects_missing_oidc_session_redis_url() -> Result<(), String> {
+        let mut settings = valid_production_settings();
+        let keycloak =
+            settings.auth.keycloak.as_mut().ok_or_else(|| {
+                "valid production settings must include auth.keycloak".to_string()
+            })?;
+        keycloak.session_store.backend = OidcSessionStoreBackend::Redis;
+        keycloak.session_store.redis_url = None;
+        let result = settings.validate_production();
+        assert!(matches!(
+            result,
+            Err(SettingsValidationError::OidcSessionRedisUrlMissing)
+        ));
+        Ok(())
     }
 
     #[test]

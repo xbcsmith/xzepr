@@ -21,8 +21,8 @@ use tower_http::trace::TraceLayer;
 
 use crate::api::graphql::handlers::graphql_playground_disabled;
 use crate::api::graphql::{
-    create_schema_with_config, graphql_handler, graphql_health, graphql_playground,
-    ComplexityConfig,
+    create_schema_with_config_and_authorization, graphql_handler, graphql_health,
+    graphql_playground, ComplexityConfig, GraphqlAuthorizationService,
 };
 use crate::api::middleware::rate_limit::RedisRateLimitStore;
 use crate::api::middleware::{
@@ -181,11 +181,16 @@ where
     let opa_enabled = opa_state.is_some();
     tracing::info!(opa_enabled, "OPA authorization status");
 
-    let schema = create_schema_with_config(
+    let graphql_authorization = opa_state
+        .as_ref()
+        .map(GraphqlAuthorizationService::from_opa_middleware_state)
+        .map(Arc::new);
+    let schema = create_schema_with_config_and_authorization(
         Arc::new(state.event_handler.clone()),
         Arc::new(state.event_receiver_handler.clone()),
         Arc::new(state.event_receiver_group_handler.clone()),
         config.graphql.clone(),
+        graphql_authorization,
     );
     let group_membership_state = GroupMembershipState {
         group_handler: state.event_receiver_group_handler.clone(),

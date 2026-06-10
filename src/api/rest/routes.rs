@@ -3,6 +3,7 @@
 
 // src/api/rest/routes.rs
 
+#[cfg(test)]
 use axum::{
     middleware,
     routing::{delete, get, post, put},
@@ -10,14 +11,19 @@ use axum::{
 };
 #[cfg(test)]
 use tower_http::cors::CorsLayer;
+#[cfg(test)]
 use tower_http::trace::TraceLayer;
 
+#[cfg(test)]
 use crate::api::middleware::{
     jwt_auth_middleware, rbac_enforcement_middleware, JwtMiddlewareState,
 };
 
+#[cfg(test)]
 use crate::api::graphql::schema::create_schema;
+#[cfg(test)]
 use crate::api::graphql::{graphql_handler, graphql_health, graphql_playground};
+#[cfg(test)]
 use crate::api::rest::events::{
     create_event, create_event_receiver, create_event_receiver_group, delete_event_receiver,
     delete_event_receiver_group, get_event, get_event_receiver, get_event_receiver_group,
@@ -25,9 +31,14 @@ use crate::api::rest::events::{
     AppState,
 };
 
-/// Builds a test-only router with all API routes.
+/// Builds a legacy test-only router with all REST and GraphQL routes.
+///
+/// This helper intentionally exists only for this module's unit tests. Runtime
+/// code must use [`crate::api::build_production_router`] so authentication,
+/// authorization, rate limiting, body limits, metrics, CORS, tracing, and
+/// security headers are composed consistently.
 #[cfg(test)]
-pub fn build_router(state: AppState) -> Router {
+fn build_router(state: AppState) -> Router {
     // Create GraphQL schema
     let schema = create_schema(
         std::sync::Arc::new(state.event_handler.clone()),
@@ -63,10 +74,14 @@ pub fn build_router(state: AppState) -> Router {
         .layer(CorsLayer::permissive())
 }
 
-/// Builds router with authentication middleware for protected routes
+/// Builds a legacy test-only router with authentication middleware.
 ///
 /// This router applies JWT authentication and RBAC enforcement to all
-/// `/api/v1/*` routes while keeping health and GraphQL endpoints public.
+/// `/api/v1/*` routes while keeping health routes public and protecting the
+/// GraphQL execution endpoint with JWT authentication. It intentionally exists
+/// only for this module's unit tests; runtime code must use
+/// [`crate::api::build_production_router`] so the full production middleware
+/// stack is present.
 ///
 /// # Arguments
 ///
@@ -75,20 +90,9 @@ pub fn build_router(state: AppState) -> Router {
 ///
 /// # Returns
 ///
-/// A configured Router with RBAC protection enabled
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use xzepr::api::rest::routes::build_protected_router;
-/// use xzepr::api::middleware::JwtMiddlewareState;
-/// use xzepr::auth::jwt::{JwtConfig, JwtService};
-///
-/// let jwt_service = JwtService::from_config(JwtConfig::development())?;
-/// let jwt_state = JwtMiddlewareState::new(jwt_service);
-/// let router = build_protected_router(app_state, jwt_state);
-/// ```
-pub fn build_protected_router(state: AppState, jwt_state: JwtMiddlewareState) -> Router {
+/// A configured test router with RBAC protection enabled
+#[cfg(test)]
+fn build_protected_router(state: AppState, jwt_state: JwtMiddlewareState) -> Router {
     // Create GraphQL schema
     let schema = create_schema(
         std::sync::Arc::new(state.event_handler.clone()),

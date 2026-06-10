@@ -1024,7 +1024,7 @@ actual system.
 - Feature-gate or environment-gate live Kafka and SASL tests instead of leaving
   empty or permanently ignored tests in the default suite.
 - Document exact prerequisites for database, Kafka, Redis, OIDC, and OPA
-  integration tests under `docs/how_to/` or `docs/reference/` as appropriate.
+  integration tests under `docs/how-to/` or `docs/reference/` as appropriate.
 
 #### Task 14.3 Add final security regression coverage
 
@@ -1079,9 +1079,9 @@ actual system.
 
 ### Phase 15: Finish remaining cleanup deliverables
 
-Phase 15 closes the post-audit gaps that remain after the first fourteen
-cleanup phases. It focuses only on known unfinished deliverables: production
-OIDC session storage, OPA reachability and GraphQL integration, user repository
+Phase 15 closes the post-audit gaps that remain after the first fourteen cleanup
+phases. It focuses only on known unfinished deliverables: production OIDC
+session storage, OPA reachability and GraphQL integration, user repository
 boundary unification, ignored external integration tests, API surface pruning,
 and typed auth/resource-context error cleanup.
 
@@ -1131,7 +1131,7 @@ and typed auth/resource-context error cleanup.
   feature-gated or environment-gated tests with actionable prerequisites.
 - Remove ignored tests that only protect against local environment variability
   and replace them with deterministic isolated tests.
-- Add documentation under `docs/how_to/` or `docs/reference/` that lists exact
+- Add documentation under `docs/how-to/` or `docs/reference/` that lists exact
   services, environment variables, ports, credentials, and commands for each
   external integration suite.
 - Ensure the default test suite contains no empty, tautological, or permanently
@@ -1159,13 +1159,14 @@ and typed auth/resource-context error cleanup.
   variants.
 - Route REST and GraphQL auth, resource-context, and OPA failures through
   centralized sanitized response mapping with stable public error codes.
-- Remove handler-level string matching for duplicate, not-found, membership,
-  and auth failures.
+- Remove handler-level string matching for duplicate, not-found, membership, and
+  auth failures.
 
 #### Task 15.7 Testing Requirements
 
 - Add Redis-backed OIDC session store integration tests covering TTL expiration,
-  one-time state consumption, per-user session limits, and multi-instance access.
+  one-time state consumption, per-user session limits, and multi-instance
+  access.
 - Add OPA health-probe tests for reachable, unreachable, unhealthy, timeout, and
   fail-safe modes.
 - Add GraphQL OPA tests proving allow, deny, unavailable fail-closed, fallback,
@@ -1207,6 +1208,305 @@ and typed auth/resource-context error cleanup.
 - API clients receive stable sanitized error codes while operators retain typed
   source context for diagnosis.
 
+### Phase 16: Close post-audit runtime security gaps
+
+Phase 16 resolves the remaining runtime-security work that was still incomplete
+or only partially wired after Phase 15. It focuses on production OIDC session
+semantics, resource-aware GraphQL OPA authorization, canonical router usage, and
+configuration alignment.
+
+#### Task 16.1 Finish Redis-backed OIDC session semantics
+
+- Make `RedisOidcSessionStore::cleanup_expired` remove stale per-principal
+  session references or prove that Redis expiration cannot leave stale counters.
+- Replace production-scale `KEYS` usage in Redis session counting with `SCAN`,
+  indexed counters, or a documented bounded alternative.
+- Ensure per-user OIDC session limits count only live sessions, not expired keys
+  that remain in principal sets.
+- Distinguish expired sessions from missing sessions at the API boundary when
+  the store can identify expiration.
+- Add explicit production configuration for `auth.keycloak.session_store` in the
+  production YAML and verify it matches `Settings::validate_production()`.
+
+#### Task 16.2 Implement resource-aware GraphQL OPA authorization
+
+- Introduce a GraphQL authorization service or resolver helper that calls OPA
+  with the same fail-safe mode, audit labels, and metrics labels used by REST.
+- Build GraphQL OPA inputs for events, receivers, groups, group members, and
+  resource-agnostic operations before resolver handlers execute.
+- Reuse existing resource-context builders or create GraphQL-specific adapters
+  that preserve owner, group, member, receiver-inheritance, and resource-version
+  data.
+- Deny GraphQL operations when resource context cannot be built and the route is
+  not explicitly resource-agnostic.
+- Keep request-level `/graphql` OPA middleware only as a coarse pre-filter, not
+  as the sole GraphQL policy enforcement point.
+
+#### Task 16.3 Remove alternate production router paths
+
+- Retire or test-gate `src/api/rest/routes.rs::build_router` and
+  `build_protected_router` so they cannot be mistaken for production
+  entrypoints.
+- Remove public re-exports of alternate router builders unless they are
+  documented as test-only or development-only APIs.
+- Replace tests that construct parallel security route graphs with canonical
+  router harnesses or focused middleware unit tests.
+- Ensure GraphQL authentication expectations in tests match the canonical
+  production router.
+
+#### Task 16.4 Testing Requirements
+
+- Add Redis-backed OIDC integration tests for TTL expiration, one-time state
+  consumption, per-user limits, stale-set cleanup, and multi-instance access.
+- Add GraphQL OPA tests for allow, deny, unavailable fail-closed, fallback, and
+  cross-owner denial for every protected resource type.
+- Add canonical-router security tests for unauthenticated access, refresh-token
+  rejection, body limits, production CORS, rate-limit fail-safe behavior, and
+  OPA outage behavior.
+- Add production configuration tests proving OIDC Redis session-store settings
+  deserialize, validate, and drive runtime store selection.
+
+#### Task 16.5 Deliverables
+
+- Redis-backed OIDC sessions are production-safe, TTL-bound, and per-user-limit
+  aware across multiple instances.
+- GraphQL invokes OPA with complete resource context for protected operations.
+- Alternate router builders cannot bypass canonical production security.
+- Production configuration explicitly selects distributed OIDC session storage.
+
+#### Task 16.6 Success Criteria
+
+- Production OIDC cannot reject users because expired Redis sessions remain in
+  stale counters.
+- GraphQL cannot bypass OPA policy checks by hiding resource details inside the
+  GraphQL request body.
+- Security regression tests exercise the same router composition used by the
+  server entrypoint.
+
+### Phase 17: Finish error contracts and public API boundaries
+
+Phase 17 closes the remaining typed-error, GraphQL error-code, public-export,
+and architecture-boundary work that still leaks internal details or stringifies
+source errors before the response boundary.
+
+#### Task 17.1 Replace string-carrying auth endpoint errors
+
+- Replace `src/api/rest/auth.rs::AuthError` string variants with typed variants
+  that preserve JWT, OIDC, session-store, provisioning, redirect-validation, and
+  repository sources.
+- Keep sanitized client messages and stable public error codes only in response
+  mapping code.
+- Remove `to_string()` and `format!()` conversions from auth endpoint control
+  flow except at logging or final response formatting boundaries.
+- Preserve OIDC disabled, missing session, expired session, invalid redirect,
+  callback exchange, provisioning, and JWT signing failures as distinct
+  variants.
+
+#### Task 17.2 Normalize storage and API-key error identity
+
+- Replace API-key repository `StorageError { message: String }` mappings with
+  typed storage, SQL constraint, row-decode, and invalid-ID variants.
+- Preserve unique, foreign-key, not-null, check, serialization, and deadlock
+  identity for API-key persistence paths.
+- Route API-key storage failures through the same sanitized REST and GraphQL
+  response mapping helpers used by other repository errors.
+
+#### Task 17.3 Finish GraphQL public error extensions
+
+- Replace free-form GraphQL guard and ID parsing errors with helpers that attach
+  stable `extensions.code` values.
+- Remove or update legacy GraphQL guard helpers that are still publicly exported
+  but do not use the stable error contract.
+- Add tests for auth, authorization, validation, not-found, conflict, and
+  internal GraphQL error extension codes across resolver and helper paths.
+
+#### Task 17.4 Finish public API export pruning
+
+- Remove broad middleware, GraphQL, and REST re-exports that expose internal
+  implementation details.
+- Keep only documented stable exports at crate root and module boundaries.
+- Add compile-time API surface tests for every deliberately supported export.
+- Remove remaining broad suppression attributes or add narrow justification
+  comments where the suppression is intentionally retained.
+
+#### Task 17.5 Resolve remaining architecture boundary decisions
+
+- Either move password hashing and verification out of the domain entity or add
+  a focused architecture decision record documenting the deliberate exception,
+  its risks, and guard tests.
+- Add source or compile checks preventing domain-to-API and
+  domain-to-infrastructure dependencies.
+- Add repository-boundary tests preventing new auth-specific user persistence
+  abstractions from bypassing the canonical user repository.
+
+#### Task 17.6 Testing Requirements
+
+- Add REST auth error mapping tests that prove typed sources are preserved until
+  centralized response mapping.
+- Add API-key repository tests for SQL constraint, row-decode, invalid-ID, and
+  redaction behavior.
+- Add GraphQL error-code tests for every public error category.
+- Add API surface compile tests and architecture guard tests.
+
+#### Task 17.7 Deliverables
+
+- Auth, API-key storage, resource-context, and OPA failures preserve typed
+  source identity until centralized response mapping.
+- GraphQL helpers and resolvers consistently return stable public error
+  extensions.
+- Public exports are minimal, explicit, documented, and tested.
+- Domain/auth boundary decisions are either implemented or deliberately
+  documented with guard coverage.
+
+#### Task 17.8 Success Criteria
+
+- Operators can diagnose auth and storage failures from typed sources without
+  exposing sensitive details to clients.
+- API clients receive stable REST and GraphQL error codes regardless of the
+  underlying failure source.
+- Public APIs no longer expose internal middleware, GraphQL, or REST
+  implementation details by accident.
+
+### Phase 18: Complete persistence and API-key hardening
+
+Phase 18 focuses on database correctness gaps that require real rollback,
+constraint, bind-ordering, and API-key digest verification beyond structural
+compile checks.
+
+#### Task 18.1 Add transaction rollback coverage
+
+- Add live database or testcontainer tests proving group receiver association
+  updates roll back completely after partial failures.
+- Add tests for group membership mutations and any related metadata updates that
+  must succeed or fail atomically.
+- Ensure application handlers cannot observe partial group membership or
+  receiver-association state after repository failure.
+
+#### Task 18.2 Finish dynamic query construction cleanup
+
+- Convert event criteria query construction to `sqlx::QueryBuilder` or another
+  consistent bind-parameter helper.
+- Add bind-ordering tests for event, receiver, and group criteria queries.
+- Add pagination and owner-filtering regression tests proving `LIMIT`, `OFFSET`,
+  and owner values remain bound parameters.
+
+#### Task 18.3 Finish referential-integrity behavior
+
+- Exercise real unique, foreign-key, check, not-null, serialization, and
+  deadlock mappings where practical.
+- Add delete-flow tests for receivers, groups, group members, events, and API
+  keys with referenced rows.
+- Remove handler-level string matching for duplicate, not-found, and membership
+  errors once typed repository errors cover those cases.
+
+#### Task 18.4 Wire API-key digest strategy into production settings
+
+- Add runtime settings for API-key digest version and server-side pepper source,
+  or explicitly defer the peppered digest rollout with a tracked decision.
+- Update admin, provisioning, and service construction paths to use the selected
+  digest strategy when new keys are generated.
+- Keep versioned verification for existing V1 hashes and new V2 peppered hashes.
+- Add redaction tests proving API key hashes, peppers, and raw keys do not leak
+  through debug output, logs, or errors.
+
+#### Task 18.5 Testing Requirements
+
+- Add database-backed transaction rollback tests for every multi-step
+  persistence operation.
+- Add dynamic-query bind-ordering tests for all criteria repositories.
+- Add repository constraint mapping tests using real database failures where
+  practical.
+- Add API-key digest migration, configuration, V1 fallback, V2 generation, and
+  redaction tests.
+
+#### Task 18.6 Deliverables
+
+- Persistence rollback behavior is proven by database-backed tests.
+- Dynamic SQL construction is consistent and covered by bind-ordering tests.
+- Referential-integrity failures map to typed stable errors across repositories.
+- API-key digest hardening is either production-wired or deliberately deferred
+  with an explicit operational decision.
+
+#### Task 18.7 Success Criteria
+
+- No partial association or membership state remains after failed multi-step
+  repository operations.
+- Criteria queries cannot regress to unbound pagination or owner-filter values.
+- New API keys use the configured digest strategy, while existing keys remain
+  verifiable during migration.
+
+### Phase 19: Final post-audit verification and documentation alignment
+
+Phase 19 is the final closeout pass for test-gating, stale documentation,
+implementation-summary accuracy, suppression cleanup, and repository-rule
+compliance after Phases 16 through 18 are implemented.
+
+#### Task 19.1 Finish external integration suites
+
+- Wire Redis, OIDC, and OPA integration tests to the existing Cargo features or
+  documented environment gates.
+- Ensure Kafka, database, Redis, OIDC, and OPA suites are deterministic when
+  disabled and actionable when enabled.
+- Remove stale references to ignored tests if the suite uses feature or
+  environment gates instead.
+- Add documentation link checks for external integration prerequisites.
+
+#### Task 19.2 Replace remaining mock-only integration coverage
+
+- Convert security and RBAC tests that use stub routers into canonical-router
+  tests or focused unit tests with names that do not claim integration coverage.
+- Remove tests that assert tautologies or future desired behavior without
+  executing real domain, application, router, database, OIDC, OPA, or Kafka
+  code.
+- Ensure test names and comments accurately describe the layer under test.
+
+#### Task 19.3 Align implementation summaries and architecture docs
+
+- Update implementation summaries that claim Phase 15 deliverables are closed
+  when follow-up work remains.
+- Remove stale architecture roadmap and old code-generation prompts from the
+  architecture documentation.
+- Document the final canonical router, OIDC session storage, GraphQL OPA model,
+  public API surface, API-key digest decision, and external integration gates.
+
+#### Task 19.4 Enforce repository rules
+
+- Remove or justify remaining suppression attributes in source, tests, and
+  examples.
+- Ensure Markdown filenames follow repository naming rules, with `README.md` as
+  the only uppercase exception.
+- Ensure active YAML files use `.yaml` and production YAML contains no legacy
+  security keys.
+- Run Markdown linting and formatting for changed Markdown files.
+
+#### Task 19.5 Testing Requirements
+
+- Add source scans or documented review checks for stale implementation claims,
+  placeholder test phrases, unexpected ignored tests, broad re-exports, legacy
+  config keys, and suppression attributes.
+- Add documentation link checks where practical.
+- Run the full Rust and Markdown quality gates in the required order.
+
+#### Task 19.6 Deliverables
+
+- External integration suites are runnable through documented gates and do not
+  depend on permanently ignored placeholders.
+- Security and RBAC tests no longer claim integration coverage while using
+  parallel stub routers.
+- Documentation accurately describes completed behavior and explicitly tracks
+  any deliberate deferrals.
+- Repository naming, YAML, Markdown, suppression, and no-emoji rules are
+  satisfied.
+
+#### Task 19.7 Success Criteria
+
+- A final audit finds no overclaimed implementation summaries, stale
+  architecture claims, mock-only integration coverage, or hidden runtime gaps.
+- The default test suite is deterministic and the external suites are directly
+  runnable by following documented prerequisites.
+- All cleanup-plan deliverables are either complete or explicitly deferred with
+  an owner, rationale, and follow-up task.
+
 ## Recommended Execution Order
 
 1. Complete Phases 1 through 6 where already-started work remains incomplete; do
@@ -1227,9 +1527,17 @@ and typed auth/resource-context error cleanup.
    cleanup does not hide runtime regressions.
 9. Execute Phase 14 as the broad verification, documentation, and rule
    compliance pass.
-10. Execute Phase 15 last to close the remaining audited deliverables for OIDC,
-    OPA, user repository boundaries, external integration tests, API surface,
-    and typed auth/resource-context errors.
+10. Execute Phase 15 to close the original remaining audited deliverables for
+    OIDC, OPA, user repository boundaries, external integration tests, API
+    surface, and typed auth/resource-context errors.
+11. Execute Phase 16 immediately after Phase 15 to close runtime-security gaps
+    that remained after the post-audit review.
+12. Execute Phase 17 after Phase 16 so typed errors, public error contracts, API
+    exports, and architecture boundaries match the final runtime model.
+13. Execute Phase 18 after typed repository errors are stable so persistence and
+    API-key hardening tests can assert precise failure identity.
+14. Execute Phase 19 last as the final verification, documentation alignment,
+    test-gating, and repository-rule compliance pass.
 
 ## Highest-Risk Files to Touch First
 
@@ -1274,7 +1582,7 @@ and typed auth/resource-context error cleanup.
 - `tests/database_tests.rs`
 - `tests/integration_tests.rs`
 - `tests/kafka_auth_integration_tests.rs`
-- `docs/how_to/integration_test_prerequisites.md`
+- `docs/how-to/integration_test_prerequisites.md`
 - `docs/explanation/architecture.md`
 - `docs/explanation/phase5_public_api_surface_implementation.md`
 - `docs/explanation/phase6_hardening_implementation.md`
@@ -1291,8 +1599,8 @@ and typed auth/resource-context error cleanup.
   disabled, and backed by TTL-bound distributed session storage with enforced
   per-user session limits for production.
 - OPA is wired into the actual production router with typed, audited,
-  environment-aware fail-safe behavior, startup reachability checks, and
-  GraphQL policy enforcement.
+  environment-aware fail-safe behavior, startup reachability checks, and GraphQL
+  policy enforcement.
 - REST and GraphQL enforce the same owner, membership, and policy rules for
   protected resources.
 - Public API exports are intentional and no longer expose broad third-party or

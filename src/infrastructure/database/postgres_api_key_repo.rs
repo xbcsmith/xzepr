@@ -6,9 +6,10 @@
 use async_trait::async_trait;
 use sqlx::{PgPool, Row};
 
+use super::repo_helpers::classify_sqlx_error;
 use crate::auth::api_key::{ApiKey, ApiKeyRepository};
 use crate::domain::value_objects::{ApiKeyId, UserId};
-use crate::error::AuthError;
+use crate::error::{AuthError, Error, RepositoryError};
 
 /// PostgreSQL implementation of `ApiKeyRepository`.
 ///
@@ -40,6 +41,22 @@ impl PostgresApiKeyRepository {
     }
 }
 
+/// Maps a classified application error from `classify_sqlx_error` to the
+/// appropriate `AuthError` variant for API key operations.
+fn map_classified_error(e: Error) -> AuthError {
+    match e {
+        Error::Repository(RepositoryError::ConstraintViolation { constraint }) => {
+            AuthError::ApiKeyConstraintViolation { constraint }
+        }
+        Error::Repository(RepositoryError::ConcurrencyConflict) => {
+            AuthError::ApiKeyConcurrencyConflict
+        }
+        other => AuthError::StorageError {
+            message: format!("api_key storage: {}", other),
+        },
+    }
+}
+
 #[async_trait]
 impl ApiKeyRepository for PostgresApiKeyRepository {
     async fn save(&self, api_key: &ApiKey) -> Result<(), AuthError> {
@@ -65,9 +82,7 @@ impl ApiKeyRepository for PostgresApiKeyRepository {
         .bind(api_key.last_used_at)
         .execute(&self.pool)
         .await
-        .map_err(|e| AuthError::StorageError {
-            message: format!("api_key save: {}", e),
-        })?;
+        .map_err(|e| map_classified_error(classify_sqlx_error(e)))?;
         Ok(())
     }
 
@@ -79,54 +94,66 @@ impl ApiKeyRepository for PostgresApiKeyRepository {
         .bind(hash)
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| AuthError::StorageError {
-            message: format!("find_by_hash: {}", e),
-        })?;
+        .map_err(|e| map_classified_error(classify_sqlx_error(e)))?;
 
         match row {
             None => Ok(None),
             Some(row) => {
-                let id_str: String = row.try_get("id").map_err(|e| AuthError::StorageError {
-                    message: e.to_string(),
-                })?;
+                let id_str: String =
+                    row.try_get("id")
+                        .map_err(|e| AuthError::ApiKeyRowDecodeError {
+                            column: "id".to_string(),
+                            detail: e.to_string(),
+                        })?;
                 let user_id_str: String =
                     row.try_get("user_id")
-                        .map_err(|e| AuthError::StorageError {
-                            message: e.to_string(),
+                        .map_err(|e| AuthError::ApiKeyRowDecodeError {
+                            column: "user_id".to_string(),
+                            detail: e.to_string(),
                         })?;
                 Ok(Some(ApiKey {
-                    id: ApiKeyId::parse(&id_str).map_err(|e| AuthError::StorageError {
-                        message: e.to_string(),
+                    id: ApiKeyId::parse(&id_str).map_err(|e| AuthError::ApiKeyInvalidId {
+                        detail: e.to_string(),
                     })?,
-                    user_id: UserId::parse(&user_id_str).map_err(|e| AuthError::StorageError {
-                        message: e.to_string(),
+                    user_id: UserId::parse(&user_id_str).map_err(|e| {
+                        AuthError::ApiKeyInvalidId {
+                            detail: e.to_string(),
+                        }
                     })?,
-                    key_hash: row
-                        .try_get("key_hash")
-                        .map_err(|e| AuthError::StorageError {
-                            message: e.to_string(),
-                        })?,
-                    name: row.try_get("name").map_err(|e| AuthError::StorageError {
-                        message: e.to_string(),
+                    key_hash: row.try_get("key_hash").map_err(|e| {
+                        AuthError::ApiKeyRowDecodeError {
+                            column: "key_hash".to_string(),
+                            detail: e.to_string(),
+                        }
                     })?,
-                    expires_at: row
-                        .try_get("expires_at")
-                        .map_err(|e| AuthError::StorageError {
-                            message: e.to_string(),
+                    name: row
+                        .try_get("name")
+                        .map_err(|e| AuthError::ApiKeyRowDecodeError {
+                            column: "name".to_string(),
+                            detail: e.to_string(),
                         })?,
-                    enabled: row
-                        .try_get("enabled")
-                        .map_err(|e| AuthError::StorageError {
-                            message: e.to_string(),
-                        })?,
-                    created_at: row
-                        .try_get("created_at")
-                        .map_err(|e| AuthError::StorageError {
-                            message: e.to_string(),
-                        })?,
+                    expires_at: row.try_get("expires_at").map_err(|e| {
+                        AuthError::ApiKeyRowDecodeError {
+                            column: "expires_at".to_string(),
+                            detail: e.to_string(),
+                        }
+                    })?,
+                    enabled: row.try_get("enabled").map_err(|e| {
+                        AuthError::ApiKeyRowDecodeError {
+                            column: "enabled".to_string(),
+                            detail: e.to_string(),
+                        }
+                    })?,
+                    created_at: row.try_get("created_at").map_err(|e| {
+                        AuthError::ApiKeyRowDecodeError {
+                            column: "created_at".to_string(),
+                            detail: e.to_string(),
+                        }
+                    })?,
                     last_used_at: row.try_get("last_used_at").map_err(|e| {
-                        AuthError::StorageError {
-                            message: e.to_string(),
+                        AuthError::ApiKeyRowDecodeError {
+                            column: "last_used_at".to_string(),
+                            detail: e.to_string(),
                         }
                     })?,
                 }))
@@ -139,9 +166,7 @@ impl ApiKeyRepository for PostgresApiKeyRepository {
             .bind(id.as_ulid().to_string())
             .execute(&self.pool)
             .await
-            .map_err(|e| AuthError::StorageError {
-                message: format!("update_last_used: {}", e),
-            })?;
+            .map_err(|e| map_classified_error(classify_sqlx_error(e)))?;
         Ok(())
     }
 
@@ -153,55 +178,65 @@ impl ApiKeyRepository for PostgresApiKeyRepository {
         .bind(user_id.as_ulid().to_string())
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| AuthError::StorageError {
-            message: format!("find_by_user_id: {}", e),
-        })?;
+        .map_err(|e| map_classified_error(classify_sqlx_error(e)))?;
 
         let mut keys = Vec::with_capacity(rows.len());
         for row in rows {
-            let id_str: String = row.try_get("id").map_err(|e| AuthError::StorageError {
-                message: e.to_string(),
-            })?;
-            let uid_str: String = row
-                .try_get("user_id")
-                .map_err(|e| AuthError::StorageError {
-                    message: e.to_string(),
-                })?;
+            let id_str: String =
+                row.try_get("id")
+                    .map_err(|e| AuthError::ApiKeyRowDecodeError {
+                        column: "id".to_string(),
+                        detail: e.to_string(),
+                    })?;
+            let uid_str: String =
+                row.try_get("user_id")
+                    .map_err(|e| AuthError::ApiKeyRowDecodeError {
+                        column: "user_id".to_string(),
+                        detail: e.to_string(),
+                    })?;
             keys.push(ApiKey {
-                id: ApiKeyId::parse(&id_str).map_err(|e| AuthError::StorageError {
-                    message: e.to_string(),
+                id: ApiKeyId::parse(&id_str).map_err(|e| AuthError::ApiKeyInvalidId {
+                    detail: e.to_string(),
                 })?,
-                user_id: UserId::parse(&uid_str).map_err(|e| AuthError::StorageError {
-                    message: e.to_string(),
+                user_id: UserId::parse(&uid_str).map_err(|e| AuthError::ApiKeyInvalidId {
+                    detail: e.to_string(),
                 })?,
                 key_hash: row
                     .try_get("key_hash")
-                    .map_err(|e| AuthError::StorageError {
-                        message: e.to_string(),
+                    .map_err(|e| AuthError::ApiKeyRowDecodeError {
+                        column: "key_hash".to_string(),
+                        detail: e.to_string(),
                     })?,
-                name: row.try_get("name").map_err(|e| AuthError::StorageError {
-                    message: e.to_string(),
+                name: row
+                    .try_get("name")
+                    .map_err(|e| AuthError::ApiKeyRowDecodeError {
+                        column: "name".to_string(),
+                        detail: e.to_string(),
+                    })?,
+                expires_at: row.try_get("expires_at").map_err(|e| {
+                    AuthError::ApiKeyRowDecodeError {
+                        column: "expires_at".to_string(),
+                        detail: e.to_string(),
+                    }
                 })?,
-                expires_at: row
-                    .try_get("expires_at")
-                    .map_err(|e| AuthError::StorageError {
-                        message: e.to_string(),
-                    })?,
                 enabled: row
                     .try_get("enabled")
-                    .map_err(|e| AuthError::StorageError {
-                        message: e.to_string(),
+                    .map_err(|e| AuthError::ApiKeyRowDecodeError {
+                        column: "enabled".to_string(),
+                        detail: e.to_string(),
                     })?,
-                created_at: row
-                    .try_get("created_at")
-                    .map_err(|e| AuthError::StorageError {
-                        message: e.to_string(),
-                    })?,
-                last_used_at: row
-                    .try_get("last_used_at")
-                    .map_err(|e| AuthError::StorageError {
-                        message: e.to_string(),
-                    })?,
+                created_at: row.try_get("created_at").map_err(|e| {
+                    AuthError::ApiKeyRowDecodeError {
+                        column: "created_at".to_string(),
+                        detail: e.to_string(),
+                    }
+                })?,
+                last_used_at: row.try_get("last_used_at").map_err(|e| {
+                    AuthError::ApiKeyRowDecodeError {
+                        column: "last_used_at".to_string(),
+                        detail: e.to_string(),
+                    }
+                })?,
             });
         }
         Ok(keys)
@@ -212,9 +247,7 @@ impl ApiKeyRepository for PostgresApiKeyRepository {
             .bind(id.as_ulid().to_string())
             .execute(&self.pool)
             .await
-            .map_err(|e| AuthError::StorageError {
-                message: format!("revoke: {}", e),
-            })?;
+            .map_err(|e| map_classified_error(classify_sqlx_error(e)))?;
         Ok(())
     }
 }
@@ -231,31 +264,41 @@ mod tests {
     }
 
     #[test]
-    fn test_postgres_api_key_repository_maps_errors_to_storage_error() {
-        // Structural test: verifies that the StorageError variant is the one
-        // used throughout this file, not OidcError.
-        // The error mapping closures compile only when AuthError::StorageError
-        // exists and has a `message` field, proving the migration is complete.
-        let err = crate::error::AuthError::StorageError {
-            message: "test failure".to_string(),
+    fn test_postgres_api_key_repository_constraint_violation_maps_correctly() {
+        let err = crate::error::AuthError::ApiKeyConstraintViolation {
+            constraint: "unique:key_hash".to_string(),
         };
-        assert!(err.to_string().contains("storage"));
+        // Constraint violations exist as a typed variant preserving the name.
+        assert!(err.to_string().contains("constraint"));
+    }
+
+    #[test]
+    fn test_postgres_api_key_repository_row_decode_error_maps_correctly() {
+        let err = crate::error::AuthError::ApiKeyRowDecodeError {
+            column: "key_hash".to_string(),
+            detail: "invalid utf8".to_string(),
+        };
+        assert!(err.to_string().contains("decode"));
+    }
+
+    #[test]
+    fn test_postgres_api_key_repository_invalid_id_maps_correctly() {
+        let err = crate::error::AuthError::ApiKeyInvalidId {
+            detail: "not a ULID".to_string(),
+        };
+        assert!(err.to_string().contains("ID"));
     }
 
     #[test]
     fn test_storage_error_does_not_contain_hash_format() {
-        // Structural test: verify StorageError messages reference the operation
-        // name, not sensitive data such as a key hash.
+        // StorageError is still used for generic SQL failures.
         let err = crate::error::AuthError::StorageError {
-            message: "api_key save: connection refused".to_string(),
+            message: "api_key storage: connection refused".to_string(),
         };
         let msg = err.to_string();
         assert!(
             msg.contains("storage"),
-            "StorageError display must include 'storage'"
+            "StorageError display must include 'storage'; got: {msg}"
         );
-        // The hash itself (64-char hex) should never be part of error messages.
-        // This is a compile-time property enforced by the AuthError::StorageError
-        // variant only carrying the operation name + underlying DB error.
     }
 }

@@ -6,6 +6,11 @@
 use async_graphql::*;
 use std::sync::Arc;
 
+use crate::api::graphql::authorization::{
+    authorize_graphql, authorize_graphql_many, GraphqlAuthorizationOperation,
+    GraphqlAuthorizationService, ACTION_CREATE, ACTION_READ, ACTION_UPDATE, RESOURCE_EVENT,
+    RESOURCE_EVENT_RECEIVER, RESOURCE_EVENT_RECEIVER_GROUP,
+};
 use crate::api::graphql::error_codes;
 use crate::api::graphql::guards::{
     parse_caller_user_id, require_authenticated_user, ComplexityConfig,
@@ -29,6 +34,12 @@ impl Query {
         let user = require_authenticated_user(ctx)?;
         let owner_id = parse_caller_user_id(user)?;
         let event_id = parse_event_id(&id)?;
+        authorize_graphql(
+            ctx,
+            user,
+            GraphqlAuthorizationOperation::event(ACTION_READ, event_id.to_string()),
+        )
+        .await?;
 
         match handler.get_event_for_user(event_id, owner_id).await {
             Ok(Some(event)) => Ok(vec![event.into()]),
@@ -47,6 +58,12 @@ impl Query {
         let user = require_authenticated_user(ctx)?;
         let owner_id = parse_caller_user_id(user)?;
         let receiver_id = parse_event_receiver_id(&id)?;
+        authorize_graphql(
+            ctx,
+            user,
+            GraphqlAuthorizationOperation::event_receiver(ACTION_READ, receiver_id.to_string()),
+        )
+        .await?;
 
         match handler
             .get_event_receiver_for_user(receiver_id, owner_id)
@@ -68,6 +85,12 @@ impl Query {
         let user = require_authenticated_user(ctx)?;
         let owner_id = parse_caller_user_id(user)?;
         let group_id = parse_event_receiver_group_id(&id)?;
+        authorize_graphql(
+            ctx,
+            user,
+            GraphqlAuthorizationOperation::event_receiver_group(ACTION_READ, group_id.to_string()),
+        )
+        .await?;
 
         match handler
             .get_event_receiver_group_for_user(group_id, owner_id)
@@ -86,9 +109,16 @@ impl Query {
         let owner_id = parse_caller_user_id(user)?;
 
         let mut criteria = FindEventCriteria::new();
+        let mut authorization_operation =
+            GraphqlAuthorizationOperation::resource_agnostic(RESOURCE_EVENT, ACTION_READ);
+        let mut has_event_id = false;
 
         if let Some(id) = event.id {
-            criteria = criteria.with_id(parse_event_id(&id)?);
+            let event_id = parse_event_id(&id)?;
+            authorization_operation =
+                GraphqlAuthorizationOperation::event(ACTION_READ, event_id.to_string());
+            has_event_id = true;
+            criteria = criteria.with_id(event_id);
         }
         if let Some(name) = event.name {
             criteria = criteria.with_name(name);
@@ -109,8 +139,16 @@ impl Query {
             criteria = criteria.with_success(success);
         }
         if let Some(receiver_id) = event.event_receiver_id {
-            criteria = criteria.with_event_receiver_id(parse_event_receiver_id(&receiver_id)?);
+            let receiver_id = parse_event_receiver_id(&receiver_id)?;
+            if !has_event_id {
+                authorization_operation = GraphqlAuthorizationOperation::event_receiver(
+                    ACTION_READ,
+                    receiver_id.to_string(),
+                );
+            }
+            criteria = criteria.with_event_receiver_id(receiver_id);
         }
+        authorize_graphql(ctx, user, authorization_operation).await?;
 
         match handler.find_events_for_user(criteria, owner_id).await {
             Ok(events) => Ok(events.into_iter().map(EventType::from).collect()),
@@ -129,9 +167,13 @@ impl Query {
         let owner_id = parse_caller_user_id(user)?;
 
         let mut criteria = FindEventReceiverCriteria::new();
+        let mut authorization_operation =
+            GraphqlAuthorizationOperation::resource_agnostic(RESOURCE_EVENT_RECEIVER, ACTION_READ);
 
         if let Some(id) = event_receiver.id {
             let receiver_id = parse_event_receiver_id(&id)?;
+            authorization_operation =
+                GraphqlAuthorizationOperation::event_receiver(ACTION_READ, receiver_id.to_string());
             criteria = criteria.with_id(receiver_id);
         }
         if let Some(name) = event_receiver.name {
@@ -143,6 +185,7 @@ impl Query {
         if let Some(version) = event_receiver.version {
             criteria = criteria.with_version(version);
         }
+        authorize_graphql(ctx, user, authorization_operation).await?;
 
         match handler
             .find_event_receivers_for_user(criteria, owner_id)
@@ -164,9 +207,17 @@ impl Query {
         let owner_id = parse_caller_user_id(user)?;
 
         let mut criteria = FindEventReceiverGroupCriteria::new();
+        let mut authorization_operation = GraphqlAuthorizationOperation::resource_agnostic(
+            RESOURCE_EVENT_RECEIVER_GROUP,
+            ACTION_READ,
+        );
 
         if let Some(id) = event_receiver_group.id {
             let group_id = parse_event_receiver_group_id(&id)?;
+            authorization_operation = GraphqlAuthorizationOperation::event_receiver_group(
+                ACTION_READ,
+                group_id.to_string(),
+            );
             criteria = criteria.with_id(group_id);
         }
         if let Some(name) = event_receiver_group.name {
@@ -178,6 +229,7 @@ impl Query {
         if let Some(version) = event_receiver_group.version {
             criteria = criteria.with_version(version);
         }
+        authorize_graphql(ctx, user, authorization_operation).await?;
 
         match handler
             .find_event_receiver_groups_for_user(criteria, owner_id)
@@ -200,6 +252,12 @@ impl Mutation {
         let user = require_authenticated_user(ctx)?;
         let owner_id = parse_caller_user_id(user)?;
         let receiver_id = parse_event_receiver_id(&event.event_receiver_id)?;
+        authorize_graphql(
+            ctx,
+            user,
+            GraphqlAuthorizationOperation::event_receiver(ACTION_CREATE, receiver_id.to_string()),
+        )
+        .await?;
 
         match handler
             .create_event(CreateEventParams {
@@ -230,6 +288,15 @@ impl Mutation {
         let handler = ctx.data::<Arc<EventReceiverHandler>>()?;
         let user = require_authenticated_user(ctx)?;
         let owner_id = parse_caller_user_id(user)?;
+        authorize_graphql(
+            ctx,
+            user,
+            GraphqlAuthorizationOperation::resource_agnostic(
+                RESOURCE_EVENT_RECEIVER,
+                ACTION_CREATE,
+            ),
+        )
+        .await?;
 
         match handler
             .create_event_receiver(
@@ -258,6 +325,14 @@ impl Mutation {
         let owner_id = parse_caller_user_id(user)?;
 
         let receiver_ids = parse_event_receiver_ids(&event_receiver_group.event_receiver_ids)?;
+        let mut authorization_operations = vec![GraphqlAuthorizationOperation::resource_agnostic(
+            RESOURCE_EVENT_RECEIVER_GROUP,
+            ACTION_CREATE,
+        )];
+        authorization_operations.extend(receiver_ids.iter().map(|receiver_id| {
+            GraphqlAuthorizationOperation::event_receiver(ACTION_CREATE, receiver_id.to_string())
+        }));
+        authorize_graphql_many(ctx, user, authorization_operations).await?;
 
         match handler
             .create_event_receiver_group(CreateEventReceiverGroupParams {
@@ -282,6 +357,15 @@ impl Mutation {
         let user = require_authenticated_user(ctx)?;
         let owner_id = parse_caller_user_id(user)?;
         let group_id = parse_event_receiver_group_id(&id)?;
+        authorize_graphql(
+            ctx,
+            user,
+            GraphqlAuthorizationOperation::event_receiver_group(
+                ACTION_UPDATE,
+                group_id.to_string(),
+            ),
+        )
+        .await?;
 
         match handler
             .enable_event_receiver_group_for_user(group_id, owner_id)
@@ -298,6 +382,15 @@ impl Mutation {
         let user = require_authenticated_user(ctx)?;
         let owner_id = parse_caller_user_id(user)?;
         let group_id = parse_event_receiver_group_id(&id)?;
+        authorize_graphql(
+            ctx,
+            user,
+            GraphqlAuthorizationOperation::event_receiver_group(
+                ACTION_UPDATE,
+                group_id.to_string(),
+            ),
+        )
+        .await?;
 
         match handler
             .disable_event_receiver_group_for_user(group_id, owner_id)
@@ -343,6 +436,13 @@ impl Mutation {
 
         // Parse user ID to add
         let member_user_id = parse_user_id(&user_id)?;
+
+        authorize_graphql(
+            ctx,
+            user,
+            GraphqlAuthorizationOperation::group_members(group_id.to_string()),
+        )
+        .await?;
 
         // Verify the group exists and the caller is the owner
         let group = handler
@@ -406,6 +506,13 @@ impl Mutation {
 
         // Parse user ID to remove
         let member_user_id = parse_user_id(&user_id)?;
+
+        authorize_graphql(
+            ctx,
+            user,
+            GraphqlAuthorizationOperation::group_members(group_id.to_string()),
+        )
+        .await?;
 
         // Verify the group exists and the caller is the owner
         let group = handler
@@ -477,10 +584,44 @@ pub fn create_schema_with_config(
     event_receiver_group_handler: Arc<EventReceiverGroupHandler>,
     complexity_config: ComplexityConfig,
 ) -> Schema {
+    create_schema_with_config_and_authorization(
+        event_handler,
+        event_receiver_handler,
+        event_receiver_group_handler,
+        complexity_config,
+        None,
+    )
+}
+
+/// Creates a new GraphQL schema with runtime limits and optional authorization.
+///
+/// # Arguments
+///
+/// * `event_handler` - Application handler for event operations.
+/// * `event_receiver_handler` - Application handler for receiver operations.
+/// * `event_receiver_group_handler` - Application handler for group operations.
+/// * `complexity_config` - Runtime GraphQL complexity and depth configuration.
+/// * `authorization_service` - Optional resolver-level OPA authorization service.
+///
+/// # Returns
+///
+/// Returns an executable GraphQL schema configured with runtime limits and, when
+/// provided, resource-aware resolver authorization.
+pub fn create_schema_with_config_and_authorization(
+    event_handler: Arc<EventHandler>,
+    event_receiver_handler: Arc<EventReceiverHandler>,
+    event_receiver_group_handler: Arc<EventReceiverGroupHandler>,
+    complexity_config: ComplexityConfig,
+    authorization_service: Option<Arc<GraphqlAuthorizationService>>,
+) -> Schema {
     let mut builder = Schema::build(Query, Mutation, EmptySubscription)
         .data(event_handler)
         .data(event_receiver_handler)
         .data(event_receiver_group_handler);
+
+    if let Some(service) = authorization_service {
+        builder = builder.data(service);
+    }
 
     if complexity_config.enforce {
         builder = builder
@@ -494,9 +635,15 @@ pub fn create_schema_with_config(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::graphql::authorization::GraphqlPolicyEvaluator;
+    use crate::api::middleware::jwt::AuthenticatedUser;
+    use crate::api::middleware::opa::ResourceContextBuilders;
+    use crate::api::middleware::resource_context::{ResourceContextBuilder, ResourceContextError};
     use crate::application::handlers::{
         EventHandler, EventReceiverGroupHandler, EventReceiverHandler,
     };
+    use crate::auth::jwt::claims::TokenType;
+    use crate::auth::jwt::Claims;
     use crate::domain::entities::event::Event;
     use crate::domain::entities::event_receiver::EventReceiver;
     use crate::domain::entities::event_receiver_group::EventReceiverGroup;
@@ -507,6 +654,10 @@ mod tests {
     };
     use crate::domain::value_objects::{EventId, EventReceiverGroupId, EventReceiverId, UserId};
     use crate::error::Result;
+    use crate::opa::types::{
+        AuthorizationDecision as OpaAuthorizationDecision, OpaError, OpaFailSafeMode, OpaInput,
+        ResourceContext,
+    };
     use async_trait::async_trait;
 
     /// Minimal no-op mock for EventRepository. All methods return empty/default values.
@@ -774,6 +925,47 @@ mod tests {
         }
     }
 
+    /// Resource context builder that returns a fixed owner for any requested ID.
+    struct StaticContextBuilder {
+        resource_type: &'static str,
+        owner_id: String,
+    }
+
+    #[async_trait]
+    impl ResourceContextBuilder for StaticContextBuilder {
+        async fn build_context(
+            &self,
+            resource_id: &str,
+        ) -> std::result::Result<ResourceContext, ResourceContextError> {
+            Ok(ResourceContext {
+                resource_type: self.resource_type.to_string(),
+                resource_id: Some(resource_id.to_string()),
+                owner_id: Some(self.owner_id.clone()),
+                group_id: None,
+                members: Vec::new(),
+                resource_version: 1,
+            })
+        }
+    }
+
+    /// Policy evaluator that always denies.
+    struct DenyEvaluator;
+
+    #[async_trait]
+    impl GraphqlPolicyEvaluator for DenyEvaluator {
+        async fn evaluate(
+            &self,
+            _input: OpaInput,
+            _resource_version: i32,
+        ) -> std::result::Result<OpaAuthorizationDecision, OpaError> {
+            Ok(OpaAuthorizationDecision {
+                allow: false,
+                reason: Some("test denial".to_string()),
+                metadata: None,
+            })
+        }
+    }
+
     /// Builds a test schema backed by no-op mock repositories.
     fn create_test_schema() -> Schema {
         let event_repo = Arc::new(MockEventRepo);
@@ -785,6 +977,66 @@ mod tests {
         let group_handler = Arc::new(EventReceiverGroupHandler::new(group_repo, receiver_repo));
 
         create_schema(event_handler, receiver_handler, group_handler)
+    }
+
+    /// Builds a test schema with resolver-level authorization enabled.
+    fn create_test_schema_with_authorization(
+        authorization_service: Arc<GraphqlAuthorizationService>,
+    ) -> Schema {
+        let event_repo = Arc::new(MockEventRepo);
+        let receiver_repo = Arc::new(MockReceiverRepo);
+        let group_repo = Arc::new(MockGroupRepo);
+
+        let event_handler = Arc::new(EventHandler::new(event_repo, receiver_repo.clone()));
+        let receiver_handler = Arc::new(EventReceiverHandler::new(receiver_repo.clone()));
+        let group_handler = Arc::new(EventReceiverGroupHandler::new(group_repo, receiver_repo));
+
+        create_schema_with_config_and_authorization(
+            event_handler,
+            receiver_handler,
+            group_handler,
+            ComplexityConfig::default(),
+            Some(authorization_service),
+        )
+    }
+
+    /// Creates an authenticated test user.
+    fn create_authenticated_user(user_id: UserId) -> AuthenticatedUser {
+        AuthenticatedUser::new(Claims {
+            sub: user_id.to_string(),
+            roles: vec!["user".to_string()],
+            permissions: Vec::new(),
+            exp: 9_999_999_999,
+            iat: 0,
+            nbf: 0,
+            jti: "graphql-schema-authz-test".to_string(),
+            iss: "xzepr".to_string(),
+            aud: "xzepr-api".to_string(),
+            token_type: TokenType::Access,
+        })
+    }
+
+    /// Creates a resolver-level authorization service that always denies.
+    fn create_deny_authorization_service(owner_id: UserId) -> Arc<GraphqlAuthorizationService> {
+        Arc::new(GraphqlAuthorizationService::new(
+            Arc::new(DenyEvaluator),
+            ResourceContextBuilders {
+                event: Arc::new(StaticContextBuilder {
+                    resource_type: RESOURCE_EVENT,
+                    owner_id: owner_id.to_string(),
+                }),
+                receiver: Arc::new(StaticContextBuilder {
+                    resource_type: RESOURCE_EVENT_RECEIVER,
+                    owner_id: owner_id.to_string(),
+                }),
+                group: Arc::new(StaticContextBuilder {
+                    resource_type: RESOURCE_EVENT_RECEIVER_GROUP,
+                    owner_id: owner_id.to_string(),
+                }),
+            },
+            OpaFailSafeMode::FailClosed,
+            false,
+        ))
     }
 
     /// Extracts the first error extension code from a GraphQL response.
@@ -802,6 +1054,27 @@ mod tests {
     /// Executes a GraphQL request against the test schema without any auth context.
     async fn execute_unauthenticated(schema: &Schema, query: &str) -> async_graphql::Response {
         schema.execute(async_graphql::Request::new(query)).await
+    }
+
+    #[tokio::test]
+    async fn test_events_by_id_denied_by_graphql_authorization() {
+        let owner_id = UserId::new();
+        let event_id = EventId::new();
+        let schema =
+            create_test_schema_with_authorization(create_deny_authorization_service(owner_id));
+        let request = async_graphql::Request::new(format!(
+            r#"{{ eventsById(id: "{}") {{ id }} }}"#,
+            event_id
+        ))
+        .data(create_authenticated_user(owner_id));
+
+        let response = schema.execute(request).await;
+
+        assert!(
+            !response.errors.is_empty(),
+            "resolver-level authorization denial should return an error"
+        );
+        assert_eq!(first_error_code(&response).as_deref(), Some("FORBIDDEN"));
     }
 
     #[tokio::test]

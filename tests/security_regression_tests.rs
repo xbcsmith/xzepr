@@ -1,21 +1,12 @@
 // SPDX-FileCopyrightText: 2025 Brett Smith <xbcsmith@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-//! Security regression tests for XZepr API endpoints
+//! Security regression tests for XZepr API endpoint middleware.
 //!
 //! This suite verifies security invariants that must never regress across
-//! releases. Each test covers one specific security property:
-//!
-//! 1. Unauthenticated requests to all protected HTTP methods return 401
-//! 2. Expired JWT tokens are rejected with 401
-//! 3. Malformed Authorization header values are rejected with 401
-//! 4. A valid JWT with an empty permissions list is denied with 403
-//! 5. Cross-resource permission checks are granular (wrong permission -> 403)
-//! 6. Tokens with only unrelated permissions cannot access other endpoints
-//! 7. Empty roles do not block access when the required permission is present
-//! 8. RedactedSecret never leaks its wrapped value through Debug or Display
-//! 9. A disabled OPA client reports itself as disabled without panicking
-//! 10. Default rate-limit configuration values are positive and non-zero
+//! releases. HTTP middleware checks intentionally use one focused route at a
+//! time instead of a parallel API route graph, preventing the test harness from
+//! being confused with the canonical production router.
 
 use axum::{
     body::Body,
@@ -31,13 +22,12 @@ use xzepr::api::middleware::{
 use xzepr::auth::jwt::config::Algorithm;
 use xzepr::auth::jwt::{JwtConfig, JwtService};
 
-// ---- Test infrastructure --------------------------------------------------
+struct ProtectedEndpoint {
+    method: Method,
+    route_pattern: &'static str,
+    request_uri: &'static str,
+}
 
-/// Creates a JWT service configured for security regression testing.
-///
-/// Uses HS256 with a 32-byte-minimum test secret and a tight leeway of 5 seconds
-/// so that tokens crafted with a past expiry are reliably rejected even with
-/// minor clock variations.
 fn create_test_jwt_service() -> JwtService {
     let config = JwtConfig {
         access_token_expiration_seconds: 900,
@@ -52,103 +42,120 @@ fn create_test_jwt_service() -> JwtService {
         leeway_seconds: 5,
     };
 
-    // SAFETY: Configuration is validated above; the secret is well over 32
-    // characters and all required fields are present, so this cannot fail.
-    JwtService::from_config(config).expect("Failed to create test JWT service for regression suite")
+    JwtService::from_config(config)
+        .expect("test JWT service configuration should be valid for regression suite")
 }
 
-/// Creates an Axum router with JWT authentication and RBAC middleware applied
-/// to all `/api/v1/...` routes, plus an unprotected `/health` route.
-///
-/// Returns both the router (for making requests) and the JWT service (for
-/// minting tokens inside individual tests).
-fn create_protected_router() -> (Router, JwtService) {
-    let jwt_service = create_test_jwt_service();
-    let jwt_state = JwtMiddlewareState::new(jwt_service.clone());
-
-    let public_routes = Router::new().route("/health", get(health_handler));
-
-    let protected_routes = Router::new()
-        .route("/api/v1/events", post(create_event_handler))
-        .route("/api/v1/events/:id", get(get_event_handler))
-        .route("/api/v1/events/:id", delete(delete_event_handler))
-        .route("/api/v1/receivers", post(create_receiver_handler))
-        .route("/api/v1/receivers", get(list_receivers_handler))
-        .route("/api/v1/receivers/:id", get(get_receiver_handler))
-        .route("/api/v1/receivers/:id", put(update_receiver_handler))
-        .route("/api/v1/receivers/:id", delete(delete_receiver_handler))
-        .route("/api/v1/groups", post(create_group_handler))
-        .route("/api/v1/groups/:id", get(get_group_handler))
-        .route("/api/v1/groups/:id", put(update_group_handler))
-        .route("/api/v1/groups/:id", delete(delete_group_handler))
-        .layer(middleware::from_fn(rbac_enforcement_middleware))
-        .layer(middleware::from_fn_with_state(
-            jwt_state,
-            jwt_auth_middleware,
-        ));
-
-    (public_routes.merge(protected_routes), jwt_service)
-}
-
-// Minimal stub handlers used throughout the regression suite.
-async fn health_handler() -> &'static str {
+async fn ok_handler() -> &'static str {
     "OK"
 }
 
-async fn create_event_handler() -> &'static str {
-    "Event created"
+fn create_protected_route(
+    method: Method,
+    route_pattern: &'static str,
+    jwt_service: JwtService,
+) -> Router {
+    let route = if method == Method::GET {
+        get(ok_handler)
+    } else if method == Method::POST {
+        post(ok_handler)
+    } else if method == Method::PUT {
+        put(ok_handler)
+    } else if method == Method::DELETE {
+        delete(ok_handler)
+    } else {
+        get(ok_handler)
+    };
+
+    Router::new()
+        .route(route_pattern, route)
+        .layer(middleware::from_fn(rbac_enforcement_middleware))
+        .layer(middleware::from_fn_with_state(
+            JwtMiddlewareState::new(jwt_service),
+            jwt_auth_middleware,
+        ))
 }
 
-async fn get_event_handler() -> &'static str {
-    "Event retrieved"
+fn protected_endpoints() -> Vec<ProtectedEndpoint> {
+    vec![
+        ProtectedEndpoint {
+            method: Method::GET,
+            route_pattern: "/api/v1/events/:id",
+            request_uri: "/api/v1/events/abc",
+        },
+        ProtectedEndpoint {
+            method: Method::POST,
+            route_pattern: "/api/v1/events",
+            request_uri: "/api/v1/events",
+        },
+        ProtectedEndpoint {
+            method: Method::DELETE,
+            route_pattern: "/api/v1/events/:id",
+            request_uri: "/api/v1/events/abc",
+        },
+        ProtectedEndpoint {
+            method: Method::GET,
+            route_pattern: "/api/v1/receivers",
+            request_uri: "/api/v1/receivers",
+        },
+        ProtectedEndpoint {
+            method: Method::POST,
+            route_pattern: "/api/v1/receivers",
+            request_uri: "/api/v1/receivers",
+        },
+        ProtectedEndpoint {
+            method: Method::GET,
+            route_pattern: "/api/v1/receivers/:id",
+            request_uri: "/api/v1/receivers/abc",
+        },
+        ProtectedEndpoint {
+            method: Method::PUT,
+            route_pattern: "/api/v1/receivers/:id",
+            request_uri: "/api/v1/receivers/abc",
+        },
+        ProtectedEndpoint {
+            method: Method::DELETE,
+            route_pattern: "/api/v1/receivers/:id",
+            request_uri: "/api/v1/receivers/abc",
+        },
+        ProtectedEndpoint {
+            method: Method::POST,
+            route_pattern: "/api/v1/groups",
+            request_uri: "/api/v1/groups",
+        },
+        ProtectedEndpoint {
+            method: Method::GET,
+            route_pattern: "/api/v1/groups/:id",
+            request_uri: "/api/v1/groups/abc",
+        },
+        ProtectedEndpoint {
+            method: Method::PUT,
+            route_pattern: "/api/v1/groups/:id",
+            request_uri: "/api/v1/groups/abc",
+        },
+        ProtectedEndpoint {
+            method: Method::DELETE,
+            route_pattern: "/api/v1/groups/:id",
+            request_uri: "/api/v1/groups/abc",
+        },
+    ]
 }
 
-async fn delete_event_handler() -> &'static str {
-    "Event deleted"
+fn request(method: Method, uri: &str, authorization: Option<String>) -> Request<Body> {
+    let mut builder = Request::builder().method(method).uri(uri);
+    if let Some(authorization) = authorization {
+        builder = builder.header("Authorization", authorization);
+    }
+
+    builder
+        .body(Body::empty())
+        .expect("test request construction should be valid")
 }
 
-async fn create_receiver_handler() -> &'static str {
-    "Receiver created"
+fn bearer(token: &str) -> String {
+    format!("Bearer {}", token)
 }
 
-async fn list_receivers_handler() -> &'static str {
-    "Receivers listed"
-}
-
-async fn get_receiver_handler() -> &'static str {
-    "Receiver retrieved"
-}
-
-async fn update_receiver_handler() -> &'static str {
-    "Receiver updated"
-}
-
-async fn delete_receiver_handler() -> &'static str {
-    "Receiver deleted"
-}
-
-async fn create_group_handler() -> &'static str {
-    "Group created"
-}
-
-async fn get_group_handler() -> &'static str {
-    "Group retrieved"
-}
-
-async fn update_group_handler() -> &'static str {
-    "Group updated"
-}
-
-async fn delete_group_handler() -> &'static str {
-    "Group deleted"
-}
-
-/// Constructs a syntactically valid JWT whose expiration timestamp is set to
-/// one hour in the past, signed with the same HS256 secret that
-/// `create_test_jwt_service` uses.
-///
-/// This token has a correct signature and carries valid audience/issuer claims
-/// so that token expiration is the sole reason the middleware rejects it.
 fn create_expired_token() -> String {
     use jsonwebtoken::{encode, EncodingKey, Header};
     use xzepr::auth::jwt::{Claims, TokenType};
@@ -158,9 +165,9 @@ fn create_expired_token() -> String {
 
     let claims = Claims {
         sub: "expired_user".to_string(),
-        exp: now - 3600, // expired 1 hour ago; well beyond the 5-second leeway
-        iat: now - 4500, // issued 75 minutes ago
-        nbf: now - 4500, // became valid 75 minutes ago
+        exp: now - 3600,
+        iat: now - 4500,
+        nbf: now - 4500,
         jti: "regression-expired-jti-0000000001".to_string(),
         iss: "xzepr-test".to_string(),
         aud: "xzepr-api-test".to_string(),
@@ -172,75 +179,46 @@ fn create_expired_token() -> String {
     let header = Header::new(jsonwebtoken::Algorithm::HS256);
     let key = EncodingKey::from_secret(secret.as_bytes());
 
-    // SAFETY: All claim fields are populated with valid test data; HS256 encoding
-    // with a secret that exceeds 32 bytes cannot fail at runtime.
-    encode(&header, &claims, &key).expect("test expired-token encoding must not fail")
+    encode(&header, &claims, &key).expect("test expired-token encoding should succeed")
 }
 
-// ---- Tests ----------------------------------------------------------------
-
-/// Verifies that every protected HTTP method on every protected endpoint
-/// returns 401 when no Authorization header is supplied.
-///
-/// Covers GET, POST, PUT, and DELETE to ensure that no protected route is
-/// accidentally left open.
 #[tokio::test]
 async fn test_unauthenticated_request_is_rejected_with_401() {
-    let (app, _jwt) = create_protected_router();
+    let jwt_service = create_test_jwt_service();
 
-    let endpoints = vec![
-        (Method::GET, "/api/v1/events/abc"),
-        (Method::POST, "/api/v1/events"),
-        (Method::DELETE, "/api/v1/events/abc"),
-        (Method::GET, "/api/v1/receivers"),
-        (Method::POST, "/api/v1/receivers"),
-        (Method::GET, "/api/v1/receivers/abc"),
-        (Method::PUT, "/api/v1/receivers/abc"),
-        (Method::DELETE, "/api/v1/receivers/abc"),
-        (Method::POST, "/api/v1/groups"),
-        (Method::GET, "/api/v1/groups/abc"),
-        (Method::PUT, "/api/v1/groups/abc"),
-        (Method::DELETE, "/api/v1/groups/abc"),
-    ];
-
-    for (method, uri) in endpoints {
-        let request = Request::builder()
-            .method(method.clone())
-            .uri(uri)
-            .body(Body::empty())
-            .unwrap();
-
-        let response = app.clone().oneshot(request).await.unwrap();
+    for endpoint in protected_endpoints() {
+        let app = create_protected_route(
+            endpoint.method.clone(),
+            endpoint.route_pattern,
+            jwt_service.clone(),
+        );
+        let response = app
+            .oneshot(request(endpoint.method.clone(), endpoint.request_uri, None))
+            .await
+            .expect("focused router should produce a response");
         assert_eq!(
             response.status(),
             StatusCode::UNAUTHORIZED,
             "Expected 401 for unauthenticated {} {}",
-            method,
-            uri
+            endpoint.method,
+            endpoint.request_uri
         );
     }
 }
 
-/// Verifies that a syntactically valid JWT whose expiration timestamp is set
-/// one hour in the past is rejected with 401.
-///
-/// The token has a correct HS256 signature, the right audience and issuer, and
-/// carries valid permissions. The only reason for rejection is that the `exp`
-/// claim is long past the configured 5-second leeway.
 #[tokio::test]
 async fn test_expired_token_is_rejected_with_401() {
-    let (app, _jwt) = create_protected_router();
+    let jwt_service = create_test_jwt_service();
+    let app = create_protected_route(Method::GET, "/api/v1/events/:id", jwt_service);
 
-    let expired_token = create_expired_token();
-
-    let request = Request::builder()
-        .method(Method::GET)
-        .uri("/api/v1/events/123")
-        .header("Authorization", format!("Bearer {}", expired_token))
-        .body(Body::empty())
-        .unwrap();
-
-    let response = app.oneshot(request).await.unwrap();
+    let response = app
+        .oneshot(request(
+            Method::GET,
+            "/api/v1/events/123",
+            Some(bearer(&create_expired_token())),
+        ))
+        .await
+        .expect("focused router should produce a response");
     assert_eq!(
         response.status(),
         StatusCode::UNAUTHORIZED,
@@ -248,19 +226,9 @@ async fn test_expired_token_is_rejected_with_401() {
     );
 }
 
-/// Verifies that various malformed Authorization header values are all rejected
-/// with 401.
-///
-/// Tested cases:
-/// - Wrong scheme: `Basic ...`
-/// - Non-standard scheme: `Token ...`
-/// - `Bearer` with no token following it (missing required space + token)
-/// - A Bearer header that contains only whitespace after the scheme prefix
-/// - Pure garbage that does not resemble a valid authorization header
-/// - A lowercase `bearer` prefix (scheme is case-sensitive per RFC 6750)
 #[tokio::test]
 async fn test_malformed_authorization_header_is_rejected() {
-    let (app, _jwt) = create_protected_router();
+    let jwt_service = create_test_jwt_service();
 
     let malformed_headers = vec![
         "Basic dXNlcjpwYXNzd29yZA==",
@@ -272,14 +240,15 @@ async fn test_malformed_authorization_header_is_rejected() {
     ];
 
     for header_value in malformed_headers {
-        let request = Request::builder()
-            .method(Method::GET)
-            .uri("/api/v1/events/123")
-            .header("Authorization", header_value)
-            .body(Body::empty())
-            .unwrap();
-
-        let response = app.clone().oneshot(request).await.unwrap();
+        let app = create_protected_route(Method::GET, "/api/v1/events/:id", jwt_service.clone());
+        let response = app
+            .oneshot(request(
+                Method::GET,
+                "/api/v1/events/123",
+                Some(header_value.to_string()),
+            ))
+            .await
+            .expect("focused router should produce a response");
         assert_eq!(
             response.status(),
             StatusCode::UNAUTHORIZED,
@@ -289,101 +258,111 @@ async fn test_malformed_authorization_header_is_rejected() {
     }
 }
 
-/// Verifies that a valid, unexpired JWT whose permissions list is empty is
-/// rejected with 403.
-///
-/// The user is fully authenticated (valid signature, non-expired claims) but
-/// carries no permissions at all. Access to any protected resource must be
-/// denied because no permission check can succeed against an empty list.
 #[tokio::test]
 async fn test_token_with_no_permissions_is_rejected_with_403() {
-    let (app, jwt_service) = create_protected_router();
-
+    let jwt_service = create_test_jwt_service();
     let token = jwt_service
         .generate_access_token(
             "no_permissions_user".to_string(),
             vec!["user".to_string()],
-            vec![], // intentionally empty
+            Vec::new(),
         )
-        .unwrap();
+        .expect("test token generation should succeed");
 
     let endpoints = vec![
-        (Method::GET, "/api/v1/events/123"),
-        (Method::POST, "/api/v1/events"),
-        (Method::DELETE, "/api/v1/events/123"),
-        (Method::GET, "/api/v1/receivers/123"),
-        (Method::POST, "/api/v1/receivers"),
+        ProtectedEndpoint {
+            method: Method::GET,
+            route_pattern: "/api/v1/events/:id",
+            request_uri: "/api/v1/events/123",
+        },
+        ProtectedEndpoint {
+            method: Method::POST,
+            route_pattern: "/api/v1/events",
+            request_uri: "/api/v1/events",
+        },
+        ProtectedEndpoint {
+            method: Method::DELETE,
+            route_pattern: "/api/v1/events/:id",
+            request_uri: "/api/v1/events/123",
+        },
+        ProtectedEndpoint {
+            method: Method::GET,
+            route_pattern: "/api/v1/receivers/:id",
+            request_uri: "/api/v1/receivers/123",
+        },
+        ProtectedEndpoint {
+            method: Method::POST,
+            route_pattern: "/api/v1/receivers",
+            request_uri: "/api/v1/receivers",
+        },
     ];
 
-    for (method, uri) in endpoints {
-        let request = Request::builder()
-            .method(method.clone())
-            .uri(uri)
-            .header("Authorization", format!("Bearer {}", token))
-            .body(Body::empty())
-            .unwrap();
-
-        let response = app.clone().oneshot(request).await.unwrap();
+    for endpoint in endpoints {
+        let app = create_protected_route(
+            endpoint.method.clone(),
+            endpoint.route_pattern,
+            jwt_service.clone(),
+        );
+        let response = app
+            .oneshot(request(
+                endpoint.method.clone(),
+                endpoint.request_uri,
+                Some(bearer(&token)),
+            ))
+            .await
+            .expect("focused router should produce a response");
         assert_eq!(
             response.status(),
             StatusCode::FORBIDDEN,
             "Expected 403 for authenticated user with empty permissions on {} {}",
-            method,
-            uri
+            endpoint.method,
+            endpoint.request_uri
         );
     }
 }
 
-/// Verifies that permission checks are granular: possessing one permission
-/// does not grant access to endpoints that require a different permission.
-///
-/// Two sub-cases are verified:
-/// - A user with only `event_read` cannot DELETE an event (needs `event_delete`)
-/// - A user with only `receiver_create` cannot GET a receiver (needs `receiver_read`)
 #[tokio::test]
 async fn test_permission_check_rejects_wrong_permission_for_endpoint() {
-    let (app, jwt_service) = create_protected_router();
+    let jwt_service = create_test_jwt_service();
 
-    // event_read must not grant event_delete
     let event_read_token = jwt_service
         .generate_access_token(
             "reader".to_string(),
             vec!["user".to_string()],
             vec!["event_read".to_string()],
         )
-        .unwrap();
-
-    let request = Request::builder()
-        .method(Method::DELETE)
-        .uri("/api/v1/events/123")
-        .header("Authorization", format!("Bearer {}", event_read_token))
-        .body(Body::empty())
-        .unwrap();
-
-    let response = app.clone().oneshot(request).await.unwrap();
+        .expect("test token generation should succeed");
+    let app = create_protected_route(Method::DELETE, "/api/v1/events/:id", jwt_service.clone());
+    let response = app
+        .oneshot(request(
+            Method::DELETE,
+            "/api/v1/events/123",
+            Some(bearer(&event_read_token)),
+        ))
+        .await
+        .expect("focused router should produce a response");
     assert_eq!(
         response.status(),
         StatusCode::FORBIDDEN,
         "event_read must not grant access to the event_delete endpoint"
     );
 
-    // receiver_create must not grant receiver_read
     let receiver_create_token = jwt_service
         .generate_access_token(
             "creator".to_string(),
             vec!["user".to_string()],
             vec!["receiver_create".to_string()],
         )
-        .unwrap();
-
-    let request = Request::builder()
-        .method(Method::GET)
-        .uri("/api/v1/receivers/123")
-        .header("Authorization", format!("Bearer {}", receiver_create_token))
-        .body(Body::empty())
-        .unwrap();
-
-    let response = app.clone().oneshot(request).await.unwrap();
+        .expect("test token generation should succeed");
+    let app = create_protected_route(Method::GET, "/api/v1/receivers/:id", jwt_service);
+    let response = app
+        .oneshot(request(
+            Method::GET,
+            "/api/v1/receivers/123",
+            Some(bearer(&receiver_create_token)),
+        ))
+        .await
+        .expect("focused router should produce a response");
     assert_eq!(
         response.status(),
         StatusCode::FORBIDDEN,
@@ -391,32 +370,26 @@ async fn test_permission_check_rejects_wrong_permission_for_endpoint() {
     );
 }
 
-/// Verifies that a token carrying only an unrelated permission is rejected
-/// with 403 when the endpoint requires a different permission.
-///
-/// A user who can only `group_read` must not be able to POST to the events
-/// endpoint, which requires `event_create`. Permission scope must not bleed
-/// across resource types.
 #[tokio::test]
 async fn test_token_with_unrelated_permissions_is_rejected() {
-    let (app, jwt_service) = create_protected_router();
-
+    let jwt_service = create_test_jwt_service();
     let token = jwt_service
         .generate_access_token(
             "group_reader".to_string(),
             vec!["user".to_string()],
             vec!["group_read".to_string()],
         )
-        .unwrap();
+        .expect("test token generation should succeed");
+    let app = create_protected_route(Method::POST, "/api/v1/events", jwt_service);
 
-    let request = Request::builder()
-        .method(Method::POST)
-        .uri("/api/v1/events")
-        .header("Authorization", format!("Bearer {}", token))
-        .body(Body::empty())
-        .unwrap();
-
-    let response = app.oneshot(request).await.unwrap();
+    let response = app
+        .oneshot(request(
+            Method::POST,
+            "/api/v1/events",
+            Some(bearer(&token)),
+        ))
+        .await
+        .expect("focused router should produce a response");
     assert_eq!(
         response.status(),
         StatusCode::FORBIDDEN,
@@ -424,32 +397,26 @@ async fn test_token_with_unrelated_permissions_is_rejected() {
     );
 }
 
-/// Verifies that an empty roles list does not block access when the token
-/// carries the required permission.
-///
-/// Authorization is permission-based; the roles claim is informational only.
-/// A token with `roles: []` but `permissions: ["event_read"]` must succeed
-/// for a GET to the events endpoint.
 #[tokio::test]
 async fn test_token_with_empty_roles_but_valid_permission_is_accepted() {
-    let (app, jwt_service) = create_protected_router();
-
+    let jwt_service = create_test_jwt_service();
     let token = jwt_service
         .generate_access_token(
             "roleless_user".to_string(),
-            vec![], // intentionally empty roles
+            Vec::new(),
             vec!["event_read".to_string()],
         )
-        .unwrap();
+        .expect("test token generation should succeed");
+    let app = create_protected_route(Method::GET, "/api/v1/events/:id", jwt_service);
 
-    let request = Request::builder()
-        .method(Method::GET)
-        .uri("/api/v1/events/123")
-        .header("Authorization", format!("Bearer {}", token))
-        .body(Body::empty())
-        .unwrap();
-
-    let response = app.oneshot(request).await.unwrap();
+    let response = app
+        .oneshot(request(
+            Method::GET,
+            "/api/v1/events/123",
+            Some(bearer(&token)),
+        ))
+        .await
+        .expect("focused router should produce a response");
     assert_eq!(
         response.status(),
         StatusCode::OK,
@@ -457,11 +424,6 @@ async fn test_token_with_empty_roles_but_valid_permission_is_accepted() {
     );
 }
 
-/// Verifies that `RedactedSecret` never exposes the wrapped value through
-/// `Debug` or `Display` formatting.
-///
-/// Additionally confirms that `into_inner` returns the original plaintext
-/// as the sole intentional disclosure path.
 #[test]
 fn test_redacted_secret_does_not_leak_in_debug_or_display() {
     use xzepr::infrastructure::RedactedSecret;
@@ -490,12 +452,6 @@ fn test_redacted_secret_does_not_leak_in_debug_or_display() {
     );
 }
 
-/// Verifies that an OPA client configured with `enabled: false` can be
-/// constructed without panicking and correctly reports itself as disabled.
-///
-/// Disabled mode is the safe default when no OPA server is configured.
-/// The client must not attempt any network connections and must not panic
-/// when queried for its enabled state or fail-safe mode.
 #[test]
 fn test_opa_client_disabled_returns_false() {
     use xzepr::opa::{OpaClient, OpaConfig, OpaFailSafeMode};
@@ -512,10 +468,7 @@ fn test_opa_client_disabled_returns_false() {
         fail_safe_mode: OpaFailSafeMode::FailClosed,
     };
 
-    // SAFETY: The OPA client's HTTP client construction depends only on
-    // `timeout_seconds`; a valid value cannot fail.
-    let client =
-        OpaClient::new(config).expect("disabled OPA client construction must not return an error");
+    let client = OpaClient::new(config).expect("disabled OPA client construction should not fail");
 
     assert!(
         !client.is_enabled(),
@@ -529,14 +482,6 @@ fn test_opa_client_disabled_returns_false() {
     );
 }
 
-/// Verifies that the default rate-limit configuration has positive, non-zero
-/// limits for every user tier and that privilege escalation through tier
-/// ordering is correct.
-///
-/// A zero or negative rate limit would either silently disable rate limiting
-/// or block all users, both of which are unsafe defaults. Additionally,
-/// Redis must be disabled in the default configuration so that deployments
-/// without Redis do not fail at startup.
 #[test]
 fn test_redis_rate_limit_config_defaults_are_sane() {
     use xzepr::infrastructure::RateLimitSecurityConfig;

@@ -91,6 +91,6 @@ pub use callback::{
 pub use client::{AuthorizationRequest, OidcAuthResult, OidcClaims, OidcClient, OidcError};
 pub use config::OidcConfig;
 pub use session_store::{
-    InMemoryOidcSessionStore, NullOidcSessionStore, OidcSessionStore, RedisOidcSessionStore,
-    SessionStoreError,
+    InMemoryOidcSessionStore, NullOidcSessionStore, OidcSessionStore, OidcSessionTakeResult,
+    RedisOidcSessionStore, SessionStoreError,
 };

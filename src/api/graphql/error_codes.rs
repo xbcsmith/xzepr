@@ -254,6 +254,16 @@ pub fn map_app_error(e: crate::error::Error) -> async_graphql::Error {
 
         crate::error::Error::Validation(_) => validation_error("Validation failed"),
 
+        crate::error::Error::Auth(AuthError::ApiKeyConstraintViolation { .. }) => {
+            conflict("Resource conflict")
+        }
+
+        detail @ crate::error::Error::Auth(
+            AuthError::ApiKeyRowDecodeError { .. }
+            | AuthError::ApiKeyInvalidId { .. }
+            | AuthError::StorageError { .. },
+        ) => log_and_internal_error(detail, "api_key_storage"),
+
         other => log_and_internal_error(other, "resolver"),
     }
 }
@@ -376,6 +386,33 @@ mod tests {
         assert_eq!(
             get_code(&err),
             Some(&async_graphql::Value::String(CODE_CONFLICT.to_string()))
+        );
+    }
+
+    #[test]
+    fn test_map_app_error_api_key_constraint_is_conflict() {
+        use crate::error::{AuthError, Error};
+        let err = map_app_error(Error::Auth(AuthError::ApiKeyConstraintViolation {
+            constraint: "unique:key_hash".to_string(),
+        }));
+        assert_eq!(
+            get_code(&err),
+            Some(&async_graphql::Value::String(CODE_CONFLICT.to_string()))
+        );
+    }
+
+    #[test]
+    fn test_map_app_error_api_key_row_decode_is_internal() {
+        use crate::error::{AuthError, Error};
+        let err = map_app_error(Error::Auth(AuthError::ApiKeyRowDecodeError {
+            column: "key_hash".to_string(),
+            detail: "bad utf8".to_string(),
+        }));
+        assert_eq!(
+            get_code(&err),
+            Some(&async_graphql::Value::String(
+                CODE_INTERNAL_ERROR.to_string()
+            ))
         );
     }
 }
