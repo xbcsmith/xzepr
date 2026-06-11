@@ -80,13 +80,11 @@ impl PostgresEventReceiverRepository {
 
     /// Builds a WHERE clause and positional parameter list from criteria.
     ///
-    /// Used by tests and diagnostic tooling. The `find_by_criteria` method
-    /// now uses `sqlx::QueryBuilder` directly, so this helper is kept for
-    /// test coverage and potential future use.
-    // Retained for diagnostic use and direct unit testing.  The production
-    // `find_by_criteria` uses `QueryBuilder` instead of this function, but
-    // the helper remains to document the WHERE-clause parameter mapping.
-    #[allow(dead_code)]
+    /// Compiled only in test mode. The `find_by_criteria` method uses
+    /// `sqlx::QueryBuilder` directly in production; this helper is retained
+    /// under `#[cfg(test)]` to document the WHERE-clause parameter mapping
+    /// and to back the unit tests below.
+    #[cfg(test)]
     fn build_where_clause(criteria: &FindEventReceiverCriteria) -> (String, Vec<String>) {
         let mut conditions = Vec::new();
         let mut params = Vec::new();

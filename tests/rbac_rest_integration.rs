@@ -3,10 +3,22 @@
 
 //! Integration tests for REST RBAC and canonical router authentication.
 //!
-//! Tests in this file avoid constructing a second full API route graph. Broad
-//! production-route expectations use `build_production_router`; per-permission
-//! RBAC checks use one focused route at a time so the middleware mapping is
-//! tested without presenting the focused harness as a runtime entrypoint.
+//! This file contains two distinct test tiers:
+//!
+//! **Canonical router tests** (prefix: `test_canonical_router_`) call
+//! `build_production_router` with Noop repository implementations injected
+//! through `AppState`. The Noop repositories satisfy the trait bounds required
+//! by the router without connecting to a database. These tests verify routing,
+//! authentication middleware, and the overall request pipeline at the API layer.
+//!
+//! **Focused middleware tests** (prefixes:
+//! `test_rest_permissions_are_enforced_with_focused_middleware`,
+//! `test_invalid_token_rejected`, `test_missing_bearer_prefix_rejected`, and
+//! `test_forbidden_response_includes_permission_details`) use
+//! `create_focused_router` to mount one route at a time. These tests verify
+//! individual permission-to-route mappings in isolation. They are middleware
+//! unit tests and do NOT claim end-to-end database or application layer
+//! coverage.
 
 use async_trait::async_trait;
 use axum::{
